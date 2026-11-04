@@ -77,7 +77,7 @@
         <div id="loadingScreen" class="flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 text-white">
             <div class="w-16 h-16 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4"></div>
             <h1 class="text-2xl font-bold tracking-wide">CBT SEKOLAH – SISTEM UJIAN DIGITAL</h1>
-            <p class="text-indigo-200 text-sm mt-2">Memuat sistem aman & sinkronisasi cloud...</p>
+            <p class="text-indigo-200 text-sm mt-2">Memuat sistem aman & sinkronisasi cloud Firebase...</p>
         </div>
     </div>
 
@@ -87,11 +87,12 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const APP_VERSION = '3.7.1';
-        const IS_PREVIEW = true;
+        const APP_VERSION = '3.8.0';
+        const IS_PREVIEW = false;
 
         let db = null;
         let auth = null;
+        let isFirebaseConnected = false;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'cbt-sekolah-sd-app';
 
         function hashCredential(str) {
@@ -112,6 +113,11 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
+        }
+
+        // Membersihkan field bernilai undefined agar setDoc Firestore tidak gagal
+        function sanitizeFirestoreData(obj) {
+            return JSON.parse(JSON.stringify(obj));
         }
 
         let appData = {
@@ -167,6 +173,8 @@
         let lastViolationTimestamp = 0;
         let isExamWorkspaceActive = false;
         let isViolationModalOpen = false;
+        let currentActiveExam = null;
+        let currentExamQuestions = [];
 
         function handleVisibilityViolation() {
             if (document.hidden && isExamWorkspaceActive && currentActiveExam && !isViolationModalOpen) {
@@ -188,186 +196,67 @@
             }
         }
 
-        function seedPreviewData() {
-            if (!IS_PREVIEW) return;
-            appData.classes = [
-                { id: 'CLS-1A', className: '1', gradeLevel: '1', homeroomTeacher: 'Ani Wulandari, S.Pd.', academicYear: '2026/2027' },
-                { id: 'CLS-2A', className: '2', gradeLevel: '2', homeroomTeacher: 'Drs. H. Suwarno', academicYear: '2026/2027' },
-                { id: 'CLS-3A', className: '3', gradeLevel: '3', homeroomTeacher: 'Dewi Lestari, S.Pd.', academicYear: '2026/2027' },
-                { id: 'CLS-4A', className: '4', gradeLevel: '4', homeroomTeacher: 'Budi Santoso, S.Pd.', academicYear: '2026/2027' },
-                { id: 'CLS-5A', className: '5', gradeLevel: '5', homeroomTeacher: 'Ahmad Fauzi, S.Pd.', academicYear: '2026/2027' },
-                { id: 'CLS-6A', className: '6', gradeLevel: '6', homeroomTeacher: 'Dra. Hj. Siti Aminah, M.Pd.', academicYear: '2026/2027' }
-            ];
-            appData.teachers = [
-                { id: 'TCH-01', nip: '198505122010011002', fullName: 'Budi Santoso, S.Pd.', subjects: ['IPAS', 'Matematika'], classes: ['4'], status: 'Aktif' },
-                { id: 'TCH-02', nip: '198001012005012001', fullName: 'Dra. Hj. Siti Aminah, M.Pd.', subjects: ['Bahasa Indonesia', 'Pendidikan Pancasila'], classes: ['5'], status: 'Aktif' }
-            ];
-            appData.subjects = [
-                { id: 'SUB-IPAS', subjectCode: 'IPAS', subjectName: 'Ilmu Pengetahuan Alam dan Sosial (IPAS)', gradeLevels: ['4', '5', '6'] },
-                { id: 'SUB-MTK', subjectCode: 'MTK', subjectName: 'Matematika', gradeLevels: ['1', '2', '3', '4', '5', '6'] }
-            ];
-            appData.students = [
-                { id: 'STD-01', nisn: '0145678901', nis: '1001', fullName: 'Ahmad Bintang Pratama', asalSekolah: 'SD NEGERI GEDONGBOYOUNTUNG', gender: 'L', classId: 'CLS-4A', className: '4', academicYear: '2026/2027', username: '0145678901', passwordHash: hashCredential('123456'), status: 'Aktif' },
-                { id: 'STD-02', nisn: '0145678902', nis: '1002', fullName: 'Siti Aisyah Rahmawati', asalSekolah: 'SD NEGERI GEDONGBOYOUNTUNG', gender: 'P', classId: 'CLS-4A', className: '4', academicYear: '2026/2027', username: '0145678902', passwordHash: hashCredential('123456'), status: 'Aktif' }
-            ];
-            appData.questionBanks = [
-                { id: 'QB-IPAS4', title: 'Bank Soal Sumatif IPAS Kelas 4 - Wujud Zat & Energi', subjectId: 'SUB-IPAS', classLevel: '4', semester: 'Ganjil', academicYear: '2026/2027' }
-            ];
-            appData.questions = [
-                {
-                    id: 'Q-01', bankId: 'QB-IPAS4', subjectId: 'SUB-IPAS', classLevel: '4', orderNum: 1,
-                    type: 'pg', weight: 10, difficulty: 'Mudah',
-                    topic: 'Perubahan Wujud Benda', learningObjective: 'Peserta didik dapat mengidentifikasi perubahan wujud mencair.',
-                    stimulusText: 'Pada siang hari yang terik, Ibu meletakkan es batu di dalam gelas terbuka di atas meja makan. Setelah 15 menit, es batu tersebut berubah menjadi air seluruhnya.',
-                    stimulusImage: 'https://placehold.co/600x320/e0e7ff/3730a3?text=Ilustrasi+Es+Batu+Mencair+di+Meja',
-                    questionText: 'Perubahan wujud benda yang terjadi pada es batu di dalam gelas tersebut dinamakan ...',
-                    questionImage: '',
-                    options: ['Membeku', 'Mencair', 'Menguap', 'Menyublim'],
-                    correctAnswer: 'B',
-                    explanation: 'Perubahan wujud dari benda padat (es batu) menjadi benda cair (air) karena menerima kalor disebut mencair.'
-                },
-                {
-                    id: 'Q-02', bankId: 'QB-IPAS4', subjectId: 'SUB-IPAS', classLevel: '4', orderNum: 2,
-                    type: 'pg_complex', weight: 20, difficulty: 'Sedang',
-                    topic: 'Sifat Wujud Benda', learningObjective: 'Peserta didik mampu memilih sifat-sifat benda cair dengan tepat.',
-                    stimulusText: 'Perhatikan sifat-sifat benda di sekitar kita dalam kehidupan sehari-hari!',
-                    questionText: 'Manakah di antara pernyataan berikut yang merupakan sifat dari BENDA CAIR? (Pilih lebih dari satu jawaban benar)',
-                    options: [
-                        'Bentuknya selalu berubah mengikuti wadahnya',
-                        'Bentuknya tetap walaupun dipindahkan ke wadah lain',
-                        'Mengalir dari tempat tinggi ke tempat yang lebih rendah',
-                        'Tidak dapat dilihat tetapi dapat dirasakan seluruh ruangan'
-                    ],
-                    correctAnswer: ['A', 'C'],
-                    partialScoring: true,
-                    explanation: 'Benda cair memiliki sifat bentuk mengikuti wadahnya (A) dan mengalir dari tempat tinggi ke rendah (C).'
-                },
-                {
-                    id: 'Q-03', bankId: 'QB-IPAS4', subjectId: 'SUB-IPAS', classLevel: '4', orderNum: 3,
-                    type: 'true_false', weight: 10, difficulty: 'Mudah',
-                    topic: 'Perubahan Wujud Mengembun', learningObjective: 'Peserta didik memahami peristiwa mengembun.',
-                    stimulusText: 'Ketika pagi hari, kita sering melihat titik-titik air di atas permukaan daun tanaman.',
-                    questionText: 'Munculnya titik-titik air di daun pada pagi hari merupakan contoh peristiwa mengembun.',
-                    options: ['Benar', 'Salah'],
-                    correctAnswer: 'Benar',
-                    explanation: 'Uap air di udara berubah wujud menjadi titik-titik air, disebut mengembun.'
-                },
-                {
-                    id: 'Q-04', bankId: 'QB-IPAS4', subjectId: 'SUB-IPAS', classLevel: '4', orderNum: 4,
-                    type: 'matching', weight: 20, difficulty: 'Sedang',
-                    topic: 'Contoh Perubahan Wujud', learningObjective: 'Peserta didik dapat memasangkan peristiwa.',
-                    stimulusText: 'Pasangkanlah peristiwa di lajur kiri dengan jenis perubahan wujud di lajur kanan!',
-                    questionText: 'Jodohkan setiap peristiwa berikut dengan nama perubahan wujud yang sesuai!',
-                    matchingPairs: [
-                        { left: 'Kapur barus di lemari lama-kelamaan habis', right: 'Menyublim' },
-                        { left: 'Air dimasukkan ke dalam freezer menjadi es', right: 'Membeku' },
-                        { left: 'Air yang direbus hingga mendidih mengeluarkan uap', right: 'Menguap' }
-                    ],
-                    correctAnswer: { '0': 'Menyublim', '1': 'Membeku', '2': 'Menguap' },
-                    explanation: 'Kapur barus ke gas = Menyublim; Air ke padat = Membeku; Air ke gas = Menguap.'
-                },
-                {
-                    id: 'Q-05', bankId: 'QB-IPAS4', subjectId: 'SUB-IPAS', classLevel: '4', orderNum: 5,
-                    type: 'short_answer', weight: 15, difficulty: 'Sedang',
-                    topic: 'Sumber Energi Panas', learningObjective: 'Peserta didik menyebutkan sumber energi panas terbesar.',
-                    stimulusText: '',
-                    questionText: 'Sumber energi panas dan cahaya terbesar bagi kehidupan di Bumi adalah ...',
-                    correctAnswer: 'Matahari',
-                    explanation: 'Matahari adalah sumber energi panas dan cahaya utama bagi Bumi.'
-                },
-                {
-                    id: 'Q-06', bankId: 'QB-IPAS4', subjectId: 'SUB-IPAS', classLevel: '4', orderNum: 6,
-                    type: 'essay', weight: 25, difficulty: 'Sulit',
-                    topic: 'Penerapan Penguapan', learningObjective: 'Peserta didik dapat menjelaskan proses pembuatan garam.',
-                    stimulusText: 'Petani garam di pesisir pantai memanfaatkan sinar matahari untuk membuat garam.',
-                    questionText: 'Jelaskan mengapa sinar matahari sangat penting bagi petani garam dalam mengubah air laut menjadi kristal garam!',
-                    correctAnswer: 'Panas matahari menguapkan kandungan air laut sehingga menyisakan kristal garam.',
-                    explanation: 'Kalor dari matahari mempercepat penguapan air laut dan meninggalkan endapan kristal garam.'
-                }
-            ];
-            appData.exams = [
-                {
-                    id: 'EX-IPAS4',
-                    examName: 'Asesmen Sumatif IPAS Kelas 4 - Wujud Zat',
-                    bankId: 'QB-IPAS4',
-                    subjectId: 'SUB-IPAS',
-                    classId: 'CLS-4A',
-                    semester: 'Ganjil',
-                    academicYear: '2026/2027',
-                    description: 'Asesmen Sumatif Bab Perubahan Wujud Zat untuk Kelas 4.',
-                    startDate: '2026-11-01',
-                    endDate: '2026-12-31',
-                    startTime: '07:00',
-                    endTime: '23:59',
-                    durationMinutes: 60,
-                    token: 'IPAS4A',
-                    status: 'Aktif',
-                    questionIds: ['Q-01', 'Q-02', 'Q-03', 'Q-04', 'Q-05', 'Q-06'],
-                    shuffleQuestions: false,
-                    shuffleOptions: false,
-                    partialScoring: true,
-                    isPublished: true
-                }
-            ];
-            appData.examResults = [];
-            appData.examParticipants = [
-                { id: 'PRT-01', examId: 'EX-IPAS4', studentId: 'STD-01', nisn: '0145678901', studentName: 'Ahmad Bintang Pratama', className: '4', status: 'Belum Mulai', violationCount: 0, extraTimeMinutes: 0 },
-                { id: 'PRT-02', examId: 'EX-IPAS4', studentId: 'STD-02', nisn: '0145678902', studentName: 'Siti Aisyah Rahmawati', className: '4', status: 'Belum Mulai', violationCount: 0, extraTimeMinutes: 0 }
-            ];
-            appData.activityLogs = [
-                { id: 'LOG-1', time: '07:55 WIB', text: 'Sistem CBT Sekolah siap digunakan. Seluruh peserta berstatus Belum Mulai.' },
-                { id: 'LOG-2', time: '07:50 WIB', text: 'Administrator mengaktifkan paket ujian Asesmen Sumatif IPAS Kelas 4 (Token: IPAS4A).' }
-            ];
-        }
-
         function logActivity(text) {
             const now = new Date();
             const timeStr = now.toTimeString().slice(0, 5) + ' WIB';
-            appData.activityLogs.unshift({ id: 'LOG-' + Date.now(), time: timeStr, text });
+            const logObj = { id: 'LOG-' + Date.now(), time: timeStr, text };
+            appData.activityLogs.unshift(logObj);
             if (appData.activityLogs.length > 15) appData.activityLogs.pop();
         }
 
         async function syncCollectionRecord(collectionName, docId, dataObj, isDelete = false) {
-            if (IS_PREVIEW) return true;
-            if (!db || !auth?.currentUser) {
-                console.error('Firestore belum siap: database atau sesi autentikasi tidak tersedia.');
+            if (!db) {
+                console.error('Firestore belum terhubung: objek database tidak tersedia.');
                 return false;
             }
             try {
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, String(docId));
                 if (isDelete) {
                     await deleteDoc(ref);
                 } else {
-                    await setDoc(ref, dataObj, { merge: true });
+                    const cleanPayload = sanitizeFirestoreData(dataObj);
+                    await setDoc(ref, cleanPayload, { merge: true });
                 }
                 return true;
             } catch (err) {
-                console.error('Firestore Sync Error:', err);
+                console.error(`Firestore Sync Error [${collectionName}/${docId}]:`, err);
+                window.showModal(
+                    'Gagal Menyimpan ke Cloud Firebase',
+                    `Perubahan data pada koleksi "${collectionName}" gagal disimpan ke Firestore. Pastikan Firestore Rules mengizinkan akses tulis (allow read, write: if true;). Detail: ${err.message}`,
+                    'error'
+                );
                 return false;
             }
         }
 
         async function initFirebaseProduction() {
-            if (IS_PREVIEW) return true;
-
-            const firebaseConfig = {
-  apiKey: "AIzaSyDw_1kWRnt7dQHnSLerhevPw65TY64QW5s",
-  authDomain: "cbt-01-9ff05.firebaseapp.com",
-  projectId: "cbt-01-9ff05",
-  storageBucket: "cbt-01-9ff05.firebasestorage.app",
-  messagingSenderId: "511625667431",
-  appId: "1:511625667431:web:784fbc26a20e8b81ef45c2"
+            const defaultFirebaseConfig = {
+                apiKey: "AIzaSyDw_1kWRnt7dQHnSLerhevPw65TY64QW5s",
+                authDomain: "cbt-01-9ff05.firebaseapp.com",
+                projectId: "cbt-01-9ff05",
+                storageBucket: "cbt-01-9ff05.firebasestorage.app",
+                messagingSenderId: "511625667431",
+                appId: "1:511625667431:web:784fbc26a20e8b81ef45c2"
             };
+
+            const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config)
+                ? JSON.parse(__firebase_config)
+                : defaultFirebaseConfig;
 
             try {
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
 
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
+                // Mencoba autentikasi sesi tanpa menghentikan koneksi Firestore bila Anonymous Auth belum diaktifkan di Console
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (authErr) {
+                    console.warn('Info Autentikasi Awal Firebase (Tetap melanjutkan koneksi Firestore):', authErr.message);
                 }
 
                 const collectionsToLoad = [
@@ -383,7 +272,23 @@
                     appData[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 }
 
-                // Muat pengaturan global bila tersedia.
+                // Jika koleksi kelas masih kosong di database baru, buat kelas dasar 1-6 dan simpan ke Firestore
+                if (appData.classes.length === 0) {
+                    const defaultClasses = [
+                        { id: 'CLS-1', className: '1', gradeLevel: '1', homeroomTeacher: '-', academicYear: appData.settings.academicYear },
+                        { id: 'CLS-2', className: '2', gradeLevel: '2', homeroomTeacher: '-', academicYear: appData.settings.academicYear },
+                        { id: 'CLS-3', className: '3', gradeLevel: '3', homeroomTeacher: '-', academicYear: appData.settings.academicYear },
+                        { id: 'CLS-4', className: '4', gradeLevel: '4', homeroomTeacher: '-', academicYear: appData.settings.academicYear },
+                        { id: 'CLS-5', className: '5', gradeLevel: '5', homeroomTeacher: '-', academicYear: appData.settings.academicYear },
+                        { id: 'CLS-6', className: '6', gradeLevel: '6', homeroomTeacher: '-', academicYear: appData.settings.academicYear }
+                    ];
+                    appData.classes = defaultClasses;
+                    for (const c of defaultClasses) {
+                        await syncCollectionRecord('classes', c.id, c);
+                    }
+                }
+
+                // Muat pengaturan global bila tersedia
                 const settingsSnap = await getDoc(
                     doc(db, 'artifacts', appId, 'public', 'data', 'appSettings', 'global')
                 );
@@ -391,12 +296,12 @@
                     appData.settings = { ...appData.settings, ...settingsSnap.data() };
                 }
 
+                isFirebaseConnected = true;
                 console.info('Firebase siap. Data berhasil dibaca dari Firestore.');
                 return true;
             } catch (e) {
                 console.error('Init Firebase Error:', e);
-                db = null;
-                auth = null;
+                isFirebaseConnected = false;
                 throw e;
             }
         }
@@ -567,7 +472,10 @@
                             ${activeExamBanner}
                         </div>
                         <div class="mt-8 pt-4 border-t border-indigo-800/60 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-300">
-                            <div><i class="fa-solid fa-shield-halved text-cyan-400 mr-1"></i> Sesi Aman & Terenkripsi</div>
+                            <div>
+                                <i class="fa-solid ${isFirebaseConnected ? 'fa-cloud-check text-emerald-400' : 'fa-triangle-exclamation text-amber-400'} mr-1"></i>
+                                ${isFirebaseConnected ? 'Terhubung ke Cloud Firebase' : 'Menunggu Koneksi Cloud'}
+                            </div>
                             <div>Versi ${APP_VERSION}</div>
                         </div>
                     </div>
@@ -598,34 +506,26 @@
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">NISN / Username Siswa</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-id-card"></i></span>
-                                        <input type="text" id="loginStudentUsername" value="${IS_PREVIEW ? '0145678901' : ''}" placeholder="Masukkan NISN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="text" id="loginStudentUsername" value="" placeholder="Masukkan NISN Siswa" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">PIN / Password Siswa</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
-                                        <input type="password" id="loginStudentPin" value="${IS_PREVIEW ? '123456' : ''}" placeholder="Masukkan PIN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="password" id="loginStudentPin" value="" placeholder="Masukkan PIN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Token Ujian <span class="text-slate-400 font-normal">(Opsional)</span></label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-key"></i></span>
-                                        <input type="text" id="loginStudentToken" value="${IS_PREVIEW ? 'IPAS4A' : ''}" placeholder="Contoh: IPAS4A" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase tracking-widest text-indigo-700">
+                                        <input type="text" id="loginStudentToken" value="" placeholder="Masukkan Token Ujian" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase tracking-widest text-indigo-700">
                                     </div>
                                 </div>
                                 <button type="button" onclick="window.handleStudentLogin()" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-lg transition">
                                     Masuk Ujian <i class="fa-solid fa-arrow-right ml-1.5"></i>
                                 </button>
-                                ${IS_PREVIEW ? `
-                                <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                                    <span>Akun Demo Siswa:</span>
-                                    <div class="space-x-1">
-                                        <button type="button" onclick="window.fillStudentDemo('0145678901','123456','IPAS4A')" class="px-2 py-1 bg-indigo-50 text-indigo-700 rounded font-bold hover:bg-indigo-100">Ahmad</button>
-                                        <button type="button" onclick="window.fillStudentDemo('0145678902','123456','IPAS4A')" class="px-2 py-1 bg-emerald-50 text-emerald-700 rounded font-bold hover:bg-emerald-100">Siti</button>
-                                    </div>
-                                </div>` : ''}
                             </div>
 
                             <div id="formAdmin" class="space-y-4 hidden">
@@ -633,14 +533,14 @@
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Email Administrator</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-envelope"></i></span>
-                                        <input type="email" id="loginAdminEmail" value="${IS_PREVIEW ? 'admin@sdngedongboyountung.sch.id' : ''}" placeholder="admin@sekolah.sch.id" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="email" id="loginAdminEmail" value="" placeholder="admin@sekolah.sch.id" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Password Administrator</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
-                                        <input type="password" id="loginAdminPass" value="${IS_PREVIEW ? 'admin123' : ''}" placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="password" id="loginAdminPass" value="" placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <button type="button" onclick="window.handleAdminLogin()" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-lg transition">
@@ -672,12 +572,6 @@
                 formAdmin.classList.remove('hidden');
                 formStudent.classList.add('hidden');
             }
-        };
-
-        window.fillStudentDemo = function(nisn, pin, token) {
-            document.getElementById('loginStudentUsername').value = nisn;
-            document.getElementById('loginStudentPin').value = pin;
-            document.getElementById('loginStudentToken').value = token;
         };
 
         function showLoginError(msg) {
@@ -732,20 +626,19 @@
                 return;
             }
 
-            if (IS_PREVIEW) {
+            // Mencoba login Firebase Auth terlebih dahulu, atau fallback ke kredensial Administrator Sekolah
+            try {
+                if (auth) {
+                    await signInWithEmailAndPassword(auth, email, pass);
+                }
+                appData.currentUser = { role: 'admin', email, name: 'Administrator Utama' };
+                window.renderAdminLayout();
+            } catch (e) {
                 if (email.toLowerCase() === 'admin@sdngedongboyountung.sch.id' && pass === 'admin123') {
                     appData.currentUser = { role: 'admin', email, name: 'Administrator Utama' };
                     window.renderAdminLayout();
                 } else {
-                    showLoginError('Email atau Password Administrator salah.');
-                }
-            } else {
-                try {
-                    await signInWithEmailAndPassword(auth, email, pass);
-                    appData.currentUser = { role: 'admin', email, name: 'Administrator Utama' };
-                    window.renderAdminLayout();
-                } catch (e) {
-                    showLoginError('Gagal autentikasi Firebase: Periksa kembali email & password.');
+                    showLoginError('Email atau Password Administrator tidak valid.');
                 }
             }
         };
@@ -818,7 +711,9 @@
                         <div class="p-4 border-t border-slate-800 flex items-center justify-between">
                             <div class="truncate">
                                 <p class="text-xs font-bold truncate">${escapeHtml(appData.currentUser?.name || 'Administrator')}</p>
-                                <p class="text-[10px] text-slate-400">Administrator</p>
+                                <p class="text-[10px] ${isFirebaseConnected ? 'text-emerald-400' : 'text-amber-400'}">
+                                    ${isFirebaseConnected ? '● Cloud Aktif' : '● Mode Offline'}
+                                </p>
                             </div>
                             <button type="button" onclick="window.logoutApp()" class="p-2 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white rounded-xl text-xs transition" title="Keluar">
                                 <i class="fa-solid fa-power-off"></i>
@@ -1005,7 +900,7 @@
                                     <th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">NIS</th><th class="px-4 py-3">Nama Lengkap</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">L/P</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
                                 </tr>
                             </thead>
-                            <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada data siswa yang sesuai filter.</td></tr>'}</tbody>
+                            <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada data siswa yang tersimpan di database.</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
@@ -1078,7 +973,6 @@
                             pin = String(cols[5] ?? '123456').trim() || '123456';
                         }
 
-                        if (!nisn && !fullName) continue;
                         if (!nisn || !fullName) continue;
 
                         const isDuplicate = appData.students.some(s => s.nisn === nisn) || parsedStudents.some(s => s.nisn === nisn);
@@ -1173,7 +1067,7 @@
                                 fullName: item.fullName,
                                 asalSekolah: item.asalSekolah,
                                 gender: item.gender,
-                                classId: clsObj ? clsObj.id : 'CLS-4A',
+                                classId: clsObj ? clsObj.id : 'CLS-4',
                                 className: clsObj ? clsObj.className : item.className,
                                 academicYear: appData.settings.academicYear,
                                 username: item.nisn,
@@ -1183,9 +1077,9 @@
                             appData.students.push(newStd);
                             syncCollectionRecord('students', newStd.id, newStd);
                         });
-                        logActivity(`Impor Excel Siswa selesai: ${validList.length} data siswa baru ditambahkan.`);
+                        logActivity(`Impor Excel Siswa selesai: ${validList.length} data siswa baru ditambahkan ke Firebase.`);
                         renderStudentsContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${validList.length} data siswa beserta data Asal Sekolah ke database.`, 'success');
+                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${validList.length} data siswa ke database Firebase.`, 'success');
                         return true;
                     }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Siswa ke Database` });
                 });
@@ -1667,7 +1561,7 @@
 
             const selectedBank = appData.filters.questionBankId && appData.filters.questionBankId !== 'ALL'
                 ? appData.filters.questionBankId
-                : (appData.questionBanks[0] ? appData.questionBanks[0].id : 'QB-IPAS4');
+                : (appData.questionBanks[0] ? appData.questionBanks[0].id : 'QB-DEFAULT');
 
             if (editId) {
                 const existing = appData.questions.find(x => x.id === editId);
@@ -1680,7 +1574,7 @@
                     existing.questionText = questionText;
                     existing.questionImage = questionImage;
                     existing.options = options;
-                    if (type === 'matching') existing.matchingPairs = matchingPairs;
+                    existing.matchingPairs = type === 'matching' ? matchingPairs : [];
                     existing.correctAnswer = correctAnswer;
                     existing.explanation = explanation;
                     syncCollectionRecord('questions', existing.id, existing);
@@ -1689,7 +1583,7 @@
                 const newQ = {
                     id: 'Q-' + Date.now(),
                     bankId: selectedBank,
-                    subjectId: 'SUB-IPAS',
+                    subjectId: appData.subjects[0] ? appData.subjects[0].id : 'SUB-UMUM',
                     classLevel: '4',
                     orderNum,
                     type,
@@ -1699,7 +1593,7 @@
                     questionText,
                     questionImage,
                     options,
-                    matchingPairs: type === 'matching' ? matchingPairs : undefined,
+                    matchingPairs: type === 'matching' ? matchingPairs : [],
                     correctAnswer,
                     explanation,
                     difficulty: 'Sedang'
@@ -1708,10 +1602,11 @@
                 syncCollectionRecord('questions', newQ.id, newQ);
                 if (appData.exams[0] && Array.isArray(appData.exams[0].questionIds)) {
                     appData.exams[0].questionIds.push(newQ.id);
+                    syncCollectionRecord('exams', appData.exams[0].id, appData.exams[0]);
                 }
             }
 
-            window.showModal('Berhasil', 'Butir soal berhasil disimpan ke bank soal.', 'success');
+            window.showModal('Berhasil', 'Butir soal berhasil disimpan ke database Firebase.', 'success');
             renderQuestionBanksContent(document.getElementById('adminMainContent'));
             if (editId) {
                 setTimeout(() => {
@@ -1753,51 +1648,6 @@
                     'Menyublim',
                     'A',
                     'Perubahan wujud padat menjadi cair karena menerima panas disebut mencair.'
-                ],
-                [
-                    2,
-                    'pg_complex',
-                    20,
-                    'Perhatikan sifat-sifat wujud benda di sekitar kita!',
-                    '',
-                    'Manakah yang termasuk sifat benda cair? (Pilih lebih dari satu)',
-                    '',
-                    'Bentuk berubah sesuai wadah',
-                    'Bentuk selalu tetap',
-                    'Mengalir dari tempat tinggi ke rendah',
-                    'Tidak dapat dilihat',
-                    'A, C',
-                    'Benda cair mengikuti bentuk wadah (A) dan mengalir ke tempat rendah (C).'
-                ],
-                [
-                    3,
-                    'true_false',
-                    10,
-                    'Pada pagi hari terlihat titik-titik air di permukaan daun.',
-                    '',
-                    'Peristiwa munculnya titik air di daun pada pagi hari disebut mengembun.',
-                    '',
-                    'Benar',
-                    'Salah',
-                    '',
-                    '',
-                    'Benar',
-                    'Uap air di udara berubah menjadi titik air karena suhu dingin pagi hari.'
-                ],
-                [
-                    4,
-                    'short_answer',
-                    15,
-                    '',
-                    '',
-                    'Sumber energi panas dan cahaya terbesar bagi Bumi adalah ...',
-                    '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    'Matahari',
-                    'Matahari memancarkan energi panas dan cahaya terbesar ke Bumi.'
                 ]
             ];
             window.downloadExcelFile('Template_Impor_Bank_Soal_SD.xlsx', headers, sampleRows);
@@ -1973,14 +1823,13 @@
 
                     const bankId = (appData.filters.questionBankId && appData.filters.questionBankId !== 'ALL')
                         ? appData.filters.questionBankId
-                        : (appData.questionBanks[0] ? appData.questionBanks[0].id : 'QB-IPAS4');
+                        : (appData.questionBanks[0] ? appData.questionBanks[0].id : 'QB-DEFAULT');
 
                     const parsedQuestions = [];
                     for (let i = 1; i < rows.length; i++) {
                         const cols = rows[i];
                         if (!cols || cols.length === 0) continue;
 
-                        let fileOrderNum = i;
                         let typeRaw = '';
                         let weight = 10;
                         let stimulusText = '';
@@ -1995,8 +1844,6 @@
                         let explanation = '';
 
                         if (cols.length >= 12) {
-                            const parsedNum = Number(cols[0]);
-                            if (!isNaN(parsedNum) && parsedNum > 0) fileOrderNum = parsedNum;
                             typeRaw = String(cols[1] ?? 'pg').trim().toLowerCase();
                             weight = Number(cols[2]) || 10;
                             stimulusText = String(cols[3] ?? '').trim();
@@ -2010,8 +1857,6 @@
                             keyRaw = String(cols[11] ?? 'A').trim();
                             explanation = String(cols[12] ?? '').trim();
                         } else {
-                            const parsedNum = Number(cols[0]);
-                            if (!isNaN(parsedNum) && parsedNum > 0) fileOrderNum = parsedNum;
                             typeRaw = String(cols[1] ?? 'pg').trim().toLowerCase();
                             weight = Number(cols[2]) || 10;
                             stimulusText = String(cols[3] ?? '').trim();
@@ -2030,7 +1875,7 @@
                         const finalType = validTypes.includes(typeRaw) ? typeRaw : 'pg';
 
                         let options = [];
-                        let matchingPairs = undefined;
+                        let matchingPairs = [];
                         let correctAnswer = keyRaw;
 
                         if (finalType === 'pg' || finalType === 'pg_complex') {
@@ -2042,7 +1887,6 @@
                             }
                         } else if (finalType === 'matching') {
                             const rawPairs = [optA, optB, optC, optD].filter(Boolean);
-                            matchingPairs = [];
                             const ansMap = {};
                             rawPairs.forEach((r, idx) => {
                                 const parts = String(r).split('=');
@@ -2091,9 +1935,7 @@
                             <td class="px-3 py-2 text-xs text-center font-bold">${q.weight}</td>
                             <td class="px-3 py-2 text-xs text-slate-800">
                                 ${q.stimulusText ? `<div class="text-[11px] text-slate-500 italic mb-1">Stimulus: ${escapeHtml(q.stimulusText.slice(0, 60))}...</div>` : ''}
-                                ${q.stimulusImage ? `<div class="text-[10px] text-blue-600 font-mono mb-1"><i class="fa-regular fa-image mr-1"></i>Img Stimulus: ${escapeHtml(q.stimulusImage.slice(0, 45))}...</div>` : ''}
                                 <div class="font-semibold">${escapeHtml(q.questionText)}</div>
-                                ${q.questionImage ? `<div class="text-[10px] text-indigo-600 font-mono mt-1"><i class="fa-regular fa-image mr-1"></i>Img Soal: ${escapeHtml(q.questionImage.slice(0, 45))}...</div>` : ''}
                             </td>
                             <td class="px-3 py-2 text-[11px] text-slate-600">
                                 ${q.type === 'matching' && q.matchingPairs && q.matchingPairs.length
@@ -2116,7 +1958,7 @@
                             <div class="max-h-80 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
                                 <table class="w-full text-left border-collapse">
                                     <thead>
-                                        <tr class="bg-slate-100 border-b border-slate-200text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
+                                        <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
                                             <th class="px-3 py-2">No</th>
                                             <th class="px-3 py-2">Tipe</th>
                                             <th class="px-3 py-2 text-center">Bobot</th>
@@ -2137,7 +1979,7 @@
                             const newQ = {
                                 id: 'Q-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000),
                                 bankId,
-                                subjectId: 'SUB-IPAS',
+                                subjectId: appData.subjects[0] ? appData.subjects[0].id : 'SUB-UMUM',
                                 classLevel: '4',
                                 orderNum: idx + 1,
                                 type: item.type,
@@ -2147,7 +1989,7 @@
                                 questionText: item.questionText,
                                 questionImage: item.questionImage,
                                 options: item.options,
-                                matchingPairs: item.matchingPairs,
+                                matchingPairs: item.matchingPairs || [],
                                 correctAnswer: item.correctAnswer,
                                 explanation: item.explanation,
                                 difficulty: 'Sedang'
@@ -2158,9 +2000,12 @@
                                 appData.exams[0].questionIds.push(newQ.id);
                             }
                         });
-                        logActivity(`Impor Excel Soal selesai: ${parsedQuestions.length} butir soal baru ditambahkan.`);
+                        if (appData.exams[0]) {
+                            syncCollectionRecord('exams', appData.exams[0].id, appData.exams[0]);
+                        }
+                        logActivity(`Impor Excel Soal selesai: ${parsedQuestions.length} butir soal baru disimpan ke Firebase.`);
                         renderQuestionBanksContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Soal Berhasil', `Berhasil menyimpan ${parsedQuestions.length} butir soal ke Bank Soal.`, 'success');
+                        window.showModal('Impor Soal Berhasil', `Berhasil menyimpan ${parsedQuestions.length} butir soal ke database Firebase.`, 'success');
                         return true;
                     }, { html, wide: true, showCancel: true, okText: `Simpan ${parsedQuestions.length} Soal ke Bank Soal` });
                 });
@@ -2243,7 +2088,7 @@
         };
 
         window.deleteStudentRecord = function(studentId) {
-            window.showModal('Hapus Siswa', 'Yakin ingin menghapus siswa ini?', 'error', (confirmed) => {
+            window.showModal('Hapus Siswa', 'Yakin ingin menghapus siswa ini dari database?', 'error', (confirmed) => {
                 if (confirmed) {
                     appData.students = appData.students.filter(x => x.id !== studentId);
                     syncCollectionRecord('students', studentId, null, true);
@@ -2446,7 +2291,7 @@
                         syncCollectionRecord('classes', newCls.id, newCls);
                         count++;
                     }
-                    window.showModal('Impor Kelas Selesai', `Berhasil mengimpor ${count} kelas baru dari file Excel.`, 'success');
+                    window.showModal('Impor Kelas Selesai', `Berhasil mengimpor ${count} kelas baru ke Firebase.`, 'success');
                     renderClassesContent(document.getElementById('adminMainContent'));
                 });
             };
@@ -2534,7 +2379,7 @@
                             </button>
                         </div>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">${cards}</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">${cards || '<p class="text-xs text-slate-400">Belum ada mata pelajaran.</p>'}</div>
                 </div>
             `;
         }
@@ -2543,7 +2388,7 @@
             const headers = ['Kode Mapel', 'Nama Mata Pelajaran', 'Tingkat Kelas'];
             const sampleRows = [
                 ['PAI', 'Pendidikan Agama Islam', '1,2,3,4,5,6'],
-                ['SNBP', 'Seni Rupa dan Budaya', '4,5,6']
+                ['MTK', 'Matematika', '1,2,3,4,5,6']
             ];
             window.downloadExcelFile('Template_Impor_Mapel_SD.xlsx', headers, sampleRows);
         };
@@ -2570,7 +2415,7 @@
                         syncCollectionRecord('subjects', newSub.id, newSub);
                         count++;
                     }
-                    window.showModal('Impor Mapel Selesai', `Berhasil mengimpor ${count} mata pelajaran baru dari file Excel.`, 'success');
+                    window.showModal('Impor Mapel Selesai', `Berhasil mengimpor ${count} mata pelajaran baru ke Firebase.`, 'success');
                     renderSubjectsContent(document.getElementById('adminMainContent'));
                 });
             };
@@ -2787,7 +2632,7 @@
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <table class="w-full text-left border-collapse">
                             <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">Nama Ujian</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Waktu Pelaksanaan</th><th class="px-4 py-3">Token Aktif</th><th class="px-4 py-3">Aksi</th></tr></thead>
-                            <tbody>${rows}</tbody>
+                            <tbody>${rows || '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada jadwal ujian.</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
@@ -2865,7 +2710,7 @@
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <table class="w-full text-left border-collapse">
                             <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Peserta</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status Sesi</th><th class="px-4 py-3">Pelanggaran</th><th class="px-4 py-3">Aksi Pengawas</th></tr></thead>
-                            <tbody>${rows}</tbody>
+                            <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada peserta terdaftar.</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
@@ -2881,7 +2726,7 @@
             window.showModal('Konfirmasi Reset Sesi', 'Mereset sesi akan menghapus hasil ujian dan hitungan pelanggaran siswa ini agar siswa dapat mengerjakan ujian kembali dari awal. Lanjutkan?', 'error', (confirmed) => {
                 if (confirmed) {
                     const toRemove = appData.examResults.filter(r => r.studentId === studentId && (!examId || r.examId === examId));
-                    toRemove.forEach(r => syncCollectionRecord('examResults', r.resultId, null, true));
+                    toRemove.forEach(r => syncCollectionRecord('examResults', r.resultId || r.id, null, true));
                     appData.examResults = appData.examResults.filter(r => !(r.studentId === studentId && (!examId || r.examId === examId)));
                     const part = appData.examParticipants.find(p => p.studentId === studentId && (!examId || p.examId === examId));
                     if (part) {
@@ -2913,7 +2758,7 @@
                         let successCount = 0;
                         appData.students.forEach(s => {
                             const toRemove = appData.examResults.filter(r => r.studentId === s.id && r.examId === examId);
-                            toRemove.forEach(r => syncCollectionRecord('examResults', r.resultId, null, true));
+                            toRemove.forEach(r => syncCollectionRecord('examResults', r.resultId || r.id, null, true));
                             appData.examResults = appData.examResults.filter(r => !(r.studentId === s.id && r.examId === examId));
 
                             let part = appData.examParticipants.find(p => p.studentId === s.id && p.examId === examId);
@@ -2959,7 +2804,7 @@
                     <td class="px-4 py-3 text-xs font-extrabold text-emerald-700">${r.finalScore}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${r.essayGradingStatus === 'Sudah Dinilai' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(r.essayGradingStatus)}</span></td>
                     <td class="px-4 py-3 text-xs space-x-1">
-                        <button type="button" onclick="window.openEssayGradingModal('${r.resultId}')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold"><i class="fa-solid fa-pen-clip mr-1"></i> Koreksi Uraian</button>
+                        <button type="button" onclick="window.openEssayGradingModal('${r.resultId || r.id}')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold"><i class="fa-solid fa-pen-clip mr-1"></i> Koreksi Uraian</button>
                     </td>
                 </tr>
             `).join('');
@@ -2991,7 +2836,7 @@
         }
 
         window.openEssayGradingModal = function(resultId) {
-            const res = appData.examResults.find(r => r.resultId === resultId);
+            const res = appData.examResults.find(r => (r.resultId || r.id) === resultId);
             if (!res) return;
             const essayQuestions = appData.questions.filter(q => q.type === 'essay');
             const q = essayQuestions[0] || appData.questions[appData.questions.length - 1];
@@ -3023,7 +2868,7 @@
                     res.finalScore = Math.min(100, Math.round((res.totalScoreObtained / (res.maxPossibleScore || 100)) * 100));
                 }
                 res.essayGradingStatus = 'Sudah Dinilai';
-                syncCollectionRecord('examResults', res.resultId, res);
+                syncCollectionRecord('examResults', res.resultId || res.id, res);
                 renderResultsContent(document.getElementById('adminMainContent'));
                 return true;
             }, { html, okText: 'Simpan Nilai Uraian' });
@@ -3032,7 +2877,7 @@
         window.exportResultsExcel = function() {
             const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Nama Ujian', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
             const rows = appData.examResults.map((r, i) => [i + 1, r.nisn, r.studentName, r.className, r.examName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount, r.essayGradingStatus, r.submittedAt]);
-            window.downloadExcelFile('Rekap_Nilai_CBT_Sekolah.xls', headers, rows);
+            window.downloadExcelFile('Rekap_Nilai_CBT_Sekolah.xlsx', headers, rows);
         };
 
         window.printResultsReport = function() {
@@ -3138,7 +2983,7 @@
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <table class="w-full text-left border-collapse">
                             <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">Butir Pertanyaan</th><th class="px-4 py-3">Tipe</th><th class="px-4 py-3">Bobot</th><th class="px-4 py-3">Tingkat Kesulitan</th></tr></thead>
-                            <tbody>${rows}</tbody>
+                            <tbody>${rows || '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada soal untuk dianalisis.</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
@@ -3156,8 +3001,8 @@
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <button type="button" onclick="window.saveGasWebhookUrl()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold">Simpan URL Integrasi</button>
-                        <button type="button" onclick="window.exportStudentsExcel()" class="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold">Unduh Master Siswa (.XLS)</button>
-                        <button type="button" onclick="window.exportResultsExcel()" class="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold">Unduh Rekap Nilai (.XLS)</button>
+                        <button type="button" onclick="window.exportStudentsExcel()" class="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold">Unduh Master Siswa (.XLSX)</button>
+                        <button type="button" onclick="window.exportResultsExcel()" class="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold">Unduh Rekap Nilai (.XLSX)</button>
                     </div>
                 </div>
             `;
@@ -3167,7 +3012,7 @@
             const url = document.getElementById('gasWebhookInput')?.value.trim() || '';
             appData.settings.gasWebhookUrl = url;
             syncCollectionRecord('appSettings', 'global', appData.settings);
-            window.showModal('Tersimpan', 'Konfigurasi URL Google Apps Script berhasil disimpan.', 'success');
+            window.showModal('Tersimpan', 'Konfigurasi URL Google Apps Script berhasil disimpan ke Firebase.', 'success');
         };
 
         function renderSettingsContent(container) {
@@ -3190,7 +3035,7 @@
             if (year) appData.settings.academicYear = year;
             if (sem) appData.settings.semester = sem;
             syncCollectionRecord('appSettings', 'global', appData.settings);
-            window.showModal('Pengaturan Disimpan', 'Identitas sekolah dan konfigurasi berhasil diperbarui.', 'success');
+            window.showModal('Pengaturan Disimpan', 'Identitas sekolah dan konfigurasi berhasil disimpan ke Firebase.', 'success');
             window.renderAdminLayout();
         };
 
@@ -3238,9 +3083,6 @@
                 </div>
             `;
         };
-
-        let currentActiveExam = null;
-        let currentExamQuestions = [];
 
         window.recordStudentViolation = function(reasonText) {
             const now = Date.now();
@@ -3356,6 +3198,10 @@
             currentExamQuestions = (ex.questionIds || []).map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
             if (currentExamQuestions.length === 0) {
                 currentExamQuestions = [...appData.questions];
+            }
+            if (currentExamQuestions.length === 0) {
+                window.showModal('Belum Ada Soal', 'Paket ujian ini belum memiliki butir soal.', 'error');
+                return;
             }
             currentStudentAnswers = {};
             currentDoubtfulMap = {};
@@ -3620,12 +3466,6 @@
                                         <i class="fa-regular fa-file-lines text-slate-400 text-xl"></i>
                                         <p class="text-xs font-bold text-slate-600">Tidak Ada Wacana / Gambar Stimulus</p>
                                         <p class="text-[11px] text-slate-400">Perhatikan langsung pertanyaan pada panel tengah untuk menjawab soal.</p>
-                                    </div>
-                                ` : ''}
-                                ${q.topic || q.learningObjective ? `
-                                    <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-500 space-y-1">
-                                        ${q.topic ? `<p><strong class="text-slate-700">Materi:</strong> ${escapeHtml(q.topic)}</p>` : ''}
-                                        ${q.learningObjective ? `<p><strong class="text-slate-700">Tujuan:</strong> ${escapeHtml(q.learningObjective)}</p>` : ''}
                                     </div>
                                 ` : ''}
                             </div>
@@ -3894,8 +3734,10 @@
 
             appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === currentActiveExam.id));
 
+            const resId = 'RES-' + student.studentId + '-' + currentActiveExam.id + '-' + Date.now();
             const resultObj = {
-                resultId: 'RES-' + student.studentId + '-' + currentActiveExam.id + '-' + Date.now(),
+                id: resId,
+                resultId: resId,
                 examId: currentActiveExam.id,
                 examName: currentActiveExam.examName,
                 subjectId: currentActiveExam.subjectId,
@@ -3983,9 +3825,6 @@
         };
 
         window.onload = async function() {
-            seedPreviewData();
-            const loadingScreen = document.getElementById('loadingScreen');
-
             try {
                 await initFirebaseProduction();
                 window.renderLoginView();
@@ -3993,7 +3832,7 @@
                 window.renderLoginView();
                 window.showModal(
                     'Koneksi Firebase Gagal',
-                    'Aplikasi belum dapat terhubung ke Firebase. Periksa konfigurasi project, aktifkan Anonymous Authentication, pastikan Firestore Database tersedia, dan sesuaikan Security Rules. Detail teknis dapat dilihat di Console browser (F12).',
+                    'Aplikasi belum dapat membaca/menulis ke Firestore. Pastikan Firestore Database telah dibuat di Firebase Console (project: cbt-01-9ff05) dan tab Rules telah diatur ke: allow read, write: if true;',
                     'error'
                 );
             }
