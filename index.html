@@ -328,7 +328,11 @@
         }
 
         async function syncCollectionRecord(collectionName, docId, dataObj, isDelete = false) {
-            if (IS_PREVIEW || !db) return true;
+            if (IS_PREVIEW) return true;
+            if (!db || !auth?.currentUser) {
+                console.error('Firestore belum siap: database atau sesi autentikasi tidak tersedia.');
+                return false;
+            }
             try {
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
                 if (isDelete) {
@@ -344,31 +348,56 @@
         }
 
         async function initFirebaseProduction() {
-            if (IS_PREVIEW) return;
+            if (IS_PREVIEW) return true;
+
+            const firebaseConfig = {
+                apiKey: "AIzaSyDw_1kWRnt7dQHnSLerhevPw65TY64QW5s",
+                authDomain: "cbt-01-9ff05.firebaseapp.com",
+                projectId: "cbt-01-9ff05",
+                storageBucket: "cbt-01-9ff05.firebasestorage.app",
+                messagingSenderId: "511625667431",
+                appId: "1:511625667431:web:784fbc26a20e8b81ef45c2"
+            };
+
             try {
-const firebaseConfig = {
-  apiKey: "AIzaSyDw_1kWRnt7dQHnSLerhevPw65TY64QW5s",
-  authDomain: "cbt-01-9ff05.firebaseapp.com",
-  projectId: "cbt-01-9ff05",
-  storageBucket: "cbt-01-9ff05.firebasestorage.app",
-  messagingSenderId: "511625667431",
-  appId: "1:511625667431:web:784fbc26a20e8b81ef45c2"
-};
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
+
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
                     await signInAnonymously(auth);
                 }
-                const collectionsToLoad = ['students', 'teachers', 'classes', 'subjects', 'questionBanks', 'questions', 'exams', 'examParticipants', 'examResults'];
+
+                const collectionsToLoad = [
+                    'students', 'teachers', 'classes', 'subjects',
+                    'questionBanks', 'questions', 'exams',
+                    'examParticipants', 'examResults'
+                ];
+
                 for (const colName of collectionsToLoad) {
-                    const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName));
+                    const snap = await getDocs(
+                        collection(db, 'artifacts', appId, 'public', 'data', colName)
+                    );
                     appData[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 }
+
+                // Muat pengaturan global bila tersedia.
+                const settingsSnap = await getDoc(
+                    doc(db, 'artifacts', appId, 'public', 'data', 'appSettings', 'global')
+                );
+                if (settingsSnap.exists()) {
+                    appData.settings = { ...appData.settings, ...settingsSnap.data() };
+                }
+
+                console.info('Firebase siap. Data berhasil dibaca dari Firestore.');
+                return true;
             } catch (e) {
                 console.error('Init Firebase Error:', e);
+                db = null;
+                auth = null;
+                throw e;
             }
         }
 
@@ -3953,10 +3982,21 @@ const firebaseConfig = {
             `;
         };
 
-        window.onload = function() {
+        window.onload = async function() {
             seedPreviewData();
-            initFirebaseProduction();
-            window.renderLoginView();
+            const loadingScreen = document.getElementById('loadingScreen');
+
+            try {
+                await initFirebaseProduction();
+                window.renderLoginView();
+            } catch (error) {
+                window.renderLoginView();
+                window.showModal(
+                    'Koneksi Firebase Gagal',
+                    'Aplikasi belum dapat terhubung ke Firebase. Periksa konfigurasi project, aktifkan Anonymous Authentication, pastikan Firestore Database tersedia, dan sesuaikan Security Rules. Detail teknis dapat dilihat di Console browser (F12).',
+                    'error'
+                );
+            }
         };
     </script>
 </body>
