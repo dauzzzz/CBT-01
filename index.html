@@ -88,7 +88,24 @@
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const APP_VERSION = '3.7.1';
-        const IS_PREVIEW = false;
+
+        // ============================================================================
+        // 1. PENGATURAN MODE & TEMPAT MELETAKKAN API KEY FIREBASE ANDA
+        // ============================================================================
+        // Ubah IS_PREVIEW menjadi false jika ingin langsung terhubung ke Firebase asli:
+        // const IS_PREVIEW = false;
+        const IS_PREVIEW = true;
+
+        // Letakkan API Key dan konfigurasi dari Firebase Console Anda tepat di bawah ini:
+        const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCqFxJZbhnJmqtCcmuVvMo6_zFyh53F6hU",
+  authDomain: "cbt-02-4e020.firebaseapp.com",
+  projectId: "cbt-02-4e020",
+  storageBucket: "cbt-02-4e020.firebasestorage.app",
+  messagingSenderId: "766587494867",
+  appId: "1:766587494867:web:addc6d41b258cf2c83cf26"
+        };
+        // ============================================================================
 
         let db = null;
         let auth = null;
@@ -346,17 +363,8 @@
         async function initFirebaseProduction() {
             if (IS_PREVIEW) return;
             try {
-                // MASUKKAN KONFIGURASI FIREBASE ANDA DI SINI
-                const firebaseConfig = {
-                    apiKey: "AIzaSyDw_1kWRnt7dQHnSLerhevPw65TY64QW5s",
-                    authDomain: "cbt-01-9ff05.firebaseapp.com",
-                    projectId: "cbt-01-9ff05",
-                    storageBucket: "cbt-01-9ff05.firebasestorage.app",
-                    messagingSenderId: "511625667431",
-                    appId: "1:511625667431:web:784fbc26a20e8b81ef45c2"
-                };
-
-                const app = initializeApp(firebaseConfig);
+                // Menggunakan konfigurasi FIREBASE_CONFIG yang sudah diletakkan di bagian atas script
+                const app = initializeApp(FIREBASE_CONFIG);
                 auth = getAuth(app);
                 db = getFirestore(app);
                 
