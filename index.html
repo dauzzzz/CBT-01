@@ -260,8 +260,7 @@
                         await signInAnonymously(auth);
                     }
                 } catch (authErr) {
-                    console.warn('Custom token sign-in skipped/failed, falling back to anonymous auth:', authErr);
-                    await signInAnonymously(auth);
+                    console.warn('Authentication restricted or failed (e.g. Anonymous Auth disabled in Firebase console). Continuing without blocking:', authErr);
                 }
 
                 if (statusText) statusText.innerText = 'Mengunduh database utama dari Firestore...';
