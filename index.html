@@ -271,9 +271,14 @@
         window.triggerRealtimeUIRefresh = function(sourceCollection = '') {
             if (realtimeRefreshDebounce) clearTimeout(realtimeRefreshDebounce);
             realtimeRefreshDebounce = setTimeout(() => {
+                // Jangan lakukan auto-refresh / re-render halaman jika Admin sedang berada di menu Bank Soal
+                if (appData.currentUser && appData.currentUser.role === 'admin' && appData.activeAdminMenu === 'questionBanks') {
+                    return;
+                }
+
                 updateLiveSyncIndicator('updated', 'Data Diperbarui');
 
-                // 1. Jika di halaman Login (belum login), perbarui banner ujian aktif jika tidak sedang mengetik НИSN/Email
+                // 1. Jika di halaman Login (belum login), perbarui banner ujian aktif jika tidak sedang mengetik NISN/Email
                 if (!appData.currentUser) {
                     if (!isUserTypingInFilterInput()) {
                         window.renderLoginView();
@@ -298,24 +303,6 @@
                     const mainEl = document.getElementById('adminMainContent');
                     if (!mainEl) return;
                     const activeMenu = appData.activeAdminMenu;
-
-                    // Proteksi khusus saat Admin sedang mengetik di Form Bank Soal agar ketikan tidak hilang
-                    if (activeMenu === 'questionBanks' && isUserTypingInBankSoalForm()) {
-                        const selectedBank = appData.filters.questionBankId || 'ALL';
-                        const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
-                        const selDropdown = document.getElementById('formSelectExistingQuestion');
-                        if (selDropdown) {
-                            const curVal = selDropdown.value;
-                            const opts = filteredQuestions.map((q, idx) => `<option value="${q.id}" ${curVal === q.id ? 'selected' : ''}>Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(q.questionText.slice(0, 40))}...</option>`).join('');
-                            selDropdown.innerHTML = `<option value="">-- Pilih Soal (1-${filteredQuestions.length}) untuk Diedit --</option>${opts}`;
-                        }
-                        const bankSel = document.getElementById('filterBankSelector');
-                        if (bankSel) {
-                            const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${selectedBank === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
-                            bankSel.innerHTML = `<option value="ALL">-- Semua Paket Bank Soal (${appData.questions.length} Soal) --</option>${bankOpts}`;
-                        }
-                        return;
-                    }
 
                     // Proteksi jika Admin sedang mengetik di kotak pencarian siswa atau input pengaturan
                     if ((activeMenu === 'students' || activeMenu === 'settings' || activeMenu === 'spreadsheet') && isUserTypingInFilterInput()) {
