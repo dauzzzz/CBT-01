@@ -4061,42 +4061,51 @@
                 }).join('');
             } else if (q.type === 'true_false') {
                 const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
-                const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
+                const curObj = (typeof currentStudentAnswers[q.id] === 'object' && currentStudentAnswers[q.id] !== null && !Array.isArray(currentStudentAnswers[q.id]))
+                    ? currentStudentAnswers[q.id]
+                    : {};
 
-                if (isMultiTF) {
-                    const curObj = (typeof currentStudentAnswers[q.id] === 'object' && currentStudentAnswers[q.id] !== null && !Array.isArray(currentStudentAnswers[q.id]))
-                        ? currentStudentAnswers[q.id]
-                        : {};
-                    answerInputHtml = opts.map((stmt, idx) => {
-                        const chosen = curObj[String(idx)] || '';
-                        return `
-                            <div class="p-3.5 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                <span class="text-sm font-medium text-slate-800"><strong class="text-blue-600 mr-1">${idx + 1}.</strong> ${escapeHtml(stmt)}</span>
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="px-3.5 py-1.5 rounded-xl text-xs font-extrabold border transition ${chosen === 'Benar' ? 'bg-blue-600 text-white border-blue-600 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-blue-400'}">Benar</button>
-                                    <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="px-3.5 py-1.5 rounded-xl text-xs font-extrabold border transition ${chosen === 'Salah' ? 'bg-blue-600 text-white border-blue-600 shadow-xs' : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-blue-400'}">Salah</button>
-                                </div>
-                            </div>
-                        `;
-                    }).join('');
-                } else {
-                    const cur = currentStudentAnswers[q.id] || '';
-                    answerInputHtml = ['Benar', 'Salah'].map((val, i) => {
-                        const letter = i === 0 ? 'B' : 'S';
-                        const selected = cur === val;
-                        return `
-                            <label onclick="window.saveAnswerAndRefresh('${q.id}', '${val}')" class="flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
-                                <div class="flex items-center gap-3.5">
-                                    <span class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-extrabold ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                    <span class="text-sm font-bold text-slate-800">${val}</span>
-                                </div>
-                                <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600' : 'border-slate-300'}">
-                                    ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
-                                </span>
-                            </label>
-                        `;
-                    }).join('');
-                }
+                // Render Model Tabel Interaktif (3 Kolom: PERNYATAAN, BENAR, SALAH)
+                const rowsHtml = opts.map((stmt, idx) => {
+                    const letter = String.fromCharCode(65 + idx);
+                    const chosen = curObj[String(idx)] || '';
+                    const isBenar = chosen === 'Benar';
+                    const isSalah = chosen === 'Salah';
+                    return `
+                        <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition">
+                            <td class="p-4 text-xs sm:text-sm font-medium text-slate-800 leading-relaxed">
+                                <strong class="text-indigo-700 mr-1.5">${letter}.</strong> ${escapeHtml(stmt)}
+                            </td>
+                            <td class="p-3 text-center w-24 sm:w-32">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2 px-3 rounded-xl text-xs font-extrabold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
+                                    Benar
+                                </button>
+                            </td>
+                            <td class="p-3 text-center w-24 sm:w-32">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2 px-3 rounded-xl text-xs font-extrabold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
+                                    Salah
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                answerInputHtml = `
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 border-b border-slate-200 text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">
+                                    <th class="p-4">Pernyataan</th>
+                                    <th class="p-3 text-center w-24 sm:w-32">Benar</th>
+                                    <th class="p-3 text-center w-24 sm:w-32">Salah</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
             } else if (q.type === 'matching') {
                 const pairs = Array.isArray(q.matchingPairs) ? q.matchingPairs : [];
                 const rightOptions = pairs.map(p => p.right);
@@ -4455,15 +4464,22 @@
                         wrong++;
                     }
                 } else if (q.type === 'true_false') {
-                    if (Array.isArray(q.correctAnswer)) {
-                        const totalStmts = q.correctAnswer.length || 1;
+                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
+                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
+
+                    if (isMultiTF) {
+                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+                        const totalStmts = keyArr.length || opts.length || 1;
                         let matchedStmts = 0;
-                        q.correctAnswer.forEach((kVal, idx) => {
-                            const studentVal = (typeof ans === 'object' && ans !== null) ? ans[String(idx)] : '';
-                            if (studentVal && String(studentVal).trim().toLowerCase() === String(kVal).trim().toLowerCase()) {
+                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
+                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
+                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
+                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
+                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
+                            if (normStudent && normStudent === normKey) {
                                 matchedStmts++;
                             }
-                        });
+                        }
                         if (matchedStmts === totalStmts) {
                             totalScore += q.weight;
                             correct++;
