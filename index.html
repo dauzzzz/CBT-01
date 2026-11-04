@@ -88,7 +88,7 @@
         import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const APP_VERSION = '3.7.1';
-        const IS_PREVIEW = false;
+        const IS_PREVIEW = true;
 
         let db = null;
         let auth = null;
@@ -329,8 +329,8 @@
 
         async function syncCollectionRecord(collectionName, docId, dataObj, isDelete = false) {
             if (IS_PREVIEW) return true;
-            if (!db) {
-                console.error('Firestore belum siap: koneksi database belum berhasil diinisialisasi.');
+            if (!db || !auth?.currentUser) {
+                console.error('Firestore belum siap: database atau sesi autentikasi tidak tersedia.');
                 return false;
             }
             try {
@@ -2116,7 +2116,7 @@
                             <div class="max-h-80 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
                                 <table class="w-full text-left border-collapse">
                                     <thead>
-                                        <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
+                                        <tr class="bg-slate-100 border-b border-slate-200text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
                                             <th class="px-3 py-2">No</th>
                                             <th class="px-3 py-2">Tipe</th>
                                             <th class="px-3 py-2 text-center">Bobot</th>
