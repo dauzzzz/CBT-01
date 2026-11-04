@@ -168,6 +168,11 @@
         let examTimerInterval = null;
         let periodicAutoSaveInterval = null;
         let sessionWatcherUnsubscribe = null;
+        let globalRealtimeUnsubscribes = [];
+        let fallbackPollingInterval = null;
+        let realtimeRefreshDebounce = null;
+        let syncBadgeTimeout = null;
+        let isInitialRealtimeLoad = true;
         let remainingSeconds = 0;
         let currentExamEndTimeMs = 0;
         let currentExamStartedAtMs = 0;
@@ -220,19 +225,138 @@
             if (appData.activityLogs.length > 15) appData.activityLogs.pop();
         }
 
+        function updateLiveSyncIndicator(state = 'idle', labelText = '') {
+            const badges = document.querySelectorAll('.live-sync-badge');
+            badges.forEach(badge => {
+                if (state === 'syncing') {
+                    badge.className = 'live-sync-badge px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold flex items-center gap-1.5 transition-all';
+                    badge.innerHTML = `<i class="fa-solid fa-rotate fa-spin text-[10px]"></i> <span>${escapeHtml(labelText || 'Menyinkronkan...')}</span>`;
+                } else if (state === 'updated') {
+                    badge.className = 'live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-2xs';
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span> <span>${escapeHtml(labelText || 'Data Diperbarui')}</span>`;
+                } else if (state === 'error') {
+                    badge.className = 'live-sync-badge px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-bold flex items-center gap-1.5 transition-all';
+                    badge.innerHTML = `<i class="fa-solid fa-wifi text-[10px]"></i> <span>Mode Rekoneksi...</span>`;
+                } else {
+                    badge.className = 'live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/80 text-emerald-700 text-[11px] font-bold flex items-center gap-1.5 transition-all';
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Live Sync Aktif</span>`;
+                }
+            });
+
+            if (state === 'updated' || state === 'syncing') {
+                if (syncBadgeTimeout) clearTimeout(syncBadgeTimeout);
+                syncBadgeTimeout = setTimeout(() => {
+                    updateLiveSyncIndicator('idle');
+                }, 2200);
+            }
+        }
+
+        function isUserTypingInBankSoalForm() {
+            const activeEl = document.activeElement;
+            if (!activeEl) return false;
+            const formIds = [
+                'qFormNum', 'qFormType', 'qFormWeight', 'qFormStimulus',
+                'qFormStimulusImg', 'qFormText', 'qFormQuestionImg',
+                'qOptA', 'qOptB', 'qOptC', 'qOptD', 'qFormKey', 'qFormExplanation'
+            ];
+            return formIds.includes(activeEl.id);
+        }
+
+        function isUserTypingInFilterInput() {
+            const activeEl = document.activeElement;
+            if (!activeEl) return false;
+            return activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT';
+        }
+
+        window.triggerRealtimeUIRefresh = function(sourceCollection = '') {
+            if (realtimeRefreshDebounce) clearTimeout(realtimeRefreshDebounce);
+            realtimeRefreshDebounce = setTimeout(() => {
+                updateLiveSyncIndicator('updated', 'Data Diperbarui');
+
+                // 1. Jika di halaman Login (belum login), perbarui banner ujian aktif jika tidak sedang mengetik НИSN/Email
+                if (!appData.currentUser) {
+                    if (!isUserTypingInFilterInput()) {
+                        window.renderLoginView();
+                    }
+                    return;
+                }
+
+                // 2. Jika sedang login sebagai Siswa
+                if (appData.currentUser.role === 'student') {
+                    if (!isExamWorkspaceActive) {
+                        const modalEl = document.getElementById('customModal');
+                        const isModalOpen = modalEl && !modalEl.classList.contains('hidden');
+                        if (!isModalOpen) {
+                            window.renderStudentPortal(false);
+                        }
+                    }
+                    return;
+                }
+
+                // 3. Jika sedang login sebagai Administrator
+                if (appData.currentUser.role === 'admin') {
+                    const mainEl = document.getElementById('adminMainContent');
+                    if (!mainEl) return;
+                    const activeMenu = appData.activeAdminMenu;
+
+                    // Proteksi khusus saat Admin sedang mengetik di Form Bank Soal agar ketikan tidak hilang
+                    if (activeMenu === 'questionBanks' && isUserTypingInBankSoalForm()) {
+                        const selectedBank = appData.filters.questionBankId || 'ALL';
+                        const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
+                        const selDropdown = document.getElementById('formSelectExistingQuestion');
+                        if (selDropdown) {
+                            const curVal = selDropdown.value;
+                            const opts = filteredQuestions.map((q, idx) => `<option value="${q.id}" ${curVal === q.id ? 'selected' : ''}>Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(q.questionText.slice(0, 40))}...</option>`).join('');
+                            selDropdown.innerHTML = `<option value="">-- Pilih Soal (1-${filteredQuestions.length}) untuk Diedit --</option>${opts}`;
+                        }
+                        const bankSel = document.getElementById('filterBankSelector');
+                        if (bankSel) {
+                            const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${selectedBank === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
+                            bankSel.innerHTML = `<option value="ALL">-- Semua Paket Bank Soal (${appData.questions.length} Soal) --</option>${bankOpts}`;
+                        }
+                        return;
+                    }
+
+                    // Proteksi jika Admin sedang mengetik di kotak pencarian siswa atau input pengaturan
+                    if ((activeMenu === 'students' || activeMenu === 'settings' || activeMenu === 'spreadsheet') && isUserTypingInFilterInput()) {
+                        return;
+                    }
+
+                    // Render ulang bagian konten menu aktif secara instan tanpa menutup modal yang sedang terbuka
+                    window.renderAdminCurrentSection();
+                }
+            }, 120);
+        };
+
         async function syncCollectionRecord(collectionName, docId, dataObj, isDelete = false) {
             if (IS_PREVIEW || !db) return true;
             try {
+                updateLiveSyncIndicator('syncing', 'Menyinkronkan...');
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
                 if (isDelete) {
                     await deleteDoc(ref);
+                    if (Array.isArray(appData[collectionName])) {
+                        appData[collectionName] = appData[collectionName].filter(item => (item.id || item.resultId) !== docId);
+                    }
                 } else {
                     const cleanPayload = sanitizeFirestoreData(dataObj);
                     await setDoc(ref, cleanPayload, { merge: true });
+                    if (Array.isArray(appData[collectionName])) {
+                        const keyField = collectionName === 'examResults' ? 'resultId' : 'id';
+                        const idx = appData[collectionName].findIndex(item => (item[keyField] || item.id) === docId);
+                        const mergedObj = { id: docId, ...cleanPayload };
+                        if (idx !== -1) {
+                            appData[collectionName][idx] = { ...appData[collectionName][idx], ...mergedObj };
+                        } else {
+                            appData[collectionName].push(mergedObj);
+                        }
+                    }
                 }
+                updateLiveSyncIndicator('updated', 'Data Diperbarui');
                 return true;
             } catch (err) {
                 console.error(`Firestore Sync Error [${collectionName}/${docId}]:`, err);
+                updateLiveSyncIndicator('error');
                 return false;
             }
         }
@@ -299,12 +423,95 @@
                     appData.settings = { ...appData.settings, ...settingsSnap.data() };
                 }
 
-                console.info('Firebase siap. Seluruh koleksi termasuk examSessions berhasil dimuat.');
+                // Pasang Real-Time Subscription (onSnapshot) untuk seluruh koleksi utama
+                setupGlobalRealtimeSubscriptions();
+
+                console.info('Firebase siap. Real-time subscription aktif untuk seluruh koleksi.');
                 return true;
             } catch (e) {
                 console.error('Init Firebase Error:', e);
                 throw e;
             }
+        }
+
+        function setupGlobalRealtimeSubscriptions() {
+            if (IS_PREVIEW || !db) return;
+
+            // Bersihkan subscription lama bila ada
+            globalRealtimeUnsubscribes.forEach(unsub => {
+                try { unsub(); } catch (e) {}
+            });
+            globalRealtimeUnsubscribes = [];
+
+            const collectionsToWatch = [
+                'students', 'teachers', 'classes', 'subjects',
+                'questionBanks', 'questions', 'exams',
+                'examParticipants', 'examSessions', 'examResults'
+            ];
+
+            collectionsToWatch.forEach(colName => {
+                const colRef = collection(db, 'artifacts', appId, 'public', 'data', colName);
+                const unsub = onSnapshot(colRef, (snapshot) => {
+                    const docsList = snapshot.docs.map(d => {
+                        const raw = d.data();
+                        if (colName === 'examResults') {
+                            return { id: d.id, resultId: raw.resultId || d.id, ...raw };
+                        }
+                        return { id: d.id, ...raw };
+                    });
+
+                    // Urutkan soal berdasarkan nomor urut agar konsisten
+                    if (colName === 'questions') {
+                        docsList.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+                    }
+
+                    appData[colName] = docsList;
+
+                    if (!isInitialRealtimeLoad) {
+                        window.triggerRealtimeUIRefresh(colName);
+                    }
+                }, (err) => {
+                    console.warn(`Realtime listener warning [${colName}]:`, err);
+                    updateLiveSyncIndicator('error');
+                });
+                globalRealtimeUnsubscribes.push(unsub);
+            });
+
+            // Real-time listener untuk dokumen pengaturan global
+            const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'appSettings', 'global');
+            const unsubSettings = onSnapshot(settingsRef, (snap) => {
+                if (snap.exists()) {
+                    appData.settings = { ...appData.settings, ...snap.data() };
+                    if (!isInitialRealtimeLoad) {
+                        window.triggerRealtimeUIRefresh('appSettings');
+                    }
+                }
+            }, (err) => {
+                console.warn('Realtime settings listener warning:', err);
+            });
+            globalRealtimeUnsubscribes.push(unsubSettings);
+
+            setTimeout(() => {
+                isInitialRealtimeLoad = false;
+            }, 800);
+
+            // Fallback polling ringan setiap 15 detik untuk menjaga konsistensi jika koneksi sempat idle
+            if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
+            fallbackPollingInterval = setInterval(async () => {
+                if (!db || document.hidden) return;
+                try {
+                    const dynamicCols = ['exams', 'examParticipants', 'examSessions', 'examResults'];
+                    for (const cName of dynamicCols) {
+                        const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', cName));
+                        appData[cName] = snap.docs.map(d => {
+                            const raw = d.data();
+                            return cName === 'examResults' ? { id: d.id, resultId: raw.resultId || d.id, ...raw } : { id: d.id, ...raw };
+                        });
+                    }
+                } catch (pollErr) {
+                    // Abaikan jika offline sementara
+                }
+            }, 15000);
         }
 
         let currentModalCallback = null;
@@ -741,7 +948,10 @@
                                 <h1 class="text-base font-extrabold text-slate-900">${escapeHtml(activeMenuObj.label)}</h1>
                                 <p class="text-[11px] text-slate-500">${escapeHtml(appData.settings.schoolName)}</p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2.5">
+                                <div class="live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/80 text-emerald-700 text-[11px] font-bold flex items-center gap-1.5 transition-all">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Live Sync Aktif</span>
+                                </div>
                                 <select onchange="window.switchAdminMenu(this.value)" class="md:hidden px-3 py-1.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold">
                                     ${ADMIN_MENUS.map(m => `<option value="${m.id}" ${m.id === appData.activeAdminMenu ? 'selected' : ''}>${escapeHtml(m.label)}</option>`).join('')}
                                 </select>
@@ -3015,29 +3225,62 @@
         };
 
         window.resetStudentExamSession = function(studentId, examId = '') {
-            window.showModal('Konfirmasi Reset Sesi', 'Mereset sesi akan menghapus progres aktif, hasil ujian, dan hitungan pelanggaran siswa ini agar siswa dapat mengerjakan ujian kembali dari awal. Lanjutkan?', 'error', async (confirmed) => {
+            window.showModal('Konfirmasi Reset Sesi', 'Mereset sesi akan menghapus progres aktif, jawaban tersimpan, hasil ujian, dan hitungan pelanggaran siswa ini agar siswa dapat mengerjakan ujian kembali dari awal. Lanjutkan?', 'error', async (confirmed) => {
                 if (confirmed) {
+                    updateLiveSyncIndicator('syncing', 'Mereset Sesi...');
                     const toRemoveRes = appData.examResults.filter(r => r.studentId === studentId && (!examId || r.examId === examId));
                     for (const r of toRemoveRes) {
-                        await syncCollectionRecord('examResults', r.resultId || r.id, null, true);
+                        const docId = r.id || r.resultId;
+                        await syncCollectionRecord('examResults', docId, null, true);
                     }
                     appData.examResults = appData.examResults.filter(r => !(r.studentId === studentId && (!examId || r.examId === examId)));
 
+                    // Hapus sesi dari daftar examSessions & pastikan ID deterministik SES_{examId}_{studentId} juga dihapus dari Firestore
                     const toRemoveSess = appData.examSessions.filter(ss => ss.studentId === studentId && (!examId || ss.examId === examId));
+                    const deletedSessIds = new Set();
                     for (const ss of toRemoveSess) {
+                        deletedSessIds.add(ss.id);
                         await syncCollectionRecord('examSessions', ss.id, null, true);
+                    }
+                    const targetExams = examId ? [examId] : appData.exams.map(e => e.id);
+                    for (const exId of targetExams) {
+                        const deterministicSessId = getSessionDocId(exId, studentId);
+                        if (!deletedSessIds.has(deterministicSessId)) {
+                            await syncCollectionRecord('examSessions', deterministicSessId, null, true);
+                        }
                     }
                     appData.examSessions = appData.examSessions.filter(ss => !(ss.studentId === studentId && (!examId || ss.examId === examId)));
 
-                    const part = appData.examParticipants.find(p => p.studentId === studentId && (!examId || p.examId === examId));
-                    if (part) {
-                        part.status = 'Belum Mulai';
-                        part.violationCount = 0;
-                        await syncCollectionRecord('examParticipants', part.id, part);
+                    const matchingParts = appData.examParticipants.filter(p => p.studentId === studentId && (!examId || p.examId === examId));
+                    if (matchingParts.length > 0) {
+                        for (const part of matchingParts) {
+                            part.status = 'Belum Mulai';
+                            part.violationCount = 0;
+                            await syncCollectionRecord('examParticipants', part.id, part);
+                        }
+                    } else if (examId) {
+                        const stdObj = appData.students.find(s => s.id === studentId);
+                        if (stdObj) {
+                            const newPart = {
+                                id: 'PRT-' + stdObj.id + '-' + examId,
+                                examId,
+                                studentId: stdObj.id,
+                                nisn: stdObj.nisn,
+                                studentName: stdObj.fullName,
+                                className: stdObj.className || '4',
+                                status: 'Belum Mulai',
+                                violationCount: 0,
+                                extraTimeMinutes: 0
+                            };
+                            appData.examParticipants.push(newPart);
+                            await syncCollectionRecord('examParticipants', newPart.id, newPart);
+                        }
                     }
+
                     const stdObj = appData.students.find(s => s.id === studentId);
                     logActivity(`Sesi ujian siswa ${stdObj ? stdObj.fullName : studentId} telah direset oleh Administrator.`);
-                    renderParticipantsContent(document.getElementById('adminMainContent'));
+                    window.renderAdminCurrentSection();
+                    updateLiveSyncIndicator('updated', 'Sesi Direset');
                 }
             }, { okText: 'Ya, Reset Sesi' });
         };
@@ -3056,17 +3299,24 @@
                 'error',
                 async (confirmed) => {
                     if (confirmed) {
+                        updateLiveSyncIndicator('syncing', 'Mereset Semua Sesi...');
                         let successCount = 0;
                         for (const s of appData.students) {
                             const toRemove = appData.examResults.filter(r => r.studentId === s.id && r.examId === examId);
                             for (const r of toRemove) {
-                                await syncCollectionRecord('examResults', r.resultId || r.id, null, true);
+                                await syncCollectionRecord('examResults', r.id || r.resultId, null, true);
                             }
                             appData.examResults = appData.examResults.filter(r => !(r.studentId === s.id && r.examId === examId));
 
                             const sessRemove = appData.examSessions.filter(ss => ss.studentId === s.id && ss.examId === examId);
+                            const removedIds = new Set();
                             for (const ss of sessRemove) {
+                                removedIds.add(ss.id);
                                 await syncCollectionRecord('examSessions', ss.id, null, true);
+                            }
+                            const detId = getSessionDocId(examId, s.id);
+                            if (!removedIds.has(detId)) {
+                                await syncCollectionRecord('examSessions', detId, null, true);
                             }
                             appData.examSessions = appData.examSessions.filter(ss => !(ss.studentId === s.id && ss.examId === examId));
 
@@ -3094,7 +3344,8 @@
                         }
 
                         logActivity(`Administrator mereset sesi seluruh peserta (${successCount} siswa) untuk paket ujian ${examName}.`);
-                        renderParticipantsContent(document.getElementById('adminMainContent'));
+                        window.renderAdminCurrentSection();
+                        updateLiveSyncIndicator('updated', 'Semua Sesi Direset');
                         window.showModal('Reset Sesi Berhasil', `Berhasil mereset sesi ujian untuk ${successCount} peserta. Seluruh siswa kini dapat mengikuti ujian kembali dari awal.`, 'success');
                     }
                     return true;
@@ -3227,7 +3478,20 @@
             try {
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'examSessions', sessId);
                 sessionWatcherUnsubscribe = onSnapshot(ref, (snap) => {
-                    if (!snap.exists() || !isExamWorkspaceActive) return;
+                    if (!isExamWorkspaceActive) return;
+                    if (!snap.exists()) {
+                        // Dokumen sesi dihapus oleh Admin (Reset Sesi saat siswa sedang membuka ruang ujian)
+                        window.stopAllExamTimersAndWatchers();
+                        window.showModal(
+                            'Sesi Ujian Direset Pengawas',
+                            'Sesi ujian Anda telah direset oleh Pengawas / Administrator. Silakan mulai kembali ujian dari halaman Portal Siswa.',
+                            'info',
+                            () => {
+                                window.renderStudentPortal(false);
+                            }
+                        );
+                        return;
+                    }
                     const remoteData = snap.data();
                     if (remoteData.status === 'SUBMITTED') {
                         window.stopAllExamTimersAndWatchers();
@@ -3331,7 +3595,12 @@
                             <h1 class="text-base font-extrabold text-slate-900">Portal Ujian Siswa</h1>
                             <p class="text-xs text-slate-500">Selamat datang, <strong>${escapeHtml(student.name)}</strong> (Kelas: ${escapeHtml(student.className || '4')} • NISN: ${escapeHtml(student.nisn)})</p>
                         </div>
-                        <button type="button" onclick="window.logoutApp()" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-power-off mr-1"></i> Keluar</button>
+                        <div class="flex items-center gap-2.5">
+                            <div class="live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/80 text-emerald-700 text-[11px] font-bold flex items-center gap-1.5 transition-all">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span>Live Sync Aktif</span>
+                            </div>
+                            <button type="button" onclick="window.logoutApp()" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-power-off mr-1"></i> Keluar</button>
+                        </div>
                     </header>
                     <main class="p-6 max-w-4xl mx-auto w-full space-y-6">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">${examCards || '<p class="text-xs text-slate-400">Tidak ada jadwal ujian aktif.</p>'}</div>
