@@ -2923,11 +2923,15 @@
         };
 
         function renderResultsContent(container) {
-            const rows = appData.examResults.map((r, idx) => `
+            const rows = appData.examResults.map((r, idx) => {
+                const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
+                const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
+                return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50">
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
                     <td class="px-4 py-3 text-xs font-mono">${escapeHtml(r.nisn)}</td>
                     <td class="px-4 py-3 text-xs font-bold">${escapeHtml(r.studentName)}</td>
+                    <td class="px-4 py-3 text-xs font-semibold ${schoolVal === '-' ? 'text-slate-400 italic' : 'text-indigo-700'}">${escapeHtml(schoolVal)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(r.className)}</td>
                     <td class="px-4 py-3 text-xs font-extrabold text-emerald-700">${r.finalScore}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${r.essayGradingStatus === 'Sudah Dinilai' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(r.essayGradingStatus)}</span></td>
@@ -2935,7 +2939,8 @@
                         <button type="button" onclick="window.openEssayGradingModal('${r.resultId}')" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold"><i class="fa-solid fa-pen-clip mr-1"></i> Koreksi Uraian</button>
                     </td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
 
             container.innerHTML = `
                 <div class="space-y-4">
@@ -2955,8 +2960,8 @@
                     </div>
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <table class="w-full text-left border-collapse">
-                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Siswa</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Nilai Akhir</th><th class="px-4 py-3">Status Uraian</th><th class="px-4 py-3">Aksi</th></tr></thead>
-                            <tbody>${rows || '<tr><td colspan="7" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada hasil ujian yang masuk.</td></tr>'}</tbody>
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Siswa</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Nilai Akhir</th><th class="px-4 py-3">Status Uraian</th><th class="px-4 py-3">Aksi</th></tr></thead>
+                            <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada hasil ujian yang masuk.</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>
@@ -3003,8 +3008,12 @@
         };
 
         window.exportResultsExcel = function() {
-            const headers = ['No', 'NISN', 'Nama Siswa', 'Kelas', 'Nama Ujian', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
-            const rows = appData.examResults.map((r, i) => [i + 1, r.nisn, r.studentName, r.className, r.examName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount, r.essayGradingStatus, r.submittedAt]);
+            const headers = ['No', 'NISN', 'Nama Siswa', 'Asal Sekolah', 'Kelas', 'Nama Ujian', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
+            const rows = appData.examResults.map((r, i) => {
+                const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
+                const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
+                return [i + 1, r.nisn, r.studentName, schoolVal, r.className, r.examName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount, r.essayGradingStatus, r.submittedAt];
+            });
             window.downloadExcelFile('Rekap_Nilai_CBT_Sekolah.xlsx', headers, rows);
         };
 
@@ -3014,19 +3023,24 @@
                 window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak rekap nilai.', 'error');
                 return;
             }
-            const rowsHtml = appData.examResults.map((r, i) => `
+            const rowsHtml = appData.examResults.map((r, i) => {
+                const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
+                const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
+                return `
                 <tr>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${i + 1}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;font-family:monospace;">${escapeHtml(r.nisn)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;font-weight:bold;">${escapeHtml(r.studentName)}</td>
+                    <td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(schoolVal)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${escapeHtml(r.className)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${r.correctCount || 0}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${r.wrongCount || 0}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;color:#047857;">${r.finalScore}</td>
                 </tr>
-            `).join('') || '<tr><td colspan="7" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian.</td></tr>';
+            `;
+            }).join('') || '<tr><td colspan="8" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian.</td></tr>';
 
-            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai</title><style>body{font-family:sans-serif;padding:24px;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}</style></head><body><h2 style="text-align:center;margin:0;">${escapeHtml(appData.settings.schoolName)}</h2><p style="text-align:center;margin:4px 0 16px;">REKAPITULASI HASIL UJIAN CBT</p><table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Kelas</th><th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
+            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai</title><style>body{font-family:sans-serif;padding:24px;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}</style></head><body><h2 style="text-align:center;margin:0;">${escapeHtml(appData.settings.schoolName)}</h2><p style="text-align:center;margin:4px 0 16px;">REKAPITULASI HASIL UJIAN CBT</p><table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Asal Sekolah</th><th>Kelas</th><th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
             printWin.document.close();
             printWin.focus();
             setTimeout(() => { printWin.print(); }, 250);
