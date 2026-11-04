@@ -175,6 +175,7 @@
         let isViolationModalOpen = false;
         let currentActiveExam = null;
         let currentExamQuestions = [];
+        let isDeletingQuestionBank = false;
 
         function handleVisibilityViolation() {
             if (document.hidden && isExamWorkspaceActive && currentActiveExam && !isViolationModalOpen) {
@@ -1093,6 +1094,7 @@
 
             const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
             const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${q.type.toUpperCase()}) - ${escapeHtml(q.questionText.slice(0, 40))}...</option>`).join('');
+            const canDeleteBank = selectedBank !== 'ALL' && appData.questionBanks.some(b => b.id === selectedBank);
 
             container.innerHTML = `
                 <div class="space-y-6">
@@ -1104,6 +1106,10 @@
                             </select>
                             <button type="button" onclick="window.openBankFormModal()" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-folder-plus mr-1"></i> Buat Paket Bank
+                            </button>
+                            <button type="button" id="btnDeleteSelectedBank" onclick="window.confirmDeleteQuestionBank()" ${!canDeleteBank || isDeletingQuestionBank ? 'disabled' : ''} class="px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${canDeleteBank && !isDeletingQuestionBank ? 'bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}" title="${canDeleteBank ? 'Hapus Paket Bank Soal yang Dipilih' : 'Pilih salah satu paket pada dropdown terlebih dahulu untuk menghapus'}">
+                                <i class="fa-solid ${isDeletingQuestionBank ? 'fa-spinner fa-spin' : 'fa-trash-can'}"></i>
+                                <span>${isDeletingQuestionBank ? 'Menghapus Paket...' : 'Hapus Paket'}</span>
                             </button>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
@@ -1298,6 +1304,141 @@
                 renderQuestionBanksContent(document.getElementById('adminMainContent'));
                 return true;
             }, { html, okText: 'Simpan Paket' });
+        };
+
+        window.confirmDeleteQuestionBank = function() {
+            if (isDeletingQuestionBank) return;
+
+            const selectedBankId = appData.filters.questionBankId || document.getElementById('filterBankSelector')?.value || 'ALL';
+            if (!selectedBankId || selectedBankId === 'ALL') {
+                window.showModal(
+                    'Pilih Paket Bank Soal',
+                    'Silakan pilih salah satu paket bank soal spesifik pada dropdown terlebih dahulu sebelum menekan tombol Hapus Paket.',
+                    'info'
+                );
+                return;
+            }
+
+            const targetBank = appData.questionBanks.find(b => b.id === selectedBankId);
+            if (!targetBank) {
+                window.showModal('Paket Tidak Ditemukan', 'Paket bank soal yang dipilih tidak ditemukan dalam daftar.', 'error');
+                return;
+            }
+
+            const relatedQuestions = appData.questions.filter(q => q.bankId === selectedBankId);
+            const questionCount = relatedQuestions.length;
+
+            const html = `
+                <div class="space-y-3 text-xs">
+                    <div class="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-red-900 space-y-1.5">
+                        <p class="font-extrabold text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-triangle-exclamation text-red-600"></i>
+                            Konfirmasi Penghapusan Permanen
+                        </p>
+                        <p class="text-[11px] text-red-700 leading-relaxed">
+                            Tindakan ini akan menghapus paket bank soal beserta seluruh butir soal di dalamnya secara permanen dari database <strong>Firebase Firestore</strong> dan tidak dapat dikembalikan.
+                        </p>
+                    </div>
+                    <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5 font-semibold text-slate-700">
+                        <div class="flex justify-between gap-2 py-1 border-b border-slate-200">
+                            <span>Nama Paket:</span>
+                            <span class="font-extrabold text-slate-900 text-right">${escapeHtml(targetBank.title)}</span>
+                        </div>
+                        <div class="flex justify-between gap-2 py-1 border-b border-slate-200">
+                            <span>Tingkat Kelas:</span>
+                            <span class="font-bold text-slate-800">Kelas ${escapeHtml(targetBank.classLevel || '-')}</span>
+                        </div>
+                        <div class="flex justify-between gap-2 py-1">
+                            <span>Jumlah Soal Terhubung:</span>
+                            <span class="font-extrabold text-red-600">${questionCount} Butir Soal</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            window.showModal(
+                'Hapus Paket Bank Soal',
+                '',
+                'error',
+                (confirmed) => {
+                    if (confirmed) {
+                        window.executeDeleteQuestionBank(selectedBankId);
+                    }
+                    return true;
+                },
+                { html, showCancel: true, okText: `Ya, Hapus Paket & ${questionCount} Soal` }
+            );
+        };
+
+        window.executeDeleteQuestionBank = async function(bankId) {
+            if (isDeletingQuestionBank) return;
+
+            const targetBank = appData.questionBanks.find(b => b.id === bankId);
+            if (!targetBank) return;
+
+            const relatedQuestions = appData.questions.filter(q => q.bankId === bankId);
+            const relatedQuestionIds = new Set(relatedQuestions.map(q => q.id));
+
+            isDeletingQuestionBank = true;
+            renderQuestionBanksContent(document.getElementById('adminMainContent'));
+
+            try {
+                // 1. Hapus setiap dokumen butir soal yang terhubung dengan paket ini di Firebase Firestore
+                for (const q of relatedQuestions) {
+                    const qDeleted = await syncCollectionRecord('questions', q.id, null, true);
+                    if (!qDeleted) {
+                        throw new Error(`Gagal menghapus butir soal ID: ${q.id} dari Firestore.`);
+                    }
+                }
+
+                // 2. Hapus dokumen paket bank soal dari Firebase Firestore
+                const bankDeleted = await syncCollectionRecord('questionBanks', bankId, null, true);
+                if (!bankDeleted) {
+                    throw new Error(`Gagal menghapus dokumen paket bank soal "${targetBank.title}" dari Firestore.`);
+                }
+
+                // 3. Bersihkan referensi soal yatim & bankId pada paket ujian (exams) yang terkait
+                for (const ex of appData.exams) {
+                    let examModified = false;
+                    if (ex.bankId === bankId) {
+                        ex.bankId = '';
+                        examModified = true;
+                    }
+                    if (Array.isArray(ex.questionIds) && ex.questionIds.some(qid => relatedQuestionIds.has(qid))) {
+                        ex.questionIds = ex.questionIds.filter(qid => !relatedQuestionIds.has(qid));
+                        examModified = true;
+                    }
+                    if (examModified) {
+                        await syncCollectionRecord('exams', ex.id, ex);
+                    }
+                }
+
+                // 4. Perbarui state memori aplikasi setelah seluruh operasi Firestore berhasil
+                appData.questions = appData.questions.filter(q => q.bankId !== bankId);
+                appData.questionBanks = appData.questionBanks.filter(b => b.id !== bankId);
+                appData.filters.questionBankId = 'ALL';
+
+                logActivity(`Paket Bank Soal "${targetBank.title}" beserta ${relatedQuestions.length} butir soal berhasil dihapus permanen dari Firebase.`);
+                isDeletingQuestionBank = false;
+
+                renderQuestionBanksContent(document.getElementById('adminMainContent'));
+                window.resetQuestionForm();
+
+                window.showModal(
+                    'Paket Bank Soal Dihapus',
+                    `Paket "${targetBank.title}" beserta ${relatedQuestions.length} butir soal di dalamnya telah berhasil dihapus secara permanen dari Firebase Firestore.`,
+                    'success'
+                );
+            } catch (err) {
+                console.error('Delete Question Bank Error:', err);
+                isDeletingQuestionBank = false;
+                renderQuestionBanksContent(document.getElementById('adminMainContent'));
+                window.showModal(
+                    'Gagal Menghapus Paket Bank Soal',
+                    `Terjadi kesalahan saat menghapus paket dari Firebase Firestore: ${err.message || 'Koneksi terputus'}`,
+                    'error'
+                );
+            }
         };
 
         window.deleteCurrentLoadedQuestion = function() {
