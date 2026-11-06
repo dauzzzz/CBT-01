@@ -1320,8 +1320,11 @@
         function renderQuestionBanksContent(container) {
             const selectedBank = appData.filters.questionBankId || 'ALL';
             const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${selectedBank === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
-            const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
+            const filteredQuestions = appData.questions
+                .filter(q => selectedBank === 'ALL' || q.bankId === selectedBank)
+                .sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
             const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${(q.type || 'pg').toUpperCase()}) - ${escapeHtml((q.questionText || '').slice(0, 40))}...</option>`).join('');
+            const canDeleteBank = selectedBank !== 'ALL' && appData.questionBanks.some(b => b.id === selectedBank);
 
             container.innerHTML = `
                 <div class="space-y-6">
@@ -1331,12 +1334,14 @@
                                 <option value="ALL">-- Semua Paket (${appData.questions.length} Soal) --</option>
                                 ${bankOpts}
                             </select>
-                            <button type="button" onclick="window.openBankFormModal()" class="px-3 py-2 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold"><i class="fa-solid fa-folder-plus mr-1"></i> Buat Paket Bank</button>
+                            <button type="button" onclick="window.openBankFormModal()" class="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition"><i class="fa-solid fa-folder-plus mr-1"></i> Buat Paket Bank</button>
+                            <button type="button" onclick="window.deleteCurrentQuestionBank()" class="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition ${!canDeleteBank ? 'opacity-50 cursor-not-allowed' : ''}" ${!canDeleteBank ? 'disabled' : ''}><i class="fa-solid fa-trash mr-1"></i> Hapus Paket</button>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="window.downloadQuestionTemplate()" class="px-3.5 py-2 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold"><i class="fa-solid fa-download mr-1"></i> Unduh Template Excel</button>
-                            <button type="button" onclick="window.triggerQuestionExcelImport()" class="px-3.5 py-2 bg-purple-50 text-purple-700 rounded-xl text-xs font-bold"><i class="fa-solid fa-file-excel mr-1"></i> Impor Excel Soal (.xlsx)</button>
-                            <button type="button" onclick="window.resetQuestionForm()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-plus mr-1"></i> Soal Baru</button>
+                            <button type="button" onclick="window.downloadQuestionTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition"><i class="fa-solid fa-download mr-1"></i> Unduh Template Excel</button>
+                            <button type="button" onclick="window.triggerQuestionExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition"><i class="fa-solid fa-file-excel mr-1"></i> Impor Excel Soal (.xlsx)</button>
+                            <button type="button" onclick="window.openExportQuestionModal()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"><i class="fa-solid fa-file-export mr-1"></i> Ekspor Soal (.xlsx)</button>
+                            <button type="button" onclick="window.resetQuestionForm()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition"><i class="fa-solid fa-plus mr-1"></i> Soal Baru</button>
                         </div>
                     </div>
 
@@ -1347,10 +1352,15 @@
                                     <h3 class="font-extrabold text-slate-900 text-sm"><i class="fa-solid fa-pen-to-square text-indigo-600 mr-1.5"></i> Form Input / Edit Soal</h3>
                                     <p class="text-[11px] text-slate-500">Live Sync otomatis dijeda saat Anda mengetik di halaman ini agar form tidak ter-reset.</p>
                                 </div>
-                                <select id="formSelectExistingQuestion" onchange="window.loadQuestionIntoForm(this.value)" class="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold max-w-[220px]">
-                                    <option value="">-- Pilih Soal (1-${filteredQuestions.length}) untuk Diedit --</option>
-                                    ${questionListOptions}
-                                </select>
+                                <div class="flex items-center gap-2">
+                                    <select id="formSelectExistingQuestion" onchange="window.loadQuestionIntoForm(this.value)" class="px-3 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold max-w-[220px]">
+                                        <option value="">-- Pilih Soal (1-${filteredQuestions.length}) untuk Diedit --</option>
+                                        ${questionListOptions}
+                                    </select>
+                                    <button type="button" id="btnDeleteCurrentQuestion" onclick="window.deleteCurrentLoadedQuestion()" class="hidden px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold" title="Hapus Soal Ini">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
                             </div>
 
                             <input type="hidden" id="editQuestionId" value="">
@@ -1360,8 +1370,9 @@
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Jenis Soal *</label>
                                     <select id="qFormType" onchange="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold">
                                         <option value="pg">PG (Pilihan Ganda)</option>
-                                        <option value="pg_complex">PG Kompleks</option>
+                                        <option value="pg_complex">PG Kompleks (Multi Jawaban)</option>
                                         <option value="true_false">Benar / Salah</option>
+                                        <option value="matching">Menjodohkan</option>
                                         <option value="short_answer">Isian Singkat</option>
                                         <option value="essay">Uraian / Esai</option>
                                     </select>
@@ -1373,8 +1384,16 @@
                                 <textarea id="qFormStimulus" rows="2" oninput="window.updateQuestionLivePreview()" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
                             </div>
                             <div>
+                                <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">URL Gambar Stimulus (Opsional)</label>
+                                <input type="text" id="qFormStimulusImg" oninput="window.updateQuestionLivePreview()" placeholder="https://..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
+                            </div>
+                            <div>
                                 <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teks Pertanyaan Soal *</label>
                                 <textarea id="qFormText" rows="3" oninput="window.updateQuestionLivePreview()" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">URL Gambar Soal (Opsional)</label>
+                                <input type="text" id="qFormQuestionImg" oninput="window.updateQuestionLivePreview()" placeholder="https://..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono">
                             </div>
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi / Pernyataan A</label><input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
@@ -1439,6 +1458,50 @@
             }, { html, okText: 'Simpan Paket' });
         };
 
+        window.deleteCurrentQuestionBank = function() {
+            const selectedBankId = appData.filters.questionBankId;
+            if (!selectedBankId || selectedBankId === 'ALL') {
+                window.showModal('Pilih Paket Bank Soal', 'Silakan pilih paket bank soal tertentu terlebih dahulu sebelum menghapus.', 'error');
+                return;
+            }
+            const bankObj = appData.questionBanks.find(b => b.id === selectedBankId);
+            const bankTitle = bankObj ? bankObj.title : 'Paket Terpilih';
+            const questionsInBank = appData.questions.filter(q => q.bankId === selectedBankId);
+
+            window.showModal(
+                'Konfirmasi Hapus Paket Bank Soal',
+                `Apakah Anda yakin ingin menghapus paket "${bankTitle}" beserta ${questionsInBank.length} butir soal di dalamnya?`,
+                'error',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    for (const q of questionsInBank) {
+                        appData.questions = appData.questions.filter(item => item.id !== q.id);
+                        await syncCollectionRecord('questions', q.id, null, true);
+                    }
+                    appData.questionBanks = appData.questionBanks.filter(b => b.id !== selectedBankId);
+                    await syncCollectionRecord('questionBanks', selectedBankId, null, true);
+                    appData.filters.questionBankId = 'ALL';
+                    renderQuestionBanksContent(document.getElementById('adminMainContent'));
+                    window.showModal('Berhasil Dihapus', `Paket bank soal "${bankTitle}" telah dihapus.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: 'Ya, Hapus Paket' }
+            );
+        };
+
+        window.deleteCurrentLoadedQuestion = function() {
+            const qId = document.getElementById('editQuestionId')?.value;
+            if (!qId) return;
+            window.showModal('Hapus Butir Soal', 'Apakah Anda yakin ingin menghapus butir soal ini?', 'error', async (confirmed) => {
+                if (confirmed) {
+                    appData.questions = appData.questions.filter(x => x.id !== qId);
+                    await syncCollectionRecord('questions', qId, null, true);
+                    renderQuestionBanksContent(document.getElementById('adminMainContent'));
+                }
+                return true;
+            }, { showCancel: true, okText: 'Hapus Soal' });
+        };
+
         window.updateQuestionLivePreview = function() {
             const num = document.getElementById('qFormNum')?.value || '1';
             const weight = document.getElementById('qFormWeight')?.value || '10';
@@ -1465,30 +1528,58 @@
 
         window.resetQuestionForm = function() {
             if (document.getElementById('editQuestionId')) document.getElementById('editQuestionId').value = '';
+            if (document.getElementById('formSelectExistingQuestion')) document.getElementById('formSelectExistingQuestion').value = '';
+            if (document.getElementById('btnDeleteCurrentQuestion')) document.getElementById('btnDeleteCurrentQuestion').classList.add('hidden');
             if (document.getElementById('qFormText')) document.getElementById('qFormText').value = '';
             if (document.getElementById('qFormStimulus')) document.getElementById('qFormStimulus').value = '';
+            if (document.getElementById('qFormStimulusImg')) document.getElementById('qFormStimulusImg').value = '';
+            if (document.getElementById('qFormQuestionImg')) document.getElementById('qFormQuestionImg').value = '';
             if (document.getElementById('qOptA')) document.getElementById('qOptA').value = '';
             if (document.getElementById('qOptB')) document.getElementById('qOptB').value = '';
             if (document.getElementById('qOptC')) document.getElementById('qOptC').value = '';
             if (document.getElementById('qOptD')) document.getElementById('qOptD').value = '';
             if (document.getElementById('qFormKey')) document.getElementById('qFormKey').value = '';
+            if (document.getElementById('qFormExplanation')) document.getElementById('qFormExplanation').value = '';
             window.updateQuestionLivePreview();
         };
 
         window.loadQuestionIntoForm = function(qId) {
+            const delBtn = document.getElementById('btnDeleteCurrentQuestion');
+            if (!qId) {
+                if (delBtn) delBtn.classList.add('hidden');
+                return;
+            }
             const q = appData.questions.find(x => x.id === qId);
             if (!q) return;
+            if (delBtn) delBtn.classList.remove('hidden');
             document.getElementById('editQuestionId').value = q.id;
             document.getElementById('qFormNum').value = q.orderNum || 1;
             document.getElementById('qFormType').value = q.type || 'pg';
             document.getElementById('qFormWeight').value = q.weight || 10;
             document.getElementById('qFormStimulus').value = q.stimulusText || '';
+            if (document.getElementById('qFormStimulusImg')) document.getElementById('qFormStimulusImg').value = q.stimulusImage || '';
             document.getElementById('qFormText').value = q.questionText || '';
-            document.getElementById('qOptA').value = q.options?.[0] || '';
-            document.getElementById('qOptB').value = q.options?.[1] || '';
-            document.getElementById('qOptC').value = q.options?.[2] || '';
-            document.getElementById('qOptD').value = q.options?.[3] || '';
-            document.getElementById('qFormKey').value = Array.isArray(q.correctAnswer) ? q.correctAnswer.join(',') : (q.correctAnswer || '');
+            if (document.getElementById('qFormQuestionImg')) document.getElementById('qFormQuestionImg').value = q.questionImage || '';
+
+            if (q.type === 'matching' && Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
+                document.getElementById('qOptA').value = q.matchingPairs[0] ? `${q.matchingPairs[0].left} = ${q.matchingPairs[0].right}` : '';
+                document.getElementById('qOptB').value = q.matchingPairs[1] ? `${q.matchingPairs[1].left} = ${q.matchingPairs[1].right}` : '';
+                document.getElementById('qOptC').value = q.matchingPairs[2] ? `${q.matchingPairs[2].left} = ${q.matchingPairs[2].right}` : '';
+                document.getElementById('qOptD').value = q.matchingPairs[3] ? `${q.matchingPairs[3].left} = ${q.matchingPairs[3].right}` : '';
+            } else {
+                document.getElementById('qOptA').value = q.options?.[0] || '';
+                document.getElementById('qOptB').value = q.options?.[1] || '';
+                document.getElementById('qOptC').value = q.options?.[2] || '';
+                document.getElementById('qOptD').value = q.options?.[3] || '';
+            }
+
+            if (Array.isArray(q.correctAnswer)) {
+                document.getElementById('qFormKey').value = q.correctAnswer.join(', ');
+            } else if (q.correctAnswer && typeof q.correctAnswer === 'object') {
+                document.getElementById('qFormKey').value = Object.values(q.correctAnswer).join(', ');
+            } else {
+                document.getElementById('qFormKey').value = q.correctAnswer ?? '';
+            }
             document.getElementById('qFormExplanation').value = q.explanation || '';
             window.updateQuestionLivePreview();
         };
@@ -1499,19 +1590,38 @@
             const type = document.getElementById('qFormType')?.value || 'pg';
             const weight = Number(document.getElementById('qFormWeight')?.value) || 10;
             const stimulusText = (document.getElementById('qFormStimulus')?.value || '').trim();
+            const stimulusImage = (document.getElementById('qFormStimulusImg')?.value || '').trim();
             const questionText = (document.getElementById('qFormText')?.value || '').trim();
-            const options = [
+            const questionImage = (document.getElementById('qFormQuestionImg')?.value || '').trim();
+            const rawOptions = [
                 document.getElementById('qOptA')?.value || '',
                 document.getElementById('qOptB')?.value || '',
                 document.getElementById('qOptC')?.value || '',
                 document.getElementById('qOptD')?.value || ''
             ];
-            const correctAnswer = (document.getElementById('qFormKey')?.value || 'A').trim();
+            const correctAnswerRaw = (document.getElementById('qFormKey')?.value || 'A').trim();
             const explanation = (document.getElementById('qFormExplanation')?.value || '').trim();
 
             if (!questionText) {
                 window.showModal('Validasi', 'Teks pertanyaan wajib diisi!', 'error');
                 return;
+            }
+
+            let options = rawOptions;
+            let matchingPairs = undefined;
+            let correctAnswer = correctAnswerRaw;
+
+            if (type === 'matching') {
+                matchingPairs = [];
+                const ansObj = {};
+                rawOptions.filter(x => x.trim() !== '').forEach((rp, idx) => {
+                    const parts = rp.split('=');
+                    const left = (parts[0] || `Pernyataan ${idx + 1}`).trim();
+                    const right = (parts[1] || correctAnswerRaw || `Pasangan ${idx + 1}`).trim();
+                    matchingPairs.push({ left, right });
+                    ansObj[String(idx)] = right;
+                });
+                correctAnswer = ansObj;
             }
 
             const bankId = (appData.filters.questionBankId && appData.filters.questionBankId !== 'ALL')
@@ -1521,11 +1631,11 @@
             if (editId) {
                 const existing = appData.questions.find(x => x.id === editId);
                 if (existing) {
-                    Object.assign(existing, { orderNum, type, weight, stimulusText, questionText, options, correctAnswer, explanation });
+                    Object.assign(existing, { orderNum, type, weight, stimulusText, stimulusImage, questionText, questionImage, options, matchingPairs, correctAnswer, explanation });
                     await syncCollectionRecord('questions', existing.id, existing);
                 }
             } else {
-                const newQ = { id: 'Q-' + Date.now(), bankId, orderNum, type, weight, stimulusText, questionText, options, correctAnswer, explanation };
+                const newQ = { id: 'Q-' + Date.now(), bankId, orderNum, type, weight, stimulusText, stimulusImage, questionText, questionImage, options, matchingPairs, correctAnswer, explanation };
                 appData.questions.push(newQ);
                 await syncCollectionRecord('questions', newQ.id, newQ);
             }
@@ -1535,9 +1645,194 @@
         };
 
         window.downloadQuestionTemplate = function() {
-            const headers = ['No', 'Jenis Soal (pg/pg_complex/true_false)', 'Bobot Poin', 'Teks Stimulus', 'URL Gambar Stimulus', 'Teks Pertanyaan', 'URL Gambar Soal', 'Opsi A', 'Opsi B', 'Opsi C', 'Opsi D', 'Kunci Jawaban', 'Pembahasan'];
-            const rows = [[1, 'pg', 10, '', '', 'Hasil dari 12 x 5 adalah...', '', '50', '60', '70', '80', 'B', '12 x 5 = 60']];
-            window.downloadExcelFile('Template_Bank_Soal.xlsx', headers, rows);
+            const headers = [
+                'No',
+                'Jenis Soal (pg/pg_complex/true_false/matching/short_answer/essay)',
+                'Bobot Poin',
+                'Teks Stimulus',
+                'URL Gambar Stimulus',
+                'Teks Pertanyaan',
+                'URL Gambar Soal',
+                'Opsi A',
+                'Opsi B',
+                'Opsi C',
+                'Opsi D',
+                'Kunci Jawaban',
+                'Pembahasan'
+            ];
+            const rows = [
+                [1, 'pg', 10, 'Perhatikan operasi hitung berikut!', '', 'Hasil dari 12 x 5 adalah...', '', '50', '60', '70', '80', 'B', '12 x 5 = 60'],
+                [2, 'pg_complex', 15, 'Sifat-sifat bangun datar.', '', 'Manakah yang merupakan sifat bangun persegi?', '', 'Keempat sisinya sama panjang', 'Hanya memiliki 2 sudut siku-siku', 'Memiliki 4 simetri lipat', 'Tidak memiliki diagonal', 'A, C', 'Persegi memiliki 4 sisi sama panjang dan 4 simetri lipat.'],
+                [3, 'true_false', 15, 'Perjalanan Mobil Ayah: Kecepatan 60 km/jam.', '', 'Tentukan Benar atau Salah untuk pernyataan berikut!', '', 'Waktu tempuh 120 km adalah 2 jam.', 'Waktu tempuh 180 km adalah 4 jam.', 'Jarak tempuh dalam 3 jam adalah 180 km.', '', 'Benar, Salah, Benar', 'Jarak = Kecepatan x Waktu.']
+            ];
+            window.downloadExcelFile('Template_Bank_Soal_CBT.xlsx', headers, rows);
+        };
+
+        function serializeQuestionRowForExcel(q, fallbackNum) {
+            const orderNum = Number(q.orderNum) || fallbackNum;
+            const type = String(q.type || 'pg').trim();
+            const weight = Number(q.weight) || 10;
+            const stimulusText = q.stimulusText !== undefined && q.stimulusText !== null ? String(q.stimulusText) : '';
+            const stimulusImage = q.stimulusImage !== undefined && q.stimulusImage !== null ? String(q.stimulusImage) : '';
+            const questionText = q.questionText !== undefined && q.questionText !== null ? String(q.questionText) : '';
+            const questionImage = q.questionImage !== undefined && q.questionImage !== null ? String(q.questionImage) : '';
+
+            let optA = '';
+            let optB = '';
+            let optC = '';
+            let optD = '';
+
+            if (type === 'matching' && Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
+                const formattedPairs = q.matchingPairs.map(p => {
+                    if (p && typeof p === 'object') return `${p.left ?? ''} = ${p.right ?? ''}`;
+                    return String(p ?? '');
+                });
+                optA = formattedPairs[0] || '';
+                optB = formattedPairs[1] || '';
+                optC = formattedPairs[2] || '';
+                optD = formattedPairs[3] || '';
+            } else if (Array.isArray(q.options)) {
+                optA = q.options[0] !== undefined && q.options[0] !== null ? String(q.options[0]) : '';
+                optB = q.options[1] !== undefined && q.options[1] !== null ? String(q.options[1]) : '';
+                optC = q.options[2] !== undefined && q.options[2] !== null ? String(q.options[2]) : '';
+                optD = q.options[3] !== undefined && q.options[3] !== null ? String(q.options[3]) : '';
+            }
+
+            let keyStr = '';
+            if (Array.isArray(q.correctAnswer)) {
+                keyStr = q.correctAnswer.map(k => String(k ?? '').trim()).filter(Boolean).join(', ');
+            } else if (q.correctAnswer && typeof q.correctAnswer === 'object') {
+                if (type === 'matching' && Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
+                    keyStr = q.matchingPairs.map(p => `${p.left ?? ''}=${p.right ?? ''}`).join('; ');
+                } else {
+                    const keys = Object.keys(q.correctAnswer).sort((a, b) => Number(a) - Number(b));
+                    keyStr = keys.map(k => q.correctAnswer[k]).join(', ');
+                }
+            } else if (q.correctAnswer !== undefined && q.correctAnswer !== null) {
+                keyStr = String(q.correctAnswer);
+            }
+
+            const explanation = q.explanation !== undefined && q.explanation !== null ? String(q.explanation) : '';
+
+            return [
+                orderNum,
+                type,
+                weight,
+                stimulusText,
+                stimulusImage,
+                questionText,
+                questionImage,
+                optA,
+                optB,
+                optC,
+                optD,
+                keyStr,
+                explanation
+            ];
+        }
+
+        window.openExportQuestionModal = function() {
+            const currentBankFilter = appData.filters.questionBankId || 'ALL';
+            const defaultBankId = (currentBankFilter !== 'ALL' && appData.questionBanks.some(b => b.id === currentBankFilter))
+                ? currentBankFilter
+                : (appData.questionBanks[0] ? appData.questionBanks[0].id : '');
+
+            const bankOpts = appData.questionBanks.map(b => {
+                const count = appData.questions.filter(q => q.bankId === b.id).length;
+                return `<option value="${escapeHtml(b.id)}" ${b.id === defaultBankId ? 'selected' : ''}>${escapeHtml(b.title)} (${count} Soal)</option>`;
+            }).join('');
+
+            const isPackagePreselected = currentBankFilter !== 'ALL' && appData.questionBanks.some(b => b.id === currentBankFilter);
+
+            const html = `
+                <div class="space-y-4 text-xs">
+                    <div class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-900">
+                        <p class="font-bold text-sm flex items-center gap-2"><i class="fa-solid fa-file-excel text-emerald-600"></i> Ekspor Bank Soal ke Excel (.xlsx)</p>
+                        <p class="text-[11px] text-indigo-700 mt-1">Hasil ekspor menggunakan struktur kolom yang 100% kompatibel dengan Template Impor Bank Soal.</p>
+                    </div>
+                    <div class="space-y-2.5">
+                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-indigo-50/40 cursor-pointer transition">
+                            <input type="radio" name="exportQuestionMode" value="PACKAGE" ${isPackagePreselected || appData.questionBanks.length > 0 ? 'checked' : ''} onchange="document.getElementById('exportBankSelectWrapper').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                            <div class="w-full">
+                                <span class="font-extrabold text-slate-900 block">Ekspor Berdasarkan Paket Bank Soal</span>
+                                <span class="text-[11px] text-slate-500 block mt-0.5">Mengunduh seluruh butir soal pada paket bank soal yang dipilih.</span>
+                                <div id="exportBankSelectWrapper" class="mt-2.5">
+                                    <select id="exportBankTargetId" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800">
+                                        ${bankOpts || '<option value="">-- Belum Ada Paket Bank Soal --</option>'}
+                                    </select>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-indigo-50/40 cursor-pointer transition">
+                            <input type="radio" name="exportQuestionMode" value="ALL" ${!isPackagePreselected && appData.questionBanks.length === 0 ? 'checked' : ''} onchange="document.getElementById('exportBankSelectWrapper').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                            <div>
+                                <span class="font-extrabold text-slate-900 block">Ekspor Seluruh Soal (${appData.questions.length} Butir Soal)</span>
+                                <span class="text-[11px] text-slate-500 block mt-0.5">Mengunduh semua soal dari seluruh paket bank soal yang tersimpan di aplikasi.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            `;
+
+            window.showModal('Ekspor Bank Soal (.xlsx)', '', 'info', (confirmed) => {
+                if (!confirmed) return true;
+                const mode = document.querySelector('input[name="exportQuestionMode"]:checked')?.value || 'ALL';
+                const targetBankId = document.getElementById('exportBankTargetId')?.value || '';
+                return window.executeExportQuestionsExcel(mode, targetBankId);
+            }, { html, showCancel: true, okText: 'Unduh File Excel (.xlsx)' });
+        };
+
+        window.executeExportQuestionsExcel = function(mode = 'ALL', bankId = '') {
+            let questionsToExport = [];
+            let packageLabel = 'Semua_Paket_Soal';
+
+            if (mode === 'PACKAGE') {
+                if (!bankId) {
+                    window.showModal('Pilih Paket Soal', 'Silakan pilih paket bank soal yang ingin diekspor.', 'error');
+                    return false;
+                }
+                const bankObj = appData.questionBanks.find(b => b.id === bankId);
+                packageLabel = bankObj && bankObj.title ? bankObj.title : bankId;
+                questionsToExport = appData.questions.filter(q => q.bankId === bankId);
+            } else {
+                questionsToExport = [...appData.questions];
+            }
+
+            if (questionsToExport.length === 0) {
+                window.showModal('Data Soal Kosong', 'Tidak ada butir soal pada pilihan tersebut untuk diekspor.', 'error');
+                return false;
+            }
+
+            questionsToExport.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+
+            const headers = [
+                'No',
+                'Jenis Soal (pg/pg_complex/true_false/matching/short_answer/essay)',
+                'Bobot Poin',
+                'Teks Stimulus',
+                'URL Gambar Stimulus',
+                'Teks Pertanyaan',
+                'URL Gambar Soal',
+                'Opsi A',
+                'Opsi B',
+                'Opsi C',
+                'Opsi D',
+                'Kunci Jawaban',
+                'Pembahasan'
+            ];
+
+            const rows = questionsToExport.map((q, idx) => serializeQuestionRowForExcel(q, idx + 1));
+
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            const safePkgName = String(packageLabel)
+                .replace(/[^a-zA-Z0-9_-]+/g, '_')
+                .replace(/^_+|_+$/g, '') || 'Bank_Soal';
+            const filename = `Bank_Soal_${safePkgName}_${dateStr}.xlsx`;
+
+            window.downloadExcelFile(filename, headers, rows);
+            logActivity(`Administrator mengekspor ${questionsToExport.length} butir soal (${packageLabel}) ke file ${filename}.`);
+            return true;
         };
 
         window.triggerQuestionExcelImport = function() {
@@ -1546,22 +1841,51 @@
             fileInput.onchange = function(e) {
                 const file = e.target.files[0];
                 if (!file) return;
-                window.readExcelWorkbookRows(file, (rows) => {
+                window.readExcelWorkbookRows(file, async (rows) => {
                     fileInput.value = '';
-                    if (!rows || rows.length < 2) return;
+                    if (!rows || rows.length < 2) {
+                        window.showModal('Data Kosong', 'File Excel tidak memiliki baris data soal.', 'error');
+                        return;
+                    }
                     const bankId = (appData.filters.questionBankId && appData.filters.questionBankId !== 'ALL')
                         ? appData.filters.questionBankId
                         : (appData.questionBanks[0]?.id || 'QB-DEFAULT');
                     let count = 0;
                     for (let i = 1; i < rows.length; i++) {
                         const cols = rows[i];
-                        if (!cols || cols.length < 6) continue;
+                        if (!cols || cols.length === 0) continue;
                         const qText = String(cols[5] ?? cols[4] ?? '').trim();
                         if (!qText) continue;
-                        const rawType = String(cols[1] ?? 'pg').toLowerCase();
+                        const rawType = String(cols[1] ?? 'pg').trim().toLowerCase();
                         let type = 'pg';
-                        if (rawType.includes('kompleks') || rawType.includes('complex')) type = 'pg_complex';
-                        else if (rawType.includes('benar') || rawType.includes('true') || rawType === 'bs') type = 'true_false';
+                        if (rawType === 'pg_complex' || rawType.includes('kompleks') || rawType.includes('complex') || rawType.includes('multi')) type = 'pg_complex';
+                        else if (rawType === 'true_false' || rawType.includes('benar') || rawType.includes('true') || rawType === 'bs' || rawType === 'b/s') type = 'true_false';
+                        else if (rawType === 'matching' || rawType.includes('jodoh') || rawType.includes('pasangan') || rawType.includes('match')) type = 'matching';
+                        else if (rawType === 'short_answer' || rawType.includes('isian') || rawType.includes('singkat') || rawType.includes('short')) type = 'short_answer';
+                        else if (rawType === 'essay' || rawType.includes('uraian') || rawType.includes('esai')) type = 'essay';
+
+                        const rawOpts = [
+                            String(cols[7] ?? '').trim(),
+                            String(cols[8] ?? '').trim(),
+                            String(cols[9] ?? '').trim(),
+                            String(cols[10] ?? '').trim()
+                        ];
+
+                        let matchingPairs = undefined;
+                        let correctAnswer = String(cols[11] ?? 'A').trim();
+
+                        if (type === 'matching') {
+                            matchingPairs = [];
+                            const ansObj = {};
+                            rawOpts.filter(Boolean).forEach((rp, idx) => {
+                                const parts = rp.split('=');
+                                const left = (parts[0] || `Pernyataan ${idx + 1}`).trim();
+                                const right = (parts[1] || `Pasangan ${idx + 1}`).trim();
+                                matchingPairs.push({ left, right });
+                                ansObj[String(idx)] = right;
+                            });
+                            correctAnswer = ansObj;
+                        }
 
                         const newQ = {
                             id: 'Q-' + Date.now() + '-' + i,
@@ -1570,17 +1894,20 @@
                             type,
                             weight: Number(cols[2]) || 10,
                             stimulusText: String(cols[3] ?? '').trim(),
+                            stimulusImage: String(cols[4] ?? '').trim(),
                             questionText: qText,
-                            options: [String(cols[7] ?? ''), String(cols[8] ?? ''), String(cols[9] ?? ''), String(cols[10] ?? '')].filter(Boolean),
-                            correctAnswer: String(cols[11] ?? 'A').trim(),
+                            questionImage: String(cols[6] ?? '').trim(),
+                            options: rawOpts,
+                            matchingPairs,
+                            correctAnswer,
                             explanation: String(cols[12] ?? '').trim()
                         };
                         appData.questions.push(newQ);
-                        syncCollectionRecord('questions', newQ.id, newQ);
+                        await syncCollectionRecord('questions', newQ.id, newQ);
                         count++;
                     }
                     renderQuestionBanksContent(document.getElementById('adminMainContent'));
-                    window.showModal('Impor Berhasil', `Berhasil mengimpor ${count} butir soal.`, 'success');
+                    window.showModal('Impor Berhasil', `Berhasil mengimpor ${count} butir soal ke paket Bank Soal.`, 'success');
                 });
             };
             fileInput.click();
