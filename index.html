@@ -535,6 +535,15 @@
 
                     appData[colName] = docsList;
 
+                    // Jika Admin menutup ujian saat siswa sedang mengerjakan soal, langsung hentikan ruang ujian siswa dan simpan progresnya
+                    if (colName === 'exams' && appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
+                        const updatedExam = docsList.find(x => x.id === currentActiveExam.id);
+                        if (!updatedExam || !isExamStrictlyActive(updatedExam) || !checkExamScheduleAccess(updatedExam).allowed) {
+                            window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau dinonaktifkan oleh Administrator. Seluruh jawaban yang sudah Anda isi tetap tersimpan dengan aman.');
+                            return;
+                        }
+                    }
+
                     if (!isInitialRealtimeLoad) {
                         window.triggerRealtimeUIRefresh(colName);
                     }
@@ -698,7 +707,7 @@
         };
 
         window.renderLoginView = function() {
-            const activeExams = appData.exams.filter(e => e.status === 'Aktif');
+            const activeExams = appData.exams.filter(e => isExamStrictlyActive(e) && checkExamScheduleAccess(e).allowed);
             const activeExamBanner = activeExams.length > 0
                 ? `<div class="mt-6 p-4 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20">
                     <div class="flex items-center gap-2 text-cyan-300 text-xs font-bold uppercase tracking-wider mb-1">
@@ -870,16 +879,18 @@
                 enteredToken: token
             };
 
-            // Muat ulang examSessions & examResults terbaru dari Firestore saat login agar progres lintas perangkat 100% akurat
+            // Muat ulang exams, examSessions & examResults terbaru dari Firestore saat login agar status aktif ujian & progres lintas perangkat 100% akurat
             if (!IS_PREVIEW && db) {
                 try {
-                    const [sessSnap, resSnap, partSnap] = await Promise.all([
+                    const [examsSnap, sessSnap, resSnap, partSnap] = await Promise.all([
+                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'exams')),
                         getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examSessions')),
                         getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examResults')),
                         getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examParticipants'))
                     ]);
+                    appData.exams = examsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                     appData.examSessions = sessSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    appData.examResults = resSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    appData.examResults = resSnap.docs.map(d => ({ id: d.id, resultId: d.data().resultId || d.id, ...d.data() }));
                     appData.examParticipants = partSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                 } catch (err) {
                     console.warn('Gagal menyegarkan sesi terbaru:', err);
@@ -2837,6 +2848,23 @@
             }
         };
 
+        function isExamStrictlyActive(exam) {
+            if (!exam) return false;
+            return String(exam.status || '').trim().toLowerCase() === 'aktif';
+        }
+
+        function isExamMatchingStudentClass(exam, student) {
+            if (!exam || !student) return false;
+            if (!exam.classId || exam.classId === 'ALL') return true;
+            const examClassName = String(getClassNameById(exam.classId) || '').trim().toLowerCase();
+            const studentClassName = String(student.className || getClassNameById(student.classId) || '').trim().toLowerCase();
+            return (
+                exam.classId === student.classId ||
+                exam.classId === student.className ||
+                (examClassName !== '' && examClassName === studentClassName)
+            );
+        }
+
         function checkExamScheduleAccess(exam) {
             if (!exam) return { allowed: false, message: 'Data ujian tidak ditemukan.' };
             const startIso = parseDDMMYYYYToIso(exam.startDate || '2026-11-04') || '2026-11-04';
@@ -2844,8 +2872,8 @@
             const startTime = (exam.startTime && /^\d{2}:\d{2}/.test(exam.startTime)) ? exam.startTime.slice(0, 5) : '07:00';
             const endTime = (exam.endTime && /^\d{2}:\d{2}/.test(exam.endTime)) ? exam.endTime.slice(0, 5) : '23:59';
 
-            const startMs = new Date(`${startIso}T${startTime}:00`).getTime();
-            const endMs = new Date(`${endIso}T${endTime}:59`).getTime();
+            const startMs = new Date(`${startIso}T${startTime}:00+07:00`).getTime();
+            const endMs = new Date(`${endIso}T${endTime}:59+07:00`).getTime();
             const nowMs = Date.now();
 
             if (!isNaN(startMs) && nowMs < startMs) {
@@ -2862,6 +2890,56 @@
             }
             return { allowed: true, message: '' };
         }
+
+        function isExamEligibleForStudent(exam, student) {
+            if (!exam || !student) return false;
+            if (!isExamStrictlyActive(exam)) return false;
+            if (!isExamMatchingStudentClass(exam, student)) return false;
+            if (!checkExamScheduleAccess(exam).allowed) return false;
+            return true;
+        }
+
+        async function verifyExamEligibilityFromServer(examId, student) {
+            const blockedMsg = 'Ujian ini sudah ditutup atau belum tersedia. Silakan hubungi administrator sekolah.';
+            if (!examId || !student) return { allowed: false, message: blockedMsg };
+            let targetExam = appData.exams.find(e => e.id === examId) || null;
+            if (!IS_PREVIEW && db) {
+                const cloudExam = await fetchSingleFirestoreDoc('exams', examId);
+                if (!cloudExam) {
+                    appData.exams = appData.exams.filter(e => e.id !== examId);
+                    return { allowed: false, message: blockedMsg };
+                }
+                targetExam = cloudExam;
+                const idx = appData.exams.findIndex(e => e.id === examId);
+                if (idx !== -1) appData.exams[idx] = cloudExam;
+                else appData.exams.push(cloudExam);
+            }
+            if (!targetExam || !isExamStrictlyActive(targetExam)) {
+                return { allowed: false, message: blockedMsg };
+            }
+            if (!isExamMatchingStudentClass(targetExam, student)) {
+                return { allowed: false, message: 'Ujian ini tidak diperuntukkan bagi kelas Anda.' };
+            }
+            const sched = checkExamScheduleAccess(targetExam);
+            if (!sched.allowed) {
+                return { allowed: false, message: sched.message || blockedMsg };
+            }
+            return { allowed: true, exam: targetExam };
+        }
+
+        window.forceCloseStudentExamByAdmin = async function(noticeMessage) {
+            if (!isExamWorkspaceActive) return;
+            await window.persistExamSessionToCloud(true);
+            window.stopAllExamTimersAndWatchers();
+            currentActiveExam = null;
+            currentExamQuestions = [];
+            window.renderStudentPortal(false);
+            window.showModal(
+                'Ujian Ditutup oleh Administrator',
+                noticeMessage || 'Ujian ini telah ditutup oleh administrator sekolah. Jawaban yang sudah Anda isi tetap tersimpan.',
+                'error'
+            );
+        };
 
         window.openExamFormModal = function(examId = null) {
             const existing = examId ? appData.exams.find(x => x.id === examId) : null;
@@ -3024,12 +3102,14 @@
             }, { html, showCancel: true, cancelText: 'Batal', okText: 'Simpan Ujian' });
         };
 
-        window.toggleExamStatus = function(examId) {
+        window.toggleExamStatus = async function(examId) {
             const ex = appData.exams.find(x => x.id === examId);
             if (!ex) return;
-            ex.status = ex.status === 'Aktif' ? 'Ditutup' : 'Aktif';
-            syncCollectionRecord('exams', ex.id, ex);
+            ex.status = isExamStrictlyActive(ex) ? 'Ditutup' : 'Aktif';
+            ex.updatedAtMs = Date.now();
             renderExamsContent(document.getElementById('adminMainContent'));
+            await syncCollectionRecord('exams', ex.id, ex);
+            logActivity(`Status paket ujian "${ex.examName}" diubah menjadi ${ex.status}.`);
         };
 
         window.deleteExamRecord = function(examId) {
@@ -3871,7 +3951,12 @@
             window.stopAllExamTimersAndWatchers();
             const container = document.getElementById('appContainer');
             const student = appData.currentUser;
-            const availableExams = appData.exams.filter(e => e.classId === student.classId || e.status === 'Aktif');
+            if (!student) {
+                window.renderLoginView();
+                return;
+            }
+            // WAJIB: Hanya tampilkan ujian yang berstatus 'Aktif' DAN sesuai kelas siswa DAN berada dalam jadwal ujian
+            const availableExams = appData.exams.filter(e => isExamEligibleForStudent(e, student));
 
             let unfinishedSessionToPrompt = null;
 
@@ -3970,8 +4055,12 @@
         window.showUnfinishedExamNotificationModal = async function(examId) {
             const student = appData.currentUser;
             if (!student) return;
-            const ex = appData.exams.find(e => e.id === examId);
-            if (!ex) return;
+            const verification = await verifyExamEligibilityFromServer(examId, student);
+            if (!verification.allowed) {
+                window.renderStudentPortal(false);
+                return;
+            }
+            const ex = verification.exam;
 
             const sessId = getSessionDocId(examId, student.studentId);
             const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
@@ -4034,13 +4123,11 @@
             const student = appData.currentUser;
             if (!student) return;
 
-            const ex = appData.exams.find(e => e.id === examId);
-            if (ex) {
-                const accessCheck = checkExamScheduleAccess(ex);
-                if (!accessCheck.allowed) {
-                    window.showModal('Di Luar Jadwal Ujian', accessCheck.message, 'error');
-                    return;
-                }
+            const verification = await verifyExamEligibilityFromServer(examId, student);
+            if (!verification.allowed) {
+                window.renderStudentPortal(false);
+                window.showModal('Ujian Tidak Tersedia', verification.message, 'error');
+                return;
             }
 
             // Cek apakah sudah pernah disubmit selesai
@@ -4191,10 +4278,16 @@
         };
 
         window.startExamSession = async function(examId, resumeSessionObj = null) {
-            const ex = appData.exams.find(e => e.id === examId);
-            if (!ex) return;
             const student = appData.currentUser;
             if (!student) return;
+
+            const verification = await verifyExamEligibilityFromServer(examId, student);
+            if (!verification.allowed) {
+                window.renderStudentPortal(false);
+                window.showModal('Ujian Ditutup / Belum Tersedia', verification.message, 'error');
+                return;
+            }
+            const ex = verification.exam;
 
             // Pastikan ujian belum disubmit
             const alreadyDone = appData.examResults.find(r => r.studentId === student.studentId && r.examId === ex.id);
@@ -4304,6 +4397,13 @@
 
             // Timer berbasis selisih timestamp target (currentExamEndTimeMs) sehingga tidak bisa di-reset oleh refresh/pindah perangkat
             examTimerInterval = setInterval(() => {
+                if (currentActiveExam) {
+                    const latestExamInState = appData.exams.find(e => e.id === currentActiveExam.id);
+                    if (!latestExamInState || !isExamStrictlyActive(latestExamInState) || !checkExamScheduleAccess(latestExamInState).allowed) {
+                        window.forceCloseStudentExamByAdmin('Ujian telah ditutup oleh administrator sekolah. Jawaban yang sudah Anda isi tetap tersimpan.');
+                        return;
+                    }
+                }
                 const nowMs = Date.now();
                 remainingSeconds = Math.max(0, Math.floor((currentExamEndTimeMs - nowMs) / 1000));
                 const timerEl = document.getElementById('examCountdownTimer');
@@ -4770,6 +4870,14 @@
             const student = appData.currentUser;
             if (!student || !currentActiveExam) {
                 isSubmittingFinalExam = false;
+                return;
+            }
+
+            const verification = await verifyExamEligibilityFromServer(currentActiveExam.id, student);
+            if (!verification.allowed) {
+                isSubmittingFinalExam = false;
+                window.renderStudentPortal(false);
+                window.showModal('Ujian Telah Ditutup', verification.message, 'error');
                 return;
             }
 
