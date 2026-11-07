@@ -2732,52 +2732,20 @@
             }, { okText: 'Hapus' });
         };
 
-        function renderExamsContent(container) {
-            const cards = appData.exams.map(e => `
-                <div class="bg-white p-5 rounded-2xl shadow-xs border border-slate-200 flex flex-col justify-between space-y-4">
-                    <div class="space-y-2">
-                        <div class="flex justify-between items-center">
-                            <span class="px-2.5 py-1 ${e.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'} rounded-lg text-xs font-extrabold">${escapeHtml(e.status)}</span>
-                            <span class="font-mono bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-bold text-xs">TOKEN: ${escapeHtml(e.token)}</span>
-                        </div>
-                        <h3 class="text-base font-extrabold text-slate-900">${escapeHtml(e.examName)}</h3>
-                        <p class="text-xs text-slate-500">Mapel: <strong>${escapeHtml(getSubjectNameById(e.subjectId))}</strong> | Kelas: <strong>${escapeHtml(getClassNameById(e.classId))}</strong></p>
-                        <p class="text-xs text-slate-500">Durasi: <strong>${e.durationMinutes} Menit</strong> | Jumlah Soal: <strong>${(e.questionIds || []).length} Butir</strong></p>
-                    </div>
-                    <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                        <button type="button" onclick="window.toggleExamStatus('${e.id}')" class="px-3 py-1.5 ${e.status === 'Aktif' ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} rounded-xl text-xs font-bold transition">
-                            <i class="fa-solid fa-power-off mr-1"></i> ${e.status === 'Aktif' ? 'Tutup Ujian' : 'Aktifkan Ujian'}
-                        </button>
-                        <div class="space-x-1">
-                            <button type="button" onclick="window.openExamFormModal('${e.id}')" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-pen mr-1"></i> Edit</button>
-                            <button type="button" onclick="window.deleteExamRecord('${e.id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-trash"></i></button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-
-            container.innerHTML = `
-                <div class="space-y-4">
-                    <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <h3 class="font-bold text-slate-800 text-sm">Manajemen Paket Ujian</h3>
-                            <p class="text-xs text-slate-500">Buat, jadwalkan, pilih bank soal, dan atur status aktif ujian.</p>
-                        </div>
-                        <button type="button" onclick="window.openExamFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">
-                            <i class="fa-solid fa-plus mr-1"></i> Buat Ujian Baru
-                        </button>
-                    </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">${cards || '<p class="text-xs text-slate-400">Belum ada paket ujian.</p>'}</div>
-                </div>
-            `;
+        function getTodayIsoWIB() {
+            const now = new Date(Date.now() + (7 * 3600 * 1000));
+            return now.toISOString().slice(0, 10);
         }
 
         function formatIsoToDDMMYYYY(isoStr) {
             if (!isoStr) return '';
             const clean = String(isoStr).trim();
-            if (/^\d{2}\/\d{2}\/\d{4}$/.test(clean)) return clean;
+            if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(clean)) {
+                const p = clean.split(/[\/\-]/);
+                return `${p[0].padStart(2, '0')}/${p[1].padStart(2, '0')}/${p[2]}`;
+            }
             const parts = clean.split('-');
-            if (parts.length === 3) {
+            if (parts.length === 3 && parts[0].length === 4) {
                 return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
             }
             return clean;
@@ -2786,15 +2754,31 @@
         function parseDDMMYYYYToIso(valStr) {
             if (!valStr) return '';
             const clean = String(valStr).trim();
-            if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
-            const parts = clean.split('/');
-            if (parts.length === 3) {
-                const dd = parts[0].padStart(2, '0');
-                const mm = parts[1].padStart(2, '0');
-                const yyyy = parts[2];
-                if (yyyy.length === 4) return `${yyyy}-${mm}-${dd}`;
+            if (/^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(clean)) {
+                const p = clean.split(/[\/\-]/);
+                const yyyy = p[0];
+                const mm = p[1].padStart(2, '0');
+                const dd = p[2].padStart(2, '0');
+                return `${yyyy}-${mm}-${dd}`;
+            }
+            if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(clean)) {
+                const p = clean.split(/[\/\-]/);
+                const dd = p[0].padStart(2, '0');
+                const mm = p[1].padStart(2, '0');
+                const yyyy = p[2];
+                return `${yyyy}-${mm}-${dd}`;
             }
             return '';
+        }
+
+        function normalizeTimeHHMM(valStr, fallback = '07:00') {
+            if (!valStr) return fallback;
+            const clean = String(valStr).trim().replace(/\./g, ':');
+            const m = clean.match(/^(\d{1,2}):(\d{1,2})/);
+            if (!m) return fallback;
+            const hh = Math.min(23, Math.max(0, Number(m[1]) || 0));
+            const mm = Math.min(59, Math.max(0, Number(m[2]) || 0));
+            return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
         }
 
         window.syncDateDisplayFromPicker = function(pickerEl, textInputId) {
@@ -2834,7 +2818,7 @@
         window.syncTimeDisplayFromPicker = function(pickerEl, textInputId) {
             const txtEl = document.getElementById(textInputId);
             if (txtEl && pickerEl.value) {
-                txtEl.value = pickerEl.value.slice(0, 5);
+                txtEl.value = normalizeTimeHHMM(pickerEl.value, '07:00');
             }
         };
 
@@ -2866,29 +2850,38 @@
         }
 
         function checkExamScheduleAccess(exam) {
-            if (!exam) return { allowed: false, message: 'Data ujian tidak ditemukan.' };
-            const startIso = parseDDMMYYYYToIso(exam.startDate || '2026-11-04') || '2026-11-04';
-            const endIso = parseDDMMYYYYToIso(exam.endDate || '2026-12-04') || '2026-12-04';
-            const startTime = (exam.startTime && /^\d{2}:\d{2}/.test(exam.startTime)) ? exam.startTime.slice(0, 5) : '07:00';
-            const endTime = (exam.endTime && /^\d{2}:\d{2}/.test(exam.endTime)) ? exam.endTime.slice(0, 5) : '23:59';
+            if (!exam) return { allowed: false, state: 'INVALID', message: 'Data ujian tidak ditemukan.' };
+            const todayIso = getTodayIsoWIB();
+            const startIso = parseDDMMYYYYToIso(exam.startDate) || todayIso;
+            const endIso = parseDDMMYYYYToIso(exam.endDate) || todayIso;
+            const startTime = normalizeTimeHHMM(exam.startTime, '00:00');
+            const endTime = normalizeTimeHHMM(exam.endTime, '23:59');
 
-            const startMs = new Date(`${startIso}T${startTime}:00+07:00`).getTime();
-            const endMs = new Date(`${endIso}T${endTime}:59+07:00`).getTime();
+            const startParts = startIso.split('-').map(Number);
+            const endParts = endIso.split('-').map(Number);
+            const startT = startTime.split(':').map(Number);
+            const endT = endTime.split(':').map(Number);
+
+            // Hitung timestamp absolut dalam zona waktu WIB (UTC+7) tanpa bergantung pada timezone lokal browser
+            const startMs = Date.UTC(startParts[0], startParts[1] - 1, startParts[2], startT[0] - 7, startT[1], 0, 0);
+            const endMs = Date.UTC(endParts[0], endParts[1] - 1, endParts[2], endT[0] - 7, endT[1], 59, 999);
             const nowMs = Date.now();
 
             if (!isNaN(startMs) && nowMs < startMs) {
                 return {
                     allowed: false,
+                    state: 'UPCOMING',
                     message: `Ujian belum dimulai. Jadwal mulai: ${formatIsoToDDMMYYYY(startIso)} pukul ${startTime} WIB.`
                 };
             }
             if (!isNaN(endMs) && nowMs > endMs) {
                 return {
                     allowed: false,
-                    message: `Waktu akses ujian telah berakhir pada ${formatIsoToDDMMYYYY(endIso)} pukul ${endTime} WIB.`
+                    state: 'EXPIRED',
+                    message: `Waktu pelaksanaan ujian telah berakhir pada ${formatIsoToDDMMYYYY(endIso)} pukul ${endTime} WIB.`
                 };
             }
-            return { allowed: true, message: '' };
+            return { allowed: true, state: 'ONGOING', message: '' };
         }
 
         function isExamEligibleForStudent(exam, student) {
@@ -2900,7 +2893,7 @@
         }
 
         async function verifyExamEligibilityFromServer(examId, student) {
-            const blockedMsg = 'Ujian ini sudah ditutup atau belum tersedia. Silakan hubungi administrator sekolah.';
+            const blockedMsg = 'Ujian ini sudah ditutup atau melewati jadwal pelaksanaan. Silakan hubungi administrator sekolah.';
             if (!examId || !student) return { allowed: false, message: blockedMsg };
             let targetExam = appData.exams.find(e => e.id === examId) || null;
             if (!IS_PREVIEW && db) {
@@ -2935,11 +2928,74 @@
             currentExamQuestions = [];
             window.renderStudentPortal(false);
             window.showModal(
-                'Ujian Ditutup oleh Administrator',
-                noticeMessage || 'Ujian ini telah ditutup oleh administrator sekolah. Jawaban yang sudah Anda isi tetap tersimpan.',
+                'Akses Ujian Berakhir / Ditutup',
+                noticeMessage || 'Ujian ini telah ditutup atau melewati batas jadwal pelaksanaan. Jawaban yang sudah Anda isi tetap tersimpan.',
                 'error'
             );
         };
+
+        function renderExamsContent(container) {
+            const cards = appData.exams.map(e => {
+                const isActive = isExamStrictlyActive(e);
+                const sched = checkExamScheduleAccess(e);
+                const startDisp = formatIsoToDDMMYYYY(parseDDMMYYYYToIso(e.startDate) || getTodayIsoWIB());
+                const endDisp = formatIsoToDDMMYYYY(parseDDMMYYYYToIso(e.endDate) || getTodayIsoWIB());
+                const startTimeDisp = normalizeTimeHHMM(e.startTime, '07:00');
+                const endTimeDisp = normalizeTimeHHMM(e.endTime, '23:59');
+
+                let scheduleBadgeHtml = '';
+                if (!isActive) {
+                    scheduleBadgeHtml = `<span class="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-extrabold">Ditutup</span>`;
+                } else if (sched.state === 'EXPIRED') {
+                    scheduleBadgeHtml = `<span class="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg text-xs font-extrabold" title="${escapeHtml(sched.message)}">Aktif • Jadwal Berakhir</span>`;
+                } else if (sched.state === 'UPCOMING') {
+                    scheduleBadgeHtml = `<span class="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-xs font-extrabold" title="${escapeHtml(sched.message)}">Aktif • Belum Mulai</span>`;
+                } else {
+                    scheduleBadgeHtml = `<span class="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-extrabold">Aktif</span>`;
+                }
+
+                return `
+                <div class="bg-white p-5 rounded-2xl shadow-xs border border-slate-200 flex flex-col justify-between space-y-4">
+                    <div class="space-y-2">
+                        <div class="flex justify-between items-center gap-2">
+                            ${scheduleBadgeHtml}
+                            <span class="font-mono bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-bold text-xs">TOKEN: ${escapeHtml(e.token)}</span>
+                        </div>
+                        <h3 class="text-base font-extrabold text-slate-900">${escapeHtml(e.examName)}</h3>
+                        <p class="text-xs text-slate-500">Mapel: <strong>${escapeHtml(getSubjectNameById(e.subjectId))}</strong> | Kelas: <strong>${escapeHtml(getClassNameById(e.classId))}</strong></p>
+                        <p class="text-xs text-slate-500">Durasi: <strong>${e.durationMinutes} Menit</strong> | Jumlah Soal: <strong>${(e.questionIds || []).length} Butir</strong></p>
+                        <p class="text-[11px] ${sched.state === 'EXPIRED' ? 'text-red-600 font-bold' : 'text-slate-500'}">
+                            <i class="fa-regular fa-calendar-check mr-1"></i> Jadwal: <strong>${escapeHtml(startDisp)} (${escapeHtml(startTimeDisp)})</strong> s.d <strong>${escapeHtml(endDisp)} (${escapeHtml(endTimeDisp)} WIB)</strong>
+                        </p>
+                    </div>
+                    <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                        <button type="button" onclick="window.toggleExamStatus('${e.id}')" class="px-3 py-1.5 ${isActive ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'} rounded-xl text-xs font-bold transition">
+                            <i class="fa-solid fa-power-off mr-1"></i> ${isActive ? 'Tutup Ujian' : 'Aktifkan Ujian'}
+                        </button>
+                        <div class="space-x-1">
+                            <button type="button" onclick="window.openExamFormModal('${e.id}')" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-pen mr-1"></i> Edit</button>
+                            <button type="button" onclick="window.deleteExamRecord('${e.id}')" class="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="space-y-4">
+                    <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="font-bold text-slate-800 text-sm">Manajemen Paket Ujian</h3>
+                            <p class="text-xs text-slate-500">Buat, jadwalkan, pilih bank soal, dan atur status aktif ujian.</p>
+                        </div>
+                        <button type="button" onclick="window.openExamFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">
+                            <i class="fa-solid fa-plus mr-1"></i> Buat Ujian Baru
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">${cards || '<p class="text-xs text-slate-400">Belum ada paket ujian.</p>'}</div>
+                </div>
+            `;
+        }
 
         window.openExamFormModal = function(examId = null) {
             const existing = examId ? appData.exams.find(x => x.id === examId) : null;
@@ -2947,12 +3003,13 @@
             const clsOpts = appData.classes.map(c => `<option value="${c.id}" ${existing && existing.classId === c.id ? 'selected' : ''}>Kelas ${escapeHtml(c.className)}</option>`).join('');
             const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${existing && existing.bankId === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
 
-            const startIso = existing && existing.startDate ? (parseDDMMYYYYToIso(existing.startDate) || '2026-11-04') : '2026-11-04';
-            const endIso = existing && existing.endDate ? (parseDDMMYYYYToIso(existing.endDate) || '2026-12-04') : '2026-12-04';
+            const todayIso = getTodayIsoWIB();
+            const startIso = existing && existing.startDate ? (parseDDMMYYYYToIso(existing.startDate) || todayIso) : todayIso;
+            const endIso = existing && existing.endDate ? (parseDDMMYYYYToIso(existing.endDate) || todayIso) : todayIso;
             const startDisplay = formatIsoToDDMMYYYY(startIso);
             const endDisplay = formatIsoToDDMMYYYY(endIso);
-            const startTimeVal = existing && existing.startTime ? existing.startTime.slice(0, 5) : '07:00';
-            const endTimeVal = existing && existing.endTime ? existing.endTime.slice(0, 5) : '23:59';
+            const startTimeVal = existing && existing.startTime ? normalizeTimeHHMM(existing.startTime, '07:00') : '07:00';
+            const endTimeVal = existing && existing.endTime ? normalizeTimeHHMM(existing.endTime, '23:59') : '23:59';
 
             const html = `
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
@@ -3024,7 +3081,7 @@
                 </div>
             `;
 
-            window.showModal(existing ? 'Edit Paket Ujian' : 'Buat Paket Ujian Baru', '', 'info', (confirmed) => {
+            window.showModal(existing ? 'Edit Paket Ujian' : 'Buat Paket Ujian Baru', '', 'info', async (confirmed) => {
                 if (!confirmed) return true;
                 const examName = document.getElementById('exFormName').value.trim();
                 const subjectId = document.getElementById('exFormSubject').value;
@@ -3035,13 +3092,13 @@
 
                 const rawStartDisp = document.getElementById('exFormStartDateDisplay').value.trim();
                 const rawEndDisp = document.getElementById('exFormEndDateDisplay').value.trim();
-                const startDate = parseDDMMYYYYToIso(rawStartDisp) || document.getElementById('exFormStartDate').value || '2026-11-04';
-                const endDate = parseDDMMYYYYToIso(rawEndDisp) || document.getElementById('exFormEndDate').value || '2026-12-04';
+                const startDate = parseDDMMYYYYToIso(rawStartDisp) || parseDDMMYYYYToIso(document.getElementById('exFormStartDate').value);
+                const endDate = parseDDMMYYYYToIso(rawEndDisp) || parseDDMMYYYYToIso(document.getElementById('exFormEndDate').value);
 
                 const rawStartTime = document.getElementById('exFormStartTimeDisplay').value.trim() || document.getElementById('exFormStartTime').value || '07:00';
                 const rawEndTime = document.getElementById('exFormEndTimeDisplay').value.trim() || document.getElementById('exFormEndTime').value || '23:59';
-                const startTime = /^\d{2}:\d{2}$/.test(rawStartTime) ? rawStartTime : '07:00';
-                const endTime = /^\d{2}:\d{2}$/.test(rawEndTime) ? rawEndTime : '23:59';
+                const startTime = normalizeTimeHHMM(rawStartTime, '07:00');
+                const endTime = normalizeTimeHHMM(rawEndTime, '23:59');
 
                 const alertEl = document.getElementById('exFormValidationAlert');
                 const showFormErr = (msg) => {
@@ -3056,8 +3113,18 @@
                     return false;
                 }
 
-                const startMs = new Date(`${startDate}T${startTime}:00`).getTime();
-                const endMs = new Date(`${endDate}T${endTime}:59`).getTime();
+                if (!startDate || !endDate) {
+                    showFormErr('Tanggal Mulai dan Tanggal Selesai wajib diisi dengan format DD/MM/YYYY yang benar!');
+                    return false;
+                }
+
+                const sParts = startDate.split('-').map(Number);
+                const eParts = endDate.split('-').map(Number);
+                const sT = startTime.split(':').map(Number);
+                const eT = endTime.split(':').map(Number);
+                const startMs = Date.UTC(sParts[0], sParts[1] - 1, sParts[2], sT[0] - 7, sT[1], 0, 0);
+                const endMs = Date.UTC(eParts[0], eParts[1] - 1, eParts[2], eT[0] - 7, eT[1], 59, 999);
+
                 if (isNaN(startMs) || isNaN(endMs)) {
                     showFormErr('Format Tanggal (DD/MM/YYYY) atau Jam (HH:mm) tidak valid.');
                     return false;
@@ -3082,7 +3149,8 @@
                     existing.startTime = startTime;
                     existing.endTime = endTime;
                     existing.questionIds = questionIds;
-                    syncCollectionRecord('exams', existing.id, existing);
+                    existing.updatedAtMs = Date.now();
+                    await syncCollectionRecord('exams', existing.id, existing);
                 } else {
                     const newEx = {
                         id: 'EX-' + Date.now(),
@@ -3092,11 +3160,13 @@
                         startDate, endDate,
                         startTime, endTime,
                         durationMinutes, token, status: 'Aktif',
-                        questionIds, partialScoring: true, isPublished: true
+                        questionIds, partialScoring: true, isPublished: true,
+                        updatedAtMs: Date.now()
                     };
                     appData.exams.push(newEx);
-                    syncCollectionRecord('exams', newEx.id, newEx);
+                    await syncCollectionRecord('exams', newEx.id, newEx);
                 }
+                logActivity(`Jadwal & pengaturan paket ujian "${examName}" diperbarui (${formatIsoToDDMMYYYY(startDate)} ${startTime} s.d ${formatIsoToDDMMYYYY(endDate)} ${endTime} WIB).`);
                 renderExamsContent(document.getElementById('adminMainContent'));
                 return true;
             }, { html, showCancel: true, cancelText: 'Batal', okText: 'Simpan Ujian' });
