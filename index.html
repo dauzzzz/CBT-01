@@ -3235,10 +3235,35 @@
             }, { okText: 'Hapus' });
         };
 
+        window.filterResultsByExam = function(examId) {
+            appData.filters.resultExam = examId || 'ALL';
+            renderResultsContent(document.getElementById('adminMainContent'));
+        };
+
+        function getFilteredExamResults(targetExamId = null) {
+            const filterExamId = targetExamId !== null ? targetExamId : (appData.filters.resultExam || 'ALL');
+            if (!filterExamId || filterExamId === 'ALL') {
+                return [...appData.examResults];
+            }
+            return appData.examResults.filter(r => r.examId === filterExamId);
+        }
+
         function renderResultsContent(container) {
-            const rows = appData.examResults.map((r, idx) => {
+            const selectedExamId = appData.filters.resultExam || 'ALL';
+            const filteredResults = getFilteredExamResults(selectedExamId);
+
+            const examFilterOptions = appData.exams.map(ex => {
+                const subName = getSubjectNameById(ex.subjectId);
+                const count = appData.examResults.filter(r => r.examId === ex.id).length;
+                return `<option value="${escapeHtml(ex.id)}" ${selectedExamId === ex.id ? 'selected' : ''}>${escapeHtml(ex.examName)} - ${escapeHtml(subName)} (${count} Siswa)</option>`;
+            }).join('');
+
+            const rows = filteredResults.map((r, idx) => {
                 const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
                 const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
+                const examObj = appData.exams.find(e => e.id === r.examId);
+                const subjectLabel = getSubjectNameById(r.subjectId || (examObj ? examObj.subjectId : ''));
+                const examTitleLabel = r.examName || (examObj ? examObj.examName : '-');
                 return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50">
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
@@ -3246,6 +3271,10 @@
                     <td class="px-4 py-3 text-xs font-bold">${escapeHtml(r.studentName)}</td>
                     <td class="px-4 py-3 text-xs font-semibold ${schoolVal === '-' ? 'text-slate-400 italic' : 'text-indigo-700'}">${escapeHtml(schoolVal)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(r.className)}</td>
+                    <td class="px-4 py-3 text-xs">
+                        <span class="font-bold text-slate-800 block">${escapeHtml(examTitleLabel)}</span>
+                        <span class="text-[10px] text-indigo-600 font-semibold">${escapeHtml(subjectLabel)}</span>
+                    </td>
                     <td class="px-4 py-3 text-xs font-extrabold text-emerald-700">${r.finalScore}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${r.essayGradingStatus === 'Sudah Dinilai' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(r.essayGradingStatus)}</span></td>
                     <td class="px-4 py-3 text-xs space-x-1">
@@ -3260,22 +3289,29 @@
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Rekapitulasi Hasil Ujian & Koreksi Uraian</h3>
-                            <p class="text-xs text-slate-500">Daftar nilai akhir siswa, koreksi manual soal esai/uraian, dan unduh rekap Excel.</p>
+                            <p class="text-xs text-slate-500">Daftar nilai akhir siswa per paket ujian/mata pelajaran, koreksi soal uraian, dan cetak rekap.</p>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <button type="button" onclick="window.exportResultsExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex items-center gap-1.5">
+                                <label class="text-xs font-bold text-slate-600 hidden sm:inline"><i class="fa-solid fa-filter text-indigo-600 mr-1"></i> Paket Ujian:</label>
+                                <select onchange="window.filterResultsByExam(this.value)" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="ALL" ${selectedExamId === 'ALL' ? 'selected' : ''}>-- Semua Paket Ujian (${appData.examResults.length} Hasil) --</option>
+                                    ${examFilterOptions}
+                                </select>
+                            </div>
+                            <button type="button" onclick="window.exportResultsExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Nilai Excel
                             </button>
-                            <button type="button" onclick="window.printResultsReport()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm">
+                            <button type="button" onclick="window.openPrintResultsModal()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-print mr-1"></i> Cetak Rekap
                             </button>
                         </div>
                     </div>
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[700px] text-left border-collapse">
-                                <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Siswa</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Nilai Akhir</th><th class="px-4 py-3">Status Uraian</th><th class="px-4 py-3">Aksi</th></tr></thead>
-                                <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada hasil ujian yang masuk.</td></tr>'}</tbody>
+                            <table class="w-full min-w-[780px] text-left border-collapse">
+                                <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Siswa</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Paket Ujian / Mapel</th><th class="px-4 py-3">Nilai Akhir</th><th class="px-4 py-3">Status Uraian</th><th class="px-4 py-3">Aksi</th></tr></thead>
+                                <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada hasil ujian pada pilihan paket ujian ini.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
@@ -3322,25 +3358,110 @@
             }, { html, okText: 'Simpan Nilai Uraian' });
         };
 
-        window.exportResultsExcel = function() {
-            const headers = ['No', 'NISN', 'Nama Siswa', 'Asal Sekolah', 'Kelas', 'Nama Ujian', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
-            const rows = appData.examResults.map((r, i) => {
+        window.exportResultsExcel = function(customExamId = null) {
+            const activeFilter = customExamId !== null ? customExamId : (appData.filters.resultExam || 'ALL');
+            const listToExport = getFilteredExamResults(activeFilter);
+            const examObj = activeFilter !== 'ALL' ? appData.exams.find(e => e.id === activeFilter) : null;
+            const fileSuffix = examObj
+                ? `_${examObj.examName.replace(/[^a-zA-Z0-9]/g, '_')}`
+                : '_Semua_Mapel';
+
+            const headers = ['No', 'NISN', 'Nama Siswa', 'Asal Sekolah', 'Kelas', 'Paket Ujian', 'Mata Pelajaran', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
+            const rows = listToExport.map((r, i) => {
                 const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
                 const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
-                return [i + 1, r.nisn, r.studentName, schoolVal, r.className, r.examName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount, r.essayGradingStatus, r.submittedAt];
+                const rExam = appData.exams.find(e => e.id === r.examId);
+                const subjectName = getSubjectNameById(r.subjectId || (rExam ? rExam.subjectId : ''));
+                return [
+                    i + 1, r.nisn, r.studentName, schoolVal, r.className,
+                    r.examName || (rExam ? rExam.examName : '-'),
+                    subjectName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount,
+                    r.essayGradingStatus, r.submittedAt
+                ];
             });
-            window.downloadExcelFile('Rekap_Nilai_CBT_Sekolah.xlsx', headers, rows);
+            window.downloadExcelFile(`Rekap_Nilai_CBT${fileSuffix}.xlsx`, headers, rows);
         };
 
-        window.printResultsReport = function() {
-            const printWin = window.open('', '_blank', 'width=900,height=700');
+        window.openPrintResultsModal = function() {
+            const currentFilter = appData.filters.resultExam || 'ALL';
+            const defaultExamId = (currentFilter !== 'ALL' && appData.exams.some(e => e.id === currentFilter))
+                ? currentFilter
+                : (appData.exams[0] ? appData.exams[0].id : 'ALL');
+
+            const examOptionsHtml = appData.exams.map(ex => {
+                const subName = getSubjectNameById(ex.subjectId);
+                const clsName = getClassNameById(ex.classId);
+                const count = appData.examResults.filter(r => r.examId === ex.id).length;
+                return `<option value="${escapeHtml(ex.id)}" ${ex.id === defaultExamId ? 'selected' : ''}>${escapeHtml(ex.examName)} — Mapel: ${escapeHtml(subName)} (Kelas ${escapeHtml(clsName)} • ${count} Siswa)</option>`;
+            }).join('');
+
+            const html = `
+                <div class="space-y-4 text-xs">
+                    <div class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-900">
+                        <p class="font-extrabold text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-print text-indigo-600"></i> Pilih Paket Ujian / Mata Pelajaran yang Akan Dicetak
+                        </p>
+                        <p class="text-[11px] text-indigo-700 mt-1">
+                            Pilih cetak per paket ujian agar lembar rekapitulasi nilai terpisah rapi sesuai mata pelajaran yang diujikan.
+                        </p>
+                    </div>
+                    <div class="space-y-2.5">
+                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
+                            <input type="radio" name="printResultExamMode" value="PER_EXAM" ${defaultExamId !== 'ALL' ? 'checked' : ''} onchange="document.getElementById('printExamSelectBox').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                            <div class="w-full">
+                                <span class="font-extrabold text-slate-900 block">Cetak Per Paket Ujian / Mata Pelajaran (Direkomendasikan)</span>
+                                <span class="text-[11px] text-slate-500 block mt-0.5">Hanya mencetak nilai siswa dari paket ujian / mata pelajaran yang dipilih di bawah ini:</span>
+                                <div id="printExamSelectBox" class="mt-2.5 ${defaultExamId === 'ALL' ? 'hidden' : ''}">
+                                    <select id="printExamTargetSelect" class="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        ${examOptionsHtml || '<option value="">-- Belum Ada Paket Ujian --</option>'}
+                                    </select>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
+                            <input type="radio" name="printResultExamMode" value="ALL" ${defaultExamId === 'ALL' ? 'checked' : ''} onchange="document.getElementById('printExamSelectBox').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                            <div>
+                                <span class="font-extrabold text-slate-900 block">Cetak Semua Paket Ujian Sekaligus (${appData.examResults.length} Hasil)</span>
+                                <span class="text-[11px] text-slate-500 block mt-0.5">Menggabungkan seluruh hasil ujian dari semua mata pelajaran dalam satu tabel.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            `;
+
+            window.showModal('Cetak Rekapitulasi Nilai Ujian', '', 'info', (confirmed) => {
+                if (!confirmed) return true;
+                const modeEl = document.querySelector('input[name="printResultExamMode"]:checked');
+                const mode = modeEl ? modeEl.value : 'PER_EXAM';
+                const targetExamId = mode === 'PER_EXAM' ? (document.getElementById('printExamTargetSelect')?.value || '') : 'ALL';
+                if (mode === 'PER_EXAM' && !targetExamId) {
+                    window.showModal('Pilih Paket Ujian', 'Silakan pilih paket ujian terlebih dahulu.', 'error');
+                    return false;
+                }
+                window.printResultsReport(targetExamId);
+                return true;
+            }, { html, showCancel: true, cancelText: 'Batal', okText: 'Cetak Sekarang' });
+        };
+
+        window.printResultsReport = function(targetExamId = null) {
+            const examFilterId = targetExamId !== null ? targetExamId : (appData.filters.resultExam || 'ALL');
+            const resultsToPrint = getFilteredExamResults(examFilterId);
+            const selectedExamObj = examFilterId !== 'ALL' ? appData.exams.find(e => e.id === examFilterId) : null;
+
+            const examHeaderTitle = selectedExamObj ? selectedExamObj.examName : 'Semua Paket Ujian';
+            const subjectHeaderTitle = selectedExamObj ? getSubjectNameById(selectedExamObj.subjectId) : 'Semua Mata Pelajaran';
+            const classHeaderTitle = selectedExamObj ? `Kelas ${getClassNameById(selectedExamObj.classId)}` : 'Semua Kelas';
+
+            const printWin = window.open('', '_blank', 'width=950,height=720');
             if (!printWin) {
                 window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak rekap nilai.', 'error');
                 return;
             }
-            const rowsHtml = appData.examResults.map((r, i) => {
+            const rowsHtml = resultsToPrint.map((r, i) => {
                 const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
                 const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
+                const rExam = appData.exams.find(e => e.id === r.examId);
+                const rSubName = getSubjectNameById(r.subjectId || (rExam ? rExam.subjectId : ''));
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${i + 1}</td>
@@ -3348,15 +3469,16 @@
                     <td style="border:1px solid #cbd5e1;padding:8px;font-weight:bold;">${escapeHtml(r.studentName)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(schoolVal)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${escapeHtml(r.className)}</td>
+                    ${examFilterId === 'ALL' ? `<td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(r.examName || '-')} (${escapeHtml(rSubName)})</td>` : ''}
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${r.correctCount || 0}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${r.wrongCount || 0}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;color:#047857;">${r.finalScore}</td>
                 </tr>
             `;
-            }).join('') || '<tr><td colspan="8" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian.</td></tr>';
+            }).join('') || `<tr><td colspan="${examFilterId === 'ALL' ? 9 : 8}" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian pada paket ujian ini.</td></tr>`;
 
             const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai</title><style>body{font-family:sans-serif;padding:24px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:18px;}.kop img{width:56px;height:56px;object-fit:contain;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • REKAPITULASI HASIL UJIAN</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Asal Sekolah</th><th>Kelas</th><th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
+            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai - ${escapeHtml(examHeaderTitle)}</title><style>body{font-family:sans-serif;padding:24px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}.meta-box{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • REKAPITULASI HASIL UJIAN</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><div class="meta-box"><div><strong>Paket Ujian:</strong> ${escapeHtml(examHeaderTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectHeaderTitle)}</div><div style="text-align:right;"><strong>Kelas Peserta:</strong> ${escapeHtml(classHeaderTitle)}<br><strong>Jumlah Peserta:</strong> ${resultsToPrint.length} Siswa</div></div><table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Asal Sekolah</th><th>Kelas</th>${examFilterId === 'ALL' ? '<th>Paket Ujian / Mapel</th>' : ''}<th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
             printWin.document.close();
             printWin.focus();
             setTimeout(() => { printWin.print(); }, 250);
