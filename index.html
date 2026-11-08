@@ -3235,35 +3235,38 @@
             }, { okText: 'Hapus' });
         };
 
+        function getFilteredResultsByExam(examIdFilter = 'ALL') {
+            if (!examIdFilter || examIdFilter === 'ALL') {
+                return [...appData.examResults];
+            }
+            const targetExam = appData.exams.find(e => e.id === examIdFilter);
+            return appData.examResults.filter(r => {
+                if (r.examId === examIdFilter) return true;
+                if (targetExam && r.examName && String(r.examName).trim().toLowerCase() === String(targetExam.examName).trim().toLowerCase()) return true;
+                return false;
+            });
+        }
+
         window.filterResultsByExam = function(examId) {
             appData.filters.resultExam = examId || 'ALL';
             renderResultsContent(document.getElementById('adminMainContent'));
         };
 
-        function getFilteredExamResults(targetExamId = null) {
-            const filterExamId = targetExamId !== null ? targetExamId : (appData.filters.resultExam || 'ALL');
-            if (!filterExamId || filterExamId === 'ALL') {
-                return [...appData.examResults];
-            }
-            return appData.examResults.filter(r => r.examId === filterExamId);
-        }
-
         function renderResultsContent(container) {
             const selectedExamId = appData.filters.resultExam || 'ALL';
-            const filteredResults = getFilteredExamResults(selectedExamId);
+            const filteredResults = getFilteredResultsByExam(selectedExamId);
 
-            const examFilterOptions = appData.exams.map(ex => {
-                const subName = getSubjectNameById(ex.subjectId);
-                const count = appData.examResults.filter(r => r.examId === ex.id).length;
-                return `<option value="${escapeHtml(ex.id)}" ${selectedExamId === ex.id ? 'selected' : ''}>${escapeHtml(ex.examName)} - ${escapeHtml(subName)} (${count} Siswa)</option>`;
+            const examFilterOptions = appData.exams.map(e => {
+                const count = getFilteredResultsByExam(e.id).length;
+                const subjName = getSubjectNameById(e.subjectId);
+                return `<option value="${escapeHtml(e.id)}" ${selectedExamId === e.id ? 'selected' : ''}>${escapeHtml(e.examName)} — ${escapeHtml(subjName)} (Kelas ${escapeHtml(getClassNameById(e.classId))} • ${count} Hasil)</option>`;
             }).join('');
 
             const rows = filteredResults.map((r, idx) => {
                 const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
                 const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
-                const examObj = appData.exams.find(e => e.id === r.examId);
-                const subjectLabel = getSubjectNameById(r.subjectId || (examObj ? examObj.subjectId : ''));
-                const examTitleLabel = r.examName || (examObj ? examObj.examName : '-');
+                const exObj = appData.exams.find(e => e.id === r.examId);
+                const mapelLabel = getSubjectNameById(r.subjectId || (exObj ? exObj.subjectId : '')) || r.examName || '-';
                 return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50">
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
@@ -3272,8 +3275,8 @@
                     <td class="px-4 py-3 text-xs font-semibold ${schoolVal === '-' ? 'text-slate-400 italic' : 'text-indigo-700'}">${escapeHtml(schoolVal)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(r.className)}</td>
                     <td class="px-4 py-3 text-xs">
-                        <span class="font-bold text-slate-800 block">${escapeHtml(examTitleLabel)}</span>
-                        <span class="text-[10px] text-indigo-600 font-semibold">${escapeHtml(subjectLabel)}</span>
+                        <span class="font-bold text-slate-800 block">${escapeHtml(r.examName || '-')}</span>
+                        <span class="text-[10px] text-indigo-600 font-semibold">${escapeHtml(mapelLabel)}</span>
                     </td>
                     <td class="px-4 py-3 text-xs font-extrabold text-emerald-700">${r.finalScore}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${r.essayGradingStatus === 'Sudah Dinilai' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(r.essayGradingStatus)}</span></td>
@@ -3289,20 +3292,17 @@
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Rekapitulasi Hasil Ujian & Koreksi Uraian</h3>
-                            <p class="text-xs text-slate-500">Daftar nilai akhir siswa per paket ujian/mata pelajaran, koreksi soal uraian, dan cetak rekap.</p>
+                            <p class="text-xs text-slate-500">Daftar nilai akhir siswa, filter per paket ujian/mata pelajaran, koreksi manual soal esai/uraian, dan cetak rekap.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <div class="flex items-center gap-1.5">
-                                <label class="text-xs font-bold text-slate-600 hidden sm:inline"><i class="fa-solid fa-filter text-indigo-600 mr-1"></i> Paket Ujian:</label>
-                                <select onchange="window.filterResultsByExam(this.value)" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                    <option value="ALL" ${selectedExamId === 'ALL' ? 'selected' : ''}>-- Semua Paket Ujian (${appData.examResults.length} Hasil) --</option>
-                                    ${examFilterOptions}
-                                </select>
-                            </div>
+                            <select onchange="window.filterResultsByExam(this.value)" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
+                                <option value="ALL">-- Semua Paket Ujian (${appData.examResults.length} Hasil) --</option>
+                                ${examFilterOptions}
+                            </select>
                             <button type="button" onclick="window.exportResultsExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Nilai Excel
                             </button>
-                            <button type="button" onclick="window.openPrintResultsModal()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
+                            <button type="button" onclick="window.printResultsReport()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-print mr-1"></i> Cetak Rekap
                             </button>
                         </div>
@@ -3311,7 +3311,7 @@
                         <div class="table-responsive-wrapper custom-scrollbar">
                             <table class="w-full min-w-[780px] text-left border-collapse">
                                 <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Siswa</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Paket Ujian / Mapel</th><th class="px-4 py-3">Nilai Akhir</th><th class="px-4 py-3">Status Uraian</th><th class="px-4 py-3">Aksi</th></tr></thead>
-                                <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada hasil ujian pada pilihan paket ujian ini.</td></tr>'}</tbody>
+                                <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada hasil ujian untuk paket ujian yang dipilih.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
@@ -3320,201 +3320,170 @@
         }
 
         window.openEssayGradingModal = function(resultId) {
-            const res = appData.examResults.find(r => (r.resultId || r.id) === resultId);
+            const res = appData.examResults.find(r => r.resultId === resultId);
             if (!res) return;
-
-            const examObj = appData.exams.find(e => e.id === res.examId);
-            let qList = [];
-            if (examObj && Array.isArray(examObj.questionIds) && examObj.questionIds.length > 0) {
-                qList = examObj.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
-            } else if (examObj && examObj.bankId) {
-                qList = appData.questions.filter(q => q.bankId === examObj.bankId);
-            } else {
-                qList = [...appData.questions];
-            }
-
-            const essayQuestions = qList.filter(q => q.type === 'essay');
-            if (essayQuestions.length === 0) {
-                window.showModal('Tidak Ada Soal Uraian', 'Paket ujian ini tidak memiliki soal bertipe Uraian / Esai untuk dikoreksi manual.', 'info');
-                return;
-            }
-
-            const essayItemsHtml = essayQuestions.map((q, idx) => {
-                const studentAns = (res.answersSnapshot && res.answersSnapshot[q.id]) ? res.answersSnapshot[q.id] : '(Tidak dijawab)';
-                const currentGiven = (res.essayScores && res.essayScores[q.id] !== undefined) ? res.essayScores[q.id] : 0;
-                return `
-                    <div class="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
-                        <div class="flex justify-between items-center">
-                            <span class="font-extrabold text-indigo-700">Soal Uraian #${idx + 1} (Nomor ${q.orderNum || (idx + 1)})</span>
-                            <span class="font-bold text-slate-600">Bobot Maks: ${q.weight} Poin</span>
-                        </div>
-                        <p class="font-bold text-slate-800">${escapeHtml(q.questionText)}</p>
-                        <div class="p-3 bg-white border border-slate-200 rounded-xl">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Jawaban Siswa:</p>
-                            <p class="text-slate-800 whitespace-pre-line">${escapeHtml(studentAns)}</p>
-                        </div>
-                        <div class="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900">
-                            <strong>Kunci / Rubrik:</strong> ${escapeHtml(q.correctAnswer || '-')}
-                        </div>
-                        <div class="flex items-center justify-between pt-2">
-                            <label class="font-bold text-slate-700">Berikan Poin (0 - ${q.weight}):</label>
-                            <input type="number" id="essayScoreInput_${q.id}" min="0" max="${q.weight}" value="${currentGiven}" class="w-28 px-3 py-1.5 bg-white border border-slate-300 rounded-xl font-extrabold text-indigo-700 text-center">
-                        </div>
-                    </div>
-                `;
-            }).join('');
+            const essayQuestions = appData.questions.filter(q => q.type === 'essay');
+            const q = essayQuestions[0] || appData.questions[appData.questions.length - 1];
+            const studentAns = (res.answersSnapshot && q) ? (res.answersSnapshot[q.id] || '(Tidak dijawab)') : '(Tidak dijawab)';
+            const currentScore = (res.essayScores && q) ? (res.essayScores[q.id] || 0) : 0;
 
             const html = `
-                <div class="space-y-3">
-                    <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-900">
-                        Peserta: <strong>${escapeHtml(res.studentName)}</strong> (${escapeHtml(res.nisn)}) • Paket: <strong>${escapeHtml(res.examName || '-')}</strong>
+                <div class="space-y-3 text-xs">
+                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                        <p class="font-bold text-slate-700">Siswa: ${escapeHtml(res.studentName)} (${escapeHtml(res.className)})</p>
+                        <p class="text-slate-500 mt-1">Pertanyaan Uraian: ${escapeHtml(q ? q.questionText : 'Soal Uraian')}</p>
+                        <p class="mt-2 p-2 bg-white rounded border border-slate-200 font-semibold text-slate-800">Jawaban Siswa: "${escapeHtml(studentAns)}"</p>
                     </div>
-                    <div class="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-1">
-                        ${essayItemsHtml}
+                    <div>
+                        <label class="block font-bold text-slate-700 mb-1">Skor Uraian (Maksimal ${q ? q.weight : 25} Poin)</label>
+                        <input type="number" id="essayGradeScoreInput" value="${currentScore}" min="0" max="${q ? q.weight : 25}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold">
                     </div>
                 </div>
             `;
 
-            window.showModal('Koreksi Soal Uraian / Esai', '', 'info', async (confirmed) => {
+            window.showModal('Koreksi & Penilaian Soal Uraian', '', 'info', (confirmed) => {
                 if (!confirmed) return true;
-                if (!res.essayScores) res.essayScores = {};
-                let addedEssayPoints = 0;
-                essayQuestions.forEach(q => {
-                    const inp = document.getElementById(`essayScoreInput_${q.id}`);
-                    const val = Math.min(Number(q.weight) || 10, Math.max(0, Number(inp ? inp.value : 0) || 0));
-                    res.essayScores[q.id] = val;
-                    addedEssayPoints += val;
-                });
-
-                let nonEssayScore = 0;
-                let maxPossible = 0;
-                qList.forEach(q => {
-                    maxPossible += (Number(q.weight) || 10);
-                    if (q.type !== 'essay') {
-                        const ans = res.answersSnapshot ? res.answersSnapshot[q.id] : undefined;
-                        const evalRes = evaluateSingleQuestionForReview(q, ans, res);
-                        if (evalRes.status === 'CORRECT') {
-                            nonEssayScore += (Number(q.weight) || 10);
-                        }
-                    }
-                });
-
-                res.totalScoreObtained = nonEssayScore + addedEssayPoints;
-                res.maxPossibleScore = maxPossible || 100;
-                res.finalScore = Math.round((res.totalScoreObtained / res.maxPossibleScore) * 100) || 0;
+                const givenScore = Number(document.getElementById('essayGradeScoreInput').value) || 0;
+                if (q) {
+                    const prevScore = (res.essayScores && res.essayScores[q.id]) ? Number(res.essayScores[q.id]) : 0;
+                    if (!res.essayScores) res.essayScores = {};
+                    res.essayScores[q.id] = givenScore;
+                    res.totalScoreObtained = Math.max(0, (res.totalScoreObtained - prevScore) + givenScore);
+                    res.finalScore = Math.min(100, Math.round((res.totalScoreObtained / (res.maxPossibleScore || 100)) * 100));
+                }
                 res.essayGradingStatus = 'Sudah Dinilai';
-
-                await syncCollectionRecord('examResults', res.resultId || res.id, res);
+                syncCollectionRecord('examResults', res.resultId, res);
                 renderResultsContent(document.getElementById('adminMainContent'));
-                window.showModal('Koreksi Disimpan', `Nilai akhir ${res.studentName} berhasil diperbarui menjadi ${res.finalScore}.`, 'success');
                 return true;
-            }, { html, wide: true, showCancel: true, okText: 'Simpan Nilai Uraian' });
+            }, { html, okText: 'Simpan Nilai Uraian' });
         };
 
-        window.exportResultsExcel = function(customExamId = null) {
-            const activeFilter = customExamId !== null ? customExamId : (appData.filters.resultExam || 'ALL');
-            const listToExport = getFilteredExamResults(activeFilter);
-            const examObj = activeFilter !== 'ALL' ? appData.exams.find(e => e.id === activeFilter) : null;
-            const fileSuffix = examObj
-                ? `_${examObj.examName.replace(/[^a-zA-Z0-9]/g, '_')}`
-                : '_Semua_Mapel';
-
-            const headers = ['No', 'NISN', 'Nama Siswa', 'Asal Sekolah', 'Kelas', 'Paket Ujian', 'Mata Pelajaran', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
-            const rows = listToExport.map((r, i) => {
-                const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
-                const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
-                const rExam = appData.exams.find(e => e.id === r.examId);
-                const subjectName = getSubjectNameById(r.subjectId || (rExam ? rExam.subjectId : ''));
-                return [
-                    i + 1, r.nisn, r.studentName, schoolVal, r.className,
-                    r.examName || (rExam ? rExam.examName : '-'),
-                    subjectName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount,
-                    r.essayGradingStatus, r.submittedAt
-                ];
-            });
-            window.downloadExcelFile(`Rekap_Nilai_CBT${fileSuffix}.xlsx`, headers, rows);
-        };
-
-        window.openPrintResultsModal = function() {
+        window.exportResultsExcel = function() {
             const currentFilter = appData.filters.resultExam || 'ALL';
             const defaultExamId = (currentFilter !== 'ALL' && appData.exams.some(e => e.id === currentFilter))
                 ? currentFilter
-                : (appData.exams[0] ? appData.exams[0].id : 'ALL');
+                : (appData.exams[0] ? appData.exams[0].id : '');
 
-            const examOptionsHtml = appData.exams.map(ex => {
-                const subName = getSubjectNameById(ex.subjectId);
-                const clsName = getClassNameById(ex.classId);
-                const count = appData.examResults.filter(r => r.examId === ex.id).length;
-                return `<option value="${escapeHtml(ex.id)}" ${ex.id === defaultExamId ? 'selected' : ''}>${escapeHtml(ex.examName)} — Mapel: ${escapeHtml(subName)} (Kelas ${escapeHtml(clsName)} • ${count} Siswa)</option>`;
+            const examOpts = appData.exams.map(e => {
+                const count = getFilteredResultsByExam(e.id).length;
+                const subjName = getSubjectNameById(e.subjectId);
+                return `<option value="${escapeHtml(e.id)}" ${e.id === defaultExamId ? 'selected' : ''}>${escapeHtml(e.examName)} — ${escapeHtml(subjName)} (Kelas ${escapeHtml(getClassNameById(e.classId))} • ${count} Siswa)</option>`;
             }).join('');
 
             const html = `
-                <div class="space-y-4 text-xs">
-                    <div class="p-3.5 bg-indigo-50 border border-indigo-200 rounded-2xl text-indigo-900">
-                        <p class="font-extrabold text-sm flex items-center gap-2">
-                            <i class="fa-solid fa-print text-indigo-600"></i> Pilih Paket Ujian / Mata Pelajaran yang Akan Dicetak
-                        </p>
-                        <p class="text-[11px] text-indigo-700 mt-1">
-                            Pilih cetak per paket ujian agar lembar rekapitulasi nilai terpisah rapi sesuai mata pelajaran yang diujikan.
-                        </p>
-                    </div>
-                    <div class="space-y-2.5">
-                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
-                            <input type="radio" name="printResultExamMode" value="PER_EXAM" ${defaultExamId !== 'ALL' ? 'checked' : ''} onchange="document.getElementById('printExamSelectBox').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
-                            <div class="w-full">
-                                <span class="font-extrabold text-slate-900 block">Cetak Per Paket Ujian / Mata Pelajaran (Direkomendasikan)</span>
-                                <span class="text-[11px] text-slate-500 block mt-0.5">Hanya mencetak nilai siswa dari paket ujian / mata pelajaran yang dipilih di bawah ini:</span>
-                                <div id="printExamSelectBox" class="mt-2.5 ${defaultExamId === 'ALL' ? 'hidden' : ''}">
-                                    <select id="printExamTargetSelect" class="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                        ${examOptionsHtml || '<option value="">-- Belum Ada Paket Ujian --</option>'}
-                                    </select>
-                                </div>
+                <div class="space-y-3.5 text-xs">
+                    <p class="text-slate-600">Pilih cakupan paket ujian / mata pelajaran yang ingin diekspor ke file Microsoft Excel (<strong>.xlsx</strong>):</p>
+                    <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
+                        <input type="radio" name="exportResultScope" value="PACKAGE" ${currentFilter !== 'ALL' || appData.exams.length > 0 ? 'checked' : ''} onchange="document.getElementById('exportResultExamSelectWrap').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-emerald-600">
+                        <div class="w-full">
+                            <span class="font-extrabold text-slate-900 block">Ekspor Per Paket Ujian / Mata Pelajaran</span>
+                            <span class="text-[11px] text-slate-500 block mt-0.5">Nilai siswa terpisah rapi sesuai mata pelajaran yang dipilih.</span>
+                            <div id="exportResultExamSelectWrap" class="mt-2.5">
+                                <select id="exportResultExamTargetId" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800">
+                                    ${examOpts || '<option value="">-- Belum Ada Paket Ujian --</option>'}
+                                </select>
                             </div>
-                        </label>
-                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
-                            <input type="radio" name="printResultExamMode" value="ALL" ${defaultExamId === 'ALL' ? 'checked' : ''} onchange="document.getElementById('printExamSelectBox').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
-                            <div>
-                                <span class="font-extrabold text-slate-900 block">Cetak Semua Paket Ujian Sekaligus (${appData.examResults.length} Hasil)</span>
-                                <span class="text-[11px] text-slate-500 block mt-0.5">Menggabungkan seluruh hasil ujian dari semua mata pelajaran dalam satu tabel.</span>
+                        </div>
+                    </label>
+                    <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
+                        <input type="radio" name="exportResultScope" value="ALL" ${currentFilter === 'ALL' && appData.exams.length === 0 ? 'checked' : ''} onchange="document.getElementById('exportResultExamSelectWrap').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-emerald-600">
+                        <div>
+                            <span class="font-extrabold text-slate-900 block">Ekspor Semua Paket Ujian Sekaligus (${appData.examResults.length} Hasil)</span>
+                            <span class="text-[11px] text-slate-500 block mt-0.5">Menggabungkan seluruh hasil ujian ke dalam satu tabel Excel.</span>
+                        </div>
+                    </label>
+                </div>
+            `;
+
+            window.showModal('Ekspor Rekap Nilai ke Excel (.xlsx)', '', 'info', (confirmed) => {
+                if (!confirmed) return true;
+                const modeEl = document.querySelector('input[name="exportResultScope"]:checked');
+                const mode = modeEl ? modeEl.value : 'PACKAGE';
+                const targetExamId = mode === 'PACKAGE' ? (document.getElementById('exportResultExamTargetId')?.value || '') : 'ALL';
+                const listToExport = getFilteredResultsByExam(targetExamId);
+                if (listToExport.length === 0) {
+                    window.showModal('Data Kosong', 'Belum ada hasil ujian siswa pada paket ujian yang dipilih.', 'error');
+                    return false;
+                }
+                const targetExam = appData.exams.find(e => e.id === targetExamId);
+                const headers = ['No', 'NISN', 'Nama Siswa', 'Asal Sekolah', 'Kelas', 'Paket Ujian', 'Mata Pelajaran', 'Nilai Akhir', 'Benar', 'Salah', 'Kosong', 'Status Uraian', 'Waktu Selesai'];
+                const rows = listToExport.map((r, i) => {
+                    const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
+                    const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
+                    const exObj = appData.exams.find(e => e.id === r.examId) || targetExam;
+                    const subjName = getSubjectNameById(r.subjectId || (exObj ? exObj.subjectId : '')) || '-';
+                    return [i + 1, r.nisn, r.studentName, schoolVal, r.className, r.examName || (exObj ? exObj.examName : '-'), subjName, r.finalScore, r.correctCount, r.wrongCount, r.emptyCount, r.essayGradingStatus, r.submittedAt];
+                });
+                const fileSuffix = targetExam ? targetExam.examName.replace(/[^a-zA-Z0-9]/g, '_') : 'Semua_Mapel';
+                window.downloadExcelFile(`Rekap_Nilai_${fileSuffix}.xlsx`, headers, rows);
+                return true;
+            }, { html, showCancel: true, okText: 'Unduh Excel (.xlsx)' });
+        };
+
+        window.printResultsReport = function() {
+            const currentFilter = appData.filters.resultExam || 'ALL';
+            const defaultExamId = (currentFilter !== 'ALL' && appData.exams.some(e => e.id === currentFilter))
+                ? currentFilter
+                : (appData.exams[0] ? appData.exams[0].id : '');
+
+            const examOpts = appData.exams.map(e => {
+                const count = getFilteredResultsByExam(e.id).length;
+                const subjName = getSubjectNameById(e.subjectId);
+                return `<option value="${escapeHtml(e.id)}" ${e.id === defaultExamId ? 'selected' : ''}>${escapeHtml(e.examName)} — Mapel: ${escapeHtml(subjName)} (Kelas ${escapeHtml(getClassNameById(e.classId))} • ${count} Siswa)</option>`;
+            }).join('');
+
+            const html = `
+                <div class="space-y-3.5 text-xs">
+                    <p class="text-slate-600">Pilih paket ujian / mata pelajaran yang ingin dicetak agar rekap nilai tidak tercampur antar mata pelajaran:</p>
+                    <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/50 hover:bg-white cursor-pointer transition">
+                        <input type="radio" name="printResultScope" value="PACKAGE" ${currentFilter !== 'ALL' || appData.exams.length > 0 ? 'checked' : ''} onchange="document.getElementById('printResultExamSelectWrap').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                        <div class="w-full">
+                            <span class="font-extrabold text-slate-900 block"><i class="fa-solid fa-file-signature text-indigo-600 mr-1"></i> Cetak Per Paket Ujian / Mata Pelajaran</span>
+                            <span class="text-[11px] text-slate-500 block mt-0.5">Mencetak daftar nilai khusus untuk satu paket ujian / mata pelajaran yang dipilih.</span>
+                            <div id="printResultExamSelectWrap" class="mt-2.5">
+                                <select id="printResultExamTargetId" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800">
+                                    ${examOpts || '<option value="">-- Belum Ada Paket Ujian --</option>'}
+                                </select>
                             </div>
-                        </label>
-                    </div>
+                        </div>
+                    </label>
+                    <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
+                        <input type="radio" name="printResultScope" value="ALL" ${currentFilter === 'ALL' && appData.exams.length === 0 ? 'checked' : ''} onchange="document.getElementById('printResultExamSelectWrap').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                        <div>
+                            <span class="font-extrabold text-slate-900 block">Cetak Semua Paket Ujian Sekaligus (${appData.examResults.length} Hasil)</span>
+                            <span class="text-[11px] text-slate-500 block mt-0.5">Mencetak gabungan seluruh hasil ujian dari semua mata pelajaran.</span>
+                        </div>
+                    </label>
                 </div>
             `;
 
             window.showModal('Cetak Rekapitulasi Nilai Ujian', '', 'info', (confirmed) => {
                 if (!confirmed) return true;
-                const modeEl = document.querySelector('input[name="printResultExamMode"]:checked');
-                const mode = modeEl ? modeEl.value : 'PER_EXAM';
-                const targetExamId = mode === 'PER_EXAM' ? (document.getElementById('printExamTargetSelect')?.value || '') : 'ALL';
-                if (mode === 'PER_EXAM' && !targetExamId) {
-                    window.showModal('Pilih Paket Ujian', 'Silakan pilih paket ujian terlebih dahulu.', 'error');
-                    return false;
-                }
-                window.printResultsReport(targetExamId);
+                const modeEl = document.querySelector('input[name="printResultScope"]:checked');
+                const mode = modeEl ? modeEl.value : 'PACKAGE';
+                const targetExamId = mode === 'PACKAGE' ? (document.getElementById('printResultExamTargetId')?.value || '') : 'ALL';
+                window.executePrintResultsReport(targetExamId);
                 return true;
             }, { html, showCancel: true, cancelText: 'Batal', okText: 'Cetak Sekarang' });
         };
 
-        window.printResultsReport = function(targetExamId = null) {
-            const examFilterId = targetExamId !== null ? targetExamId : (appData.filters.resultExam || 'ALL');
-            const resultsToPrint = getFilteredExamResults(examFilterId);
-            const selectedExamObj = examFilterId !== 'ALL' ? appData.exams.find(e => e.id === examFilterId) : null;
-
-            const examHeaderTitle = selectedExamObj ? selectedExamObj.examName : 'Semua Paket Ujian';
-            const subjectHeaderTitle = selectedExamObj ? getSubjectNameById(selectedExamObj.subjectId) : 'Semua Mata Pelajaran';
-            const classHeaderTitle = selectedExamObj ? `Kelas ${getClassNameById(selectedExamObj.classId)}` : 'Semua Kelas';
+        window.executePrintResultsReport = function(examIdFilter = 'ALL') {
+            const listToPrint = getFilteredResultsByExam(examIdFilter);
+            const targetExam = (examIdFilter && examIdFilter !== 'ALL') ? appData.exams.find(e => e.id === examIdFilter) : null;
+            const subjectLabel = targetExam ? getSubjectNameById(targetExam.subjectId) : 'Semua Mata Pelajaran';
+            const examTitleLabel = targetExam ? targetExam.examName : 'Semua Paket Ujian';
+            const classLabel = targetExam ? `Kelas ${getClassNameById(targetExam.classId)}` : 'Semua Kelas';
 
             const printWin = window.open('', '_blank', 'width=950,height=720');
             if (!printWin) {
                 window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak rekap nilai.', 'error');
                 return;
             }
-            const rowsHtml = resultsToPrint.map((r, i) => {
+            const rowsHtml = listToPrint.map((r, i) => {
                 const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
                 const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
-                const rExam = appData.exams.find(e => e.id === r.examId);
-                const rSubName = getSubjectNameById(r.subjectId || (rExam ? rExam.subjectId : ''));
+                const exObj = appData.exams.find(e => e.id === r.examId) || targetExam;
+                const rowMapel = getSubjectNameById(r.subjectId || (exObj ? exObj.subjectId : '')) || r.examName || '-';
                 return `
                 <tr>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${i + 1}</td>
@@ -3522,16 +3491,25 @@
                     <td style="border:1px solid #cbd5e1;padding:8px;font-weight:bold;">${escapeHtml(r.studentName)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(schoolVal)}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${escapeHtml(r.className)}</td>
-                    ${examFilterId === 'ALL' ? `<td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(r.examName || '-')} (${escapeHtml(rSubName)})</td>` : ''}
+                    ${!targetExam ? `<td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(r.examName || '-')} (${escapeHtml(rowMapel)})</td>` : ''}
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${r.correctCount || 0}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${r.wrongCount || 0}</td>
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;color:#047857;">${r.finalScore}</td>
                 </tr>
             `;
-            }).join('') || `<tr><td colspan="${examFilterId === 'ALL' ? 9 : 8}" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian pada paket ujian ini.</td></tr>`;
+            }).join('') || `<tr><td colspan="${targetExam ? 8 : 9}" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian untuk paket ini.</td></tr>`;
 
             const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai - ${escapeHtml(examHeaderTitle)}</title><style>body{font-family:sans-serif;padding:24px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}.meta-box{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • REKAPITULASI HASIL UJIAN</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><div class="meta-box"><div><strong>Paket Ujian:</strong> ${escapeHtml(examHeaderTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectHeaderTitle)}</div><div style="text-align:right;"><strong>Kelas Peserta:</strong> ${escapeHtml(classHeaderTitle)}<br><strong>Jumlah Peserta:</strong> ${resultsToPrint.length} Siswa</div></div><table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Asal Sekolah</th><th>Kelas</th>${examFilterId === 'ALL' ? '<th>Paket Ujian / Mapel</th>' : ''}<th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
+            const metaInfoHtml = `
+                <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px;padding:10px 14px;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;">
+                    <div><strong>Paket Ujian:</strong> ${escapeHtml(examTitleLabel)}</div>
+                    <div><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectLabel)}</div>
+                    <div><strong>Kelas:</strong> ${escapeHtml(classLabel)}</div>
+                    <div><strong>Jumlah Peserta:</strong> ${listToPrint.length} Siswa</div>
+                </div>
+            `;
+
+            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai - ${escapeHtml(examTitleLabel)}</title><style>body{font-family:sans-serif;padding:24px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • REKAPITULASI HASIL UJIAN</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div>${metaInfoHtml}<table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Asal Sekolah</th><th>Kelas</th>${!targetExam ? '<th>Paket Ujian / Mapel</th>' : ''}<th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
             printWin.document.close();
             printWin.focus();
             setTimeout(() => { printWin.print(); }, 250);
