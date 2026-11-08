@@ -4291,19 +4291,27 @@
             const msgEl = document.getElementById('modalMessage');
             const bodyEl = document.getElementById('modalDynamicBody');
 
+            // Pastikan header kustom (yang mengandung tombol silang × / close modal) diaktifkan kembali
             if (headerEl && headerEl.parentElement) {
-                headerEl.parentElement.classList.add('hidden');
+                headerEl.parentElement.classList.remove('hidden');
             }
+            if (headerEl) headerEl.classList.remove('hidden');
             if (msgEl) msgEl.classList.add('hidden');
             if (footerEl) footerEl.classList.add('hidden');
 
             if (dialogBox) {
-                dialogBox.className = 'bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden p-7 transform transition-all my-8 text-center';
+                dialogBox.className = 'bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden transform transition-all my-8 flex flex-col max-h-[90vh]';
+            }
+
+            // Atur judul header modal khusus peringatan anti-kecurangan
+            const titleEl = document.getElementById('modalTitle');
+            if (titleEl) {
+                titleEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>Peringatan Pengawasan</span>`;
             }
 
             if (bodyEl) {
                 bodyEl.innerHTML = `
-                    <div class="space-y-4">
+                    <div class="space-y-4 p-2 text-center">
                         <div class="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-2xl border border-red-200 shadow-xs">
                             <i class="fa-solid fa-triangle-exclamation"></i>
                         </div>
