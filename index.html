@@ -627,10 +627,17 @@
                         }
                     }
 
-                    // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis
-                    window.triggerRealtimeUIRefresh('examsScheduleTick');
+                    // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis dan instan
+                    if (appData.currentUser) {
+                        if (appData.currentUser.role === 'admin' && appData.activeAdminMenu === 'exams') {
+                            const mainEl = document.getElementById('adminMainContent');
+                            if (mainEl) renderExamsContent(mainEl);
+                        } else if (appData.currentUser.role === 'student' && !isExamWorkspaceActive) {
+                            window.renderStudentPortal(false);
+                        }
+                    }
                 }
-            }, 2000);
+            }, 1000);
         }
 
         let currentModalCallback = null;
