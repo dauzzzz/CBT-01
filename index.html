@@ -657,11 +657,13 @@
 
         window.handleModalCancel = function() {
             const cb = currentModalCallback;
+            isViolationModalOpen = false;
             window.closeModal();
             if (cb) cb(false);
         };
 
         window.closeModal = function() {
+            isViolationModalOpen = false;
             document.getElementById('customModal').classList.add('hidden');
             currentModalCallback = null;
         };
