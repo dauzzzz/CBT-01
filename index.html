@@ -240,6 +240,8 @@
         let sessionWatcherUnsubscribe = null;
         let globalRealtimeUnsubscribes = [];
         let fallbackPollingInterval = null;
+        let scheduleTransitionInterval = null;
+        let lastScheduleStateSignature = '';
         let realtimeRefreshDebounce = null;
         let syncBadgeTimeout = null;
         let isInitialRealtimeLoad = true;
@@ -575,6 +577,11 @@
                 isInitialRealtimeLoad = false;
             }, 800);
 
+            // Pemantau transisi jadwal ujian berbasis waktu setiap 2 detik
+            // Memastikan saat jam mulai tiba (misal 22:49 WIB) atau jam selesai lewat,
+            // ujian langsung muncul/hilang otomatis di Portal Siswa & Admin tanpa perlu Edit/Simpan atau Login ulang
+            startScheduleTransitionWatcher();
+
             // Fallback polling ringan setiap 15 detik untuk menjaga konsistensi jika koneksi sempat idle
             if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
             fallbackPollingInterval = setInterval(async () => {
@@ -592,6 +599,38 @@
                     // Abaikan jika offline sementara
                 }
             }, 15000);
+        }
+
+        function computeCurrentScheduleSignature() {
+            return (appData.exams || []).map(ex => {
+                const active = isExamStrictlyActive(ex) ? '1' : '0';
+                const schedState = checkExamScheduleAccess(ex).state;
+                return `${ex.id}:${active}:${schedState}`;
+            }).join('|');
+        }
+
+        function startScheduleTransitionWatcher() {
+            if (scheduleTransitionInterval) clearInterval(scheduleTransitionInterval);
+            lastScheduleStateSignature = computeCurrentScheduleSignature();
+
+            scheduleTransitionInterval = setInterval(() => {
+                const currentSig = computeCurrentScheduleSignature();
+                if (currentSig !== lastScheduleStateSignature) {
+                    lastScheduleStateSignature = currentSig;
+
+                    // Jika siswa sedang mengerjakan ujian dan jadwal baru saja berakhir (EXPIRED), hentikan otomatis
+                    if (appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
+                        const latestExam = appData.exams.find(e => e.id === currentActiveExam.id);
+                        if (!latestExam || !isExamStrictlyActive(latestExam) || !checkExamScheduleAccess(latestExam).allowed) {
+                            window.forceCloseStudentExamByAdmin('Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Jawaban Anda tetap tersimpan.');
+                            return;
+                        }
+                    }
+
+                    // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis
+                    window.triggerRealtimeUIRefresh('examsScheduleTick');
+                }
+            }, 2000);
         }
 
         let currentModalCallback = null;
@@ -5336,8 +5375,10 @@
         window.onload = async function() {
             try {
                 await initFirebaseProduction();
+                startScheduleTransitionWatcher();
                 window.renderLoginView();
             } catch (error) {
+                startScheduleTransitionWatcher();
                 window.renderLoginView();
                 window.showModal(
                     'Koneksi Firebase Gagal',
