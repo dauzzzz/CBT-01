@@ -3482,7 +3482,8 @@
             }
 
             try {
-                const compressed = await compressAndConvertImage(file, 280, 280, 0.88);
+                // Kompresi cepat ukuran optimal 180x180px (~10KB) agar pratinjau dan simpan ke Cloud instan (< 1 detik)
+                const compressed = await compressAndConvertImage(file, 180, 180, 0.82);
                 pendingLogoFile = compressed.blob;
                 pendingLogoDataUrl = compressed.dataUrl;
                 const mainEl = document.getElementById('adminMainContent');
@@ -3499,53 +3500,41 @@
             if (!pendingLogoDataUrl || isUploadingLogo) return;
             isUploadingLogo = true;
             const previousLogoUrl = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
+            const finalLogoUrl = pendingLogoDataUrl;
+
+            // Terapkan secara optimis ke UI agar terasa instan tanpa jeda
+            appData.settings.schoolLogo = finalLogoUrl;
+            updateBrowserFaviconAndTitle();
+
             const mainEl = document.getElementById('adminMainContent');
             if (mainEl && appData.activeAdminMenu === 'settings') {
                 renderSettingsContent(mainEl);
             }
 
             try {
-                let finalLogoUrl = pendingLogoDataUrl;
-
-                // Coba unggah ke Firebase Storage terlebih dahulu sesuai arsitektur cloud
-                if (!IS_PREVIEW && storage && pendingLogoFile) {
-                    try {
-                        const ext = pendingLogoFile.type === 'image/png' ? 'png' : 'jpg';
-                        const fileRef = storageRef(storage, `artifacts/${appId}/public/branding/school_logo_${Date.now()}.${ext}`);
-                        await uploadBytes(fileRef, pendingLogoFile, { contentType: pendingLogoFile.type || 'image/png' });
-                        const downloadUrl = await getDownloadURL(fileRef);
-                        if (downloadUrl) {
-                            finalLogoUrl = downloadUrl;
-                        }
-                    } catch (storageErr) {
-                        console.warn('Firebase Storage fallback ke Firestore optimized DataURL:', storageErr.code || storageErr.message);
-                        // Tetap lanjutkan menyimpan URL data terkompresi ke dokumen Firestore agar 100% tersinkron lintas perangkat
-                    }
-                }
-
                 const updatedSettings = {
                     ...appData.settings,
                     schoolLogo: finalLogoUrl,
                     updatedAtMs: Date.now()
                 };
 
+                // Simpan langsung ke Firestore (tanpa menunggu timeout retry Firebase Storage yang memakan waktu lama)
                 const savedOk = await syncCollectionRecord('appSettings', 'global', updatedSettings);
                 if (!savedOk) {
-                    throw new Error('Gagal menyinkronkan URL logo ke dokumen Firestore.');
+                    throw new Error('Gagal menyinkronkan logo ke dokumen Firestore.');
                 }
 
-                appData.settings.schoolLogo = finalLogoUrl;
                 pendingLogoFile = null;
                 pendingLogoDataUrl = null;
                 isUploadingLogo = false;
 
-                updateBrowserFaviconAndTitle();
                 logActivity('Administrator memperbarui logo identitas visual sekolah.');
                 window.renderAdminLayout();
-                window.showModal('Logo Berhasil Disimpan', 'Logo sekolah berhasil disimpan ke Cloud dan otomatis diterapkan di seluruh perangkat.', 'success');
+                window.showModal('Logo Berhasil Disimpan', 'Logo sekolah berhasil disimpan secara instan ke Cloud dan diterapkan di seluruh perangkat.', 'success');
             } catch (err) {
                 console.error('Save School Logo Error:', err);
                 appData.settings.schoolLogo = previousLogoUrl;
+                updateBrowserFaviconAndTitle();
                 isUploadingLogo = false;
                 if (mainEl && appData.activeAdminMenu === 'settings') {
                     renderSettingsContent(mainEl);
