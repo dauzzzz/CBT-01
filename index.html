@@ -3320,42 +3320,95 @@
         }
 
         window.openEssayGradingModal = function(resultId) {
-            const res = appData.examResults.find(r => r.resultId === resultId);
+            const res = appData.examResults.find(r => (r.resultId || r.id) === resultId);
             if (!res) return;
-            const essayQuestions = appData.questions.filter(q => q.type === 'essay');
-            const q = essayQuestions[0] || appData.questions[appData.questions.length - 1];
-            const studentAns = (res.answersSnapshot && q) ? (res.answersSnapshot[q.id] || '(Tidak dijawab)') : '(Tidak dijawab)';
-            const currentScore = (res.essayScores && q) ? (res.essayScores[q.id] || 0) : 0;
+
+            const examObj = appData.exams.find(e => e.id === res.examId);
+            let qList = [];
+            if (examObj && Array.isArray(examObj.questionIds) && examObj.questionIds.length > 0) {
+                qList = examObj.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
+            } else if (examObj && examObj.bankId) {
+                qList = appData.questions.filter(q => q.bankId === examObj.bankId);
+            } else {
+                qList = [...appData.questions];
+            }
+
+            const essayQuestions = qList.filter(q => q.type === 'essay');
+            if (essayQuestions.length === 0) {
+                window.showModal('Tidak Ada Soal Uraian', 'Paket ujian ini tidak memiliki soal bertipe Uraian / Esai untuk dikoreksi manual.', 'info');
+                return;
+            }
+
+            const essayItemsHtml = essayQuestions.map((q, idx) => {
+                const studentAns = (res.answersSnapshot && res.answersSnapshot[q.id]) ? res.answersSnapshot[q.id] : '(Tidak dijawab)';
+                const currentGiven = (res.essayScores && res.essayScores[q.id] !== undefined) ? res.essayScores[q.id] : 0;
+                return `
+                    <div class="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
+                        <div class="flex justify-between items-center">
+                            <span class="font-extrabold text-indigo-700">Soal Uraian #${idx + 1} (Nomor ${q.orderNum || (idx + 1)})</span>
+                            <span class="font-bold text-slate-600">Bobot Maks: ${q.weight} Poin</span>
+                        </div>
+                        <p class="font-bold text-slate-800">${escapeHtml(q.questionText)}</p>
+                        <div class="p-3 bg-white border border-slate-200 rounded-xl">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase mb-1">Jawaban Siswa:</p>
+                            <p class="text-slate-800 whitespace-pre-line">${escapeHtml(studentAns)}</p>
+                        </div>
+                        <div class="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900">
+                            <strong>Kunci / Rubrik:</strong> ${escapeHtml(q.correctAnswer || '-')}
+                        </div>
+                        <div class="flex items-center justify-between pt-2">
+                            <label class="font-bold text-slate-700">Berikan Poin (0 - ${q.weight}):</label>
+                            <input type="number" id="essayScoreInput_${q.id}" min="0" max="${q.weight}" value="${currentGiven}" class="w-28 px-3 py-1.5 bg-white border border-slate-300 rounded-xl font-extrabold text-indigo-700 text-center">
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             const html = `
-                <div class="space-y-3 text-xs">
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                        <p class="font-bold text-slate-700">Siswa: ${escapeHtml(res.studentName)} (${escapeHtml(res.className)})</p>
-                        <p class="text-slate-500 mt-1">Pertanyaan Uraian: ${escapeHtml(q ? q.questionText : 'Soal Uraian')}</p>
-                        <p class="mt-2 p-2 bg-white rounded border border-slate-200 font-semibold text-slate-800">Jawaban Siswa: "${escapeHtml(studentAns)}"</p>
+                <div class="space-y-3">
+                    <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-xs text-indigo-900">
+                        Peserta: <strong>${escapeHtml(res.studentName)}</strong> (${escapeHtml(res.nisn)}) • Paket: <strong>${escapeHtml(res.examName || '-')}</strong>
                     </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">Skor Uraian (Maksimal ${q ? q.weight : 25} Poin)</label>
-                        <input type="number" id="essayGradeScoreInput" value="${currentScore}" min="0" max="${q ? q.weight : 25}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold">
+                    <div class="space-y-3 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+                        ${essayItemsHtml}
                     </div>
                 </div>
             `;
 
-            window.showModal('Koreksi & Penilaian Soal Uraian', '', 'info', (confirmed) => {
+            window.showModal('Koreksi Soal Uraian / Esai', '', 'info', async (confirmed) => {
                 if (!confirmed) return true;
-                const givenScore = Number(document.getElementById('essayGradeScoreInput').value) || 0;
-                if (q) {
-                    const prevScore = (res.essayScores && res.essayScores[q.id]) ? Number(res.essayScores[q.id]) : 0;
-                    if (!res.essayScores) res.essayScores = {};
-                    res.essayScores[q.id] = givenScore;
-                    res.totalScoreObtained = Math.max(0, (res.totalScoreObtained - prevScore) + givenScore);
-                    res.finalScore = Math.min(100, Math.round((res.totalScoreObtained / (res.maxPossibleScore || 100)) * 100));
-                }
+                if (!res.essayScores) res.essayScores = {};
+                let addedEssayPoints = 0;
+                essayQuestions.forEach(q => {
+                    const inp = document.getElementById(`essayScoreInput_${q.id}`);
+                    const val = Math.min(Number(q.weight) || 10, Math.max(0, Number(inp ? inp.value : 0) || 0));
+                    res.essayScores[q.id] = val;
+                    addedEssayPoints += val;
+                });
+
+                let nonEssayScore = 0;
+                let maxPossible = 0;
+                qList.forEach(q => {
+                    maxPossible += (Number(q.weight) || 10);
+                    if (q.type !== 'essay') {
+                        const ans = res.answersSnapshot ? res.answersSnapshot[q.id] : undefined;
+                        const evalRes = evaluateSingleQuestionForReview(q, ans, res);
+                        if (evalRes.status === 'CORRECT') {
+                            nonEssayScore += (Number(q.weight) || 10);
+                        }
+                    }
+                });
+
+                res.totalScoreObtained = nonEssayScore + addedEssayPoints;
+                res.maxPossibleScore = maxPossible || 100;
+                res.finalScore = Math.round((res.totalScoreObtained / res.maxPossibleScore) * 100) || 0;
                 res.essayGradingStatus = 'Sudah Dinilai';
-                syncCollectionRecord('examResults', res.resultId, res);
+
+                await syncCollectionRecord('examResults', res.resultId || res.id, res);
                 renderResultsContent(document.getElementById('adminMainContent'));
+                window.showModal('Koreksi Disimpan', `Nilai akhir ${res.studentName} berhasil diperbarui menjadi ${res.finalScore}.`, 'success');
                 return true;
-            }, { html, okText: 'Simpan Nilai Uraian' });
+            }, { html, wide: true, showCancel: true, okText: 'Simpan Nilai Uraian' });
         };
 
         window.exportResultsExcel = function(customExamId = null) {
