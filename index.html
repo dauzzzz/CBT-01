@@ -240,6 +240,8 @@
         let sessionWatcherUnsubscribe = null;
         let globalRealtimeUnsubscribes = [];
         let fallbackPollingInterval = null;
+        let scheduleTransitionInterval = null;
+        let lastScheduleStateSignature = '';
         let realtimeRefreshDebounce = null;
         let syncBadgeTimeout = null;
         let isInitialRealtimeLoad = true;
@@ -253,7 +255,6 @@
         let currentDoubtfulMap = {};
         let currentViolationCount = 0;
         let currentViolationLogs = [];
-        let lastViolationTimestamp = 0;
         let isExamWorkspaceActive = false;
         let isViewingResultReview = false;
         let isViolationModalOpen = false;
@@ -269,23 +270,16 @@
 
         function handleVisibilityViolation() {
             if (document.hidden && isExamWorkspaceActive && currentActiveExam && !isViolationModalOpen) {
-                // Simpan darurat saat tab disembunyikan atau ditutup
                 window.persistExamSessionToCloud(true);
-                setTimeout(() => {
-                    if (document.hidden && isExamWorkspaceActive && currentActiveExam && !isViolationModalOpen) {
-                        window.recordStudentViolation('Berpindah tab atau keluar dari halaman ujian.');
-                    }
-                }, 150);
+                window.recordStudentViolation('Berpindah tab atau keluar dari halaman ujian.');
             }
         }
 
         function handleWindowBlurViolation() {
             if (isExamWorkspaceActive && currentActiveExam && !isViolationModalOpen && !document.hidden) {
-                setTimeout(() => {
-                    if (isExamWorkspaceActive && currentActiveExam && !isViolationModalOpen && !document.hidden && document.hasFocus() === false) {
-                        window.recordStudentViolation('Jendela ujian kehilangan fokus (blur).');
-                    }
-                }, 200);
+                if (document.hasFocus() === false) {
+                    window.recordStudentViolation('Jendela ujian kehilangan fokus (blur).');
+                }
             }
         }
 
@@ -575,6 +569,11 @@
                 isInitialRealtimeLoad = false;
             }, 800);
 
+            // Pemantau transisi jadwal ujian berbasis waktu setiap 2 detik
+            // Memastikan saat jam mulai tiba (misal 22:49 WIB) atau jam selesai lewat,
+            // ujian langsung muncul/hilang otomatis di Portal Siswa & Admin tanpa perlu Edit/Simpan atau Login ulang
+            startScheduleTransitionWatcher();
+
             // Fallback polling ringan setiap 15 detik untuk menjaga konsistensi jika koneksi sempat idle
             if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
             fallbackPollingInterval = setInterval(async () => {
@@ -592,6 +591,45 @@
                     // Abaikan jika offline sementara
                 }
             }, 15000);
+        }
+
+        function computeCurrentScheduleSignature() {
+            return (appData.exams || []).map(ex => {
+                const active = isExamStrictlyActive(ex) ? '1' : '0';
+                const schedState = checkExamScheduleAccess(ex).state;
+                return `${ex.id}:${active}:${schedState}`;
+            }).join('|');
+        }
+
+        function startScheduleTransitionWatcher() {
+            if (scheduleTransitionInterval) clearInterval(scheduleTransitionInterval);
+            lastScheduleStateSignature = computeCurrentScheduleSignature();
+
+            scheduleTransitionInterval = setInterval(() => {
+                const currentSig = computeCurrentScheduleSignature();
+                if (currentSig !== lastScheduleStateSignature) {
+                    lastScheduleStateSignature = currentSig;
+
+                    // Jika siswa sedang mengerjakan ujian dan jadwal baru saja berakhir (EXPIRED), hentikan otomatis
+                    if (appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
+                        const latestExam = appData.exams.find(e => e.id === currentActiveExam.id);
+                        if (!latestExam || !isExamStrictlyActive(latestExam) || !checkExamScheduleAccess(latestExam).allowed) {
+                            window.forceCloseStudentExamByAdmin('Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Jawaban Anda tetap tersimpan.');
+                            return;
+                        }
+                    }
+
+                    // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis dan instan
+                    if (appData.currentUser) {
+                        if (appData.currentUser.role === 'admin' && appData.activeAdminMenu === 'exams') {
+                            const mainEl = document.getElementById('adminMainContent');
+                            if (mainEl) renderExamsContent(mainEl);
+                        } else if (appData.currentUser.role === 'student' && !isExamWorkspaceActive) {
+                            window.renderStudentPortal(false);
+                        }
+                    }
+                }
+            }, 1000);
         }
 
         let currentModalCallback = null;
@@ -3482,7 +3520,8 @@
             }
 
             try {
-                const compressed = await compressAndConvertImage(file, 280, 280, 0.88);
+                // Kompresi cepat ukuran optimal 180x180px (~10KB) agar pratinjau dan simpan ke Cloud instan (< 1 detik)
+                const compressed = await compressAndConvertImage(file, 180, 180, 0.82);
                 pendingLogoFile = compressed.blob;
                 pendingLogoDataUrl = compressed.dataUrl;
                 const mainEl = document.getElementById('adminMainContent');
@@ -3499,53 +3538,41 @@
             if (!pendingLogoDataUrl || isUploadingLogo) return;
             isUploadingLogo = true;
             const previousLogoUrl = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
+            const finalLogoUrl = pendingLogoDataUrl;
+
+            // Terapkan secara optimis ke UI agar terasa instan tanpa jeda
+            appData.settings.schoolLogo = finalLogoUrl;
+            updateBrowserFaviconAndTitle();
+
             const mainEl = document.getElementById('adminMainContent');
             if (mainEl && appData.activeAdminMenu === 'settings') {
                 renderSettingsContent(mainEl);
             }
 
             try {
-                let finalLogoUrl = pendingLogoDataUrl;
-
-                // Coba unggah ke Firebase Storage terlebih dahulu sesuai arsitektur cloud
-                if (!IS_PREVIEW && storage && pendingLogoFile) {
-                    try {
-                        const ext = pendingLogoFile.type === 'image/png' ? 'png' : 'jpg';
-                        const fileRef = storageRef(storage, `artifacts/${appId}/public/branding/school_logo_${Date.now()}.${ext}`);
-                        await uploadBytes(fileRef, pendingLogoFile, { contentType: pendingLogoFile.type || 'image/png' });
-                        const downloadUrl = await getDownloadURL(fileRef);
-                        if (downloadUrl) {
-                            finalLogoUrl = downloadUrl;
-                        }
-                    } catch (storageErr) {
-                        console.warn('Firebase Storage fallback ke Firestore optimized DataURL:', storageErr.code || storageErr.message);
-                        // Tetap lanjutkan menyimpan URL data terkompresi ke dokumen Firestore agar 100% tersinkron lintas perangkat
-                    }
-                }
-
                 const updatedSettings = {
                     ...appData.settings,
                     schoolLogo: finalLogoUrl,
                     updatedAtMs: Date.now()
                 };
 
+                // Simpan langsung ke Firestore (tanpa menunggu timeout retry Firebase Storage yang memakan waktu lama)
                 const savedOk = await syncCollectionRecord('appSettings', 'global', updatedSettings);
                 if (!savedOk) {
-                    throw new Error('Gagal menyinkronkan URL logo ke dokumen Firestore.');
+                    throw new Error('Gagal menyinkronkan logo ke dokumen Firestore.');
                 }
 
-                appData.settings.schoolLogo = finalLogoUrl;
                 pendingLogoFile = null;
                 pendingLogoDataUrl = null;
                 isUploadingLogo = false;
 
-                updateBrowserFaviconAndTitle();
                 logActivity('Administrator memperbarui logo identitas visual sekolah.');
                 window.renderAdminLayout();
-                window.showModal('Logo Berhasil Disimpan', 'Logo sekolah berhasil disimpan ke Cloud dan otomatis diterapkan di seluruh perangkat.', 'success');
+                window.showModal('Logo Berhasil Disimpan', 'Logo sekolah berhasil disimpan secara instan ke Cloud dan diterapkan di seluruh perangkat.', 'success');
             } catch (err) {
                 console.error('Save School Logo Error:', err);
                 appData.settings.schoolLogo = previousLogoUrl;
+                updateBrowserFaviconAndTitle();
                 isUploadingLogo = false;
                 if (mainEl && appData.activeAdminMenu === 'settings') {
                     renderSettingsContent(mainEl);
@@ -4246,13 +4273,11 @@
         let currentExamQuestions = [];
 
         window.recordStudentViolation = function(reasonText) {
-            const now = Date.now();
-            if (now - lastViolationTimestamp < 3500 || isViolationModalOpen || !isExamWorkspaceActive) return;
-            lastViolationTimestamp = now;
+            if (isViolationModalOpen || !isExamWorkspaceActive || !currentActiveExam) return;
             isViolationModalOpen = true;
             currentViolationCount++;
             currentViolationLogs.push({
-                time: new Date(now).toLocaleTimeString('id-ID'),
+                time: new Date().toLocaleTimeString('id-ID'),
                 reason: reasonText,
                 device: getDeviceLabel()
             });
@@ -4293,7 +4318,6 @@
             const msgEl = document.getElementById('modalMessage');
             const bodyEl = document.getElementById('modalDynamicBody');
 
-            // Pastikan header kustom (yang mengandung tombol silang × / close modal) diaktifkan kembali
             if (headerEl && headerEl.parentElement) {
                 headerEl.parentElement.classList.remove('hidden');
             }
@@ -4305,7 +4329,6 @@
                 dialogBox.className = 'bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden transform transition-all my-8 flex flex-col max-h-[90vh]';
             }
 
-            // Atur judul header modal khusus peringatan anti-kecurangan
             const titleEl = document.getElementById('modalTitle');
             if (titleEl) {
                 titleEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>Peringatan Pengawasan</span>`;
@@ -5347,8 +5370,10 @@
         window.onload = async function() {
             try {
                 await initFirebaseProduction();
+                startScheduleTransitionWatcher();
                 window.renderLoginView();
             } catch (error) {
+                startScheduleTransitionWatcher();
                 window.renderLoginView();
                 window.showModal(
                     'Koneksi Firebase Gagal',
