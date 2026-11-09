@@ -535,15 +535,12 @@
                     if (colName === 'exams' && appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
                         const updatedExam = docsList.find(x => x.id === currentActiveExam.id);
                         if (!updatedExam || !isExamStrictlyActive(updatedExam) || !checkExamScheduleAccess(updatedExam).allowed) {
-                            window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau waktu jadwalnya telah berakhir. Seluruh jawaban yang sudah Anda isi otomatis dikirim dan dinilai.');
+                            window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau dinonaktifkan oleh Administrator. Seluruh jawaban yang sudah Anda isi tetap tersimpan dengan aman.');
                             return;
                         }
                     }
 
                     if (!isInitialRealtimeLoad) {
-                        if (colName === 'examSessions' || colName === 'exams') {
-                            window.autoFinalizeExpiredSessions();
-                        }
                         window.triggerRealtimeUIRefresh(colName);
                     }
                 }, (err) => {
@@ -570,7 +567,6 @@
 
             setTimeout(() => {
                 isInitialRealtimeLoad = false;
-                window.autoFinalizeExpiredSessions();
             }, 800);
 
             // Pemantau transisi jadwal ujian berbasis waktu setiap 2 detik
@@ -618,12 +614,10 @@
                     if (appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
                         const latestExam = appData.exams.find(e => e.id === currentActiveExam.id);
                         if (!latestExam || !isExamStrictlyActive(latestExam) || !checkExamScheduleAccess(latestExam).allowed) {
-                            window.forceCloseStudentExamByAdmin('Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Jawaban Anda otomatis dikirim dan dinilai.');
+                            window.forceCloseStudentExamByAdmin('Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Jawaban Anda tetap tersimpan.');
                             return;
                         }
                     }
-
-                    window.autoFinalizeExpiredSessions();
 
                     // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis dan instan
                     if (appData.currentUser) {
@@ -1213,9 +1207,17 @@
             `;
         }
 
+        let selectedStudentIds = new Set();
+
         function renderStudentsContent(container) {
             const search = (appData.filters.studentSearch || '').toLowerCase();
             const filterCls = appData.filters.studentClass || 'ALL';
+
+            // Bersihkan ID siswa terpilih yang sudah tidak ada di daftar siswa
+            const validIds = new Set(appData.students.map(s => s.id));
+            selectedStudentIds.forEach(id => {
+                if (!validIds.has(id)) selectedStudentIds.delete(id);
+            });
 
             const filteredStudents = appData.students.filter(s => {
                 const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
@@ -1224,10 +1226,17 @@
                 return matchSearch && matchCls;
             });
 
+            const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s.id));
+            const selectedCount = selectedStudentIds.size;
+
             const rows = filteredStudents.map((s, idx) => {
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
+                const isChecked = selectedStudentIds.has(s.id);
                 return `
-                <tr class="hover:bg-slate-50 border-b border-slate-100">
+                <tr class="${isChecked ? 'bg-red-50/50' : 'hover:bg-slate-50'} border-b border-slate-100 transition">
+                    <td class="px-4 py-3 text-xs text-center">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectStudent('${s.id}', this.checked)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                    </td>
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
                     <td class="px-4 py-3 text-xs font-mono font-bold">${escapeHtml(s.nisn)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.nis || '-')}</td>
@@ -1237,8 +1246,8 @@
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.className)}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(s.status || 'Aktif')}</span></td>
                     <td class="px-4 py-3 text-xs space-x-1">
-                        <button type="button" onclick="window.openStudentFormModal('${s.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
-                        <button type="button" onclick="window.deleteStudentRecord('${s.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
+                        <button type="button" onclick="window.openStudentFormModal('${s.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold cursor-pointer" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="window.deleteStudentRecord('${s.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold cursor-pointer" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
             `;
@@ -1251,19 +1260,27 @@
                     <div class="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Manajemen Data Siswa</h3>
-                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, dan impor/ekspor Excel (.xlsx).</p>
+                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, hapus bersamaan, dan impor/ekspor Excel (.xlsx).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="window.downloadStudentTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.deleteSelectedStudents()" ${selectedCount > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${selectedCount > 0 ? 'bg-red-600 hover:bg-red-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition flex items-center gap-1.5" title="Hapus semua siswa yang dicentang">
+                                <i class="fa-solid fa-trash-can"></i> Hapus Terpilih (${selectedCount})
+                            </button>
+                            ${filteredStudents.length > 0 ? `
+                            <button type="button" onclick="window.deleteAllFilteredStudents()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition cursor-pointer" title="Hapus seluruh siswa yang tampil pada daftar ini">
+                                <i class="fa-solid fa-user-xmark mr-1"></i> Hapus Semua (${filteredStudents.length})
+                            </button>
+                            ` : ''}
+                            <button type="button" onclick="window.downloadStudentTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-download mr-1"></i> Unduh Template Excel
                             </button>
-                            <button type="button" onclick="window.triggerStudentExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.triggerStudentExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Impor Excel (.xlsx)
                             </button>
-                            <button type="button" onclick="window.exportStudentsExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.exportStudentsExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-file-export mr-1"></i> Ekspor Data (.xlsx)
                             </button>
-                            <button type="button" onclick="window.openStudentFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition">
+                            <button type="button" onclick="window.openStudentFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer">
                                 <i class="fa-solid fa-plus mr-1"></i> Tambah Siswa
                             </button>
                         </div>
@@ -1282,19 +1299,113 @@
 
                     <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[720px] text-left border-collapse">
+                            <table class="w-full min-w-[760px] text-left border-collapse">
                                 <thead>
                                     <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
+                                        <th class="px-4 py-3 w-10 text-center">
+                                            <input type="checkbox" ${allFilteredSelected ? 'checked' : ''} onchange="window.toggleSelectAllStudents(this.checked)" title="Pilih Semua Siswa" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                                        </th>
                                         <th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">NIS</th><th class="px-4 py-3">Nama Lengkap</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">L/P</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
                                     </tr>
                                 </thead>
-                                <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada data siswa yang sesuai filter.</td></tr>'}</tbody>
+                                <tbody>${rows || '<tr><td colspan="10" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada data siswa yang sesuai filter.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
                 </div>
             `;
         }
+
+        window.toggleSelectStudent = function(studentId, checked) {
+            if (checked) {
+                selectedStudentIds.add(studentId);
+            } else {
+                selectedStudentIds.delete(studentId);
+            }
+            renderStudentsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.toggleSelectAllStudents = function(checked) {
+            const search = (appData.filters.studentSearch || '').toLowerCase();
+            const filterCls = appData.filters.studentClass || 'ALL';
+            const filteredStudents = appData.students.filter(s => {
+                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
+                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+                return matchSearch && matchCls;
+            });
+
+            filteredStudents.forEach(s => {
+                if (checked) selectedStudentIds.add(s.id);
+                else selectedStudentIds.delete(s.id);
+            });
+            renderStudentsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.deleteSelectedStudents = function() {
+            const idsToDelete = Array.from(selectedStudentIds);
+            if (idsToDelete.length === 0) return;
+
+            window.showModal(
+                'Hapus Siswa Terpilih',
+                `Apakah Anda yakin ingin menghapus ${idsToDelete.length} data siswa yang dipilih secara bersamaan? Tindakan ini tidak dapat dibatalkan.`,
+                'error',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
+                    const idSet = new Set(idsToDelete);
+                    appData.students = appData.students.filter(x => !idSet.has(x.id));
+                    selectedStudentIds.clear();
+                    renderStudentsContent(document.getElementById('adminMainContent'));
+
+                    for (const stdId of idsToDelete) {
+                        await syncCollectionRecord('students', stdId, null, true);
+                    }
+                    logActivity(`Menghapus ${idsToDelete.length} data siswa terpilih secara bersamaan.`);
+                    updateLiveSyncIndicator('updated', `${idsToDelete.length} Siswa Dihapus`);
+                    window.showModal('Berhasil Dihapus', `${idsToDelete.length} data siswa berhasil dihapus dari database.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: `Ya, Hapus ${idsToDelete.length} Siswa` }
+            );
+        };
+
+        window.deleteAllFilteredStudents = function() {
+            const search = (appData.filters.studentSearch || '').toLowerCase();
+            const filterCls = appData.filters.studentClass || 'ALL';
+            const filteredStudents = appData.students.filter(s => {
+                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
+                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+                return matchSearch && matchCls;
+            });
+
+            if (filteredStudents.length === 0) return;
+            const idsToDelete = filteredStudents.map(s => s.id);
+
+            window.showModal(
+                'Hapus Semua Data Siswa',
+                `Apakah Anda yakin ingin menghapus seluruh (${idsToDelete.length}) data siswa yang tampil saat ini secara bersamaan?`,
+                'error',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
+                    const idSet = new Set(idsToDelete);
+                    appData.students = appData.students.filter(x => !idSet.has(x.id));
+                    idsToDelete.forEach(id => selectedStudentIds.delete(id));
+                    renderStudentsContent(document.getElementById('adminMainContent'));
+
+                    for (const stdId of idsToDelete) {
+                        await syncCollectionRecord('students', stdId, null, true);
+                    }
+                    logActivity(`Menghapus massal ${idsToDelete.length} data siswa.`);
+                    updateLiveSyncIndicator('updated', `${idsToDelete.length} Siswa Dihapus`);
+                    window.showModal('Berhasil Dihapus', `Seluruh (${idsToDelete.length}) data siswa berhasil dihapus secara bersamaan.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: `Ya, Hapus Semua (${idsToDelete.length} Siswa)` }
+            );
+        };
 
         window.filterStudentsList = function(searchVal, classVal) {
             if (searchVal !== null) appData.filters.studentSearch = searchVal;
@@ -2971,298 +3082,16 @@
 
         window.forceCloseStudentExamByAdmin = async function(noticeMessage) {
             if (!isExamWorkspaceActive) return;
-            await window.submitExamFinal(true);
+            await window.persistExamSessionToCloud(true);
+            window.stopAllExamTimersAndWatchers();
+            currentActiveExam = null;
+            currentExamQuestions = [];
+            window.renderStudentPortal(false);
             window.showModal(
-                'Waktu Ujian Berakhir / Ditutup',
-                noticeMessage || 'Ujian ini telah berakhir atau ditutup oleh Administrator. Seluruh jawaban yang sudah Anda isi telah dikirim dan dinilai secara otomatis.',
-                'info'
+                'Akses Ujian Berakhir / Ditutup',
+                noticeMessage || 'Ujian ini telah ditutup atau melewati batas jadwal pelaksanaan. Jawaban yang sudah Anda isi tetap tersimpan.',
+                'error'
             );
-        };
-
-        function calculateGradingFromQuestionsAndAnswers(questionsList, answersMap) {
-            let totalScore = 0;
-            let maxScore = 0;
-            let correct = 0;
-            let wrong = 0;
-            let empty = 0;
-            const essayScores = {};
-
-            (questionsList || []).forEach(q => {
-                maxScore += (Number(q.weight) || 0);
-                const ans = (answersMap || {})[q.id];
-                if (ans === undefined || ans === null || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0)) {
-                    empty++;
-                    return;
-                }
-                if (q.type === 'pg' || q.type === 'short_answer') {
-                    const cleanAns = String(ans).trim().toLowerCase();
-                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                    if (cleanAns === cleanKey) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'true_false') {
-                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
-                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
-
-                    if (isMultiTF) {
-                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
-                        const totalStmts = keyArr.length || opts.length || 1;
-                        let matchedStmts = 0;
-                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
-                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
-                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
-                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
-                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
-                            if (normStudent && normStudent === normKey) {
-                                matchedStmts++;
-                            }
-                        }
-                        if (matchedStmts === totalStmts) {
-                            totalScore += q.weight;
-                            correct++;
-                        } else if (matchedStmts > 0 && q.partialScoring !== false) {
-                            totalScore += Math.round((matchedStmts / totalStmts) * q.weight);
-                            correct++;
-                        } else {
-                            wrong++;
-                        }
-                    } else {
-                        const cleanAns = String(ans).trim().toLowerCase();
-                        const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
-                        const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                        const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
-                        if (normAns === normKey) {
-                            totalScore += q.weight;
-                            correct++;
-                        } else {
-                            wrong++;
-                        }
-                    }
-                } else if (q.type === 'pg_complex') {
-                    const rawKeys = Array.isArray(q.correctAnswer)
-                        ? q.correctAnswer
-                        : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
-                    const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
-                    const matches = studentArr.filter(k => rawKeys.includes(k)).length;
-                    if (matches === rawKeys.length && studentArr.length === rawKeys.length) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else if (matches > 0 && q.partialScoring !== false) {
-                        const partial = Math.round((matches / (rawKeys.length || 1)) * q.weight);
-                        totalScore += partial;
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'matching') {
-                    const keyMap = q.correctAnswer || {};
-                    const totalPairs = Object.keys(keyMap).length || 1;
-                    let matchPairs = 0;
-                    Object.keys(keyMap).forEach(k => {
-                        if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) {
-                            matchPairs++;
-                        }
-                    });
-                    if (matchPairs === totalPairs) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else if (matchPairs > 0) {
-                        totalScore += Math.round((matchPairs / totalPairs) * q.weight);
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'essay') {
-                    essayScores[q.id] = 0;
-                }
-            });
-
-            const hasEssayQuestion = (questionsList || []).some(q => q.type === 'essay');
-            const finalScore = maxScore > 0 ? (Math.round((totalScore / maxScore) * 100) || 0) : 0;
-
-            return {
-                totalScore,
-                maxScore,
-                finalScore,
-                correct,
-                wrong,
-                empty,
-                essayScores,
-                hasEssayQuestion
-            };
-        }
-
-        let isAutoFinalizingSessions = false;
-
-        window.finalizeSingleSessionToResult = async function(sess, reasonLabel = 'Otomatis Waktu Habis') {
-            if (!sess || !sess.examId || !sess.studentId) return null;
-            const existingRes = appData.examResults.find(r => r.studentId === sess.studentId && r.examId === sess.examId);
-            if (existingRes) {
-                if (sess.status === 'IN_PROGRESS') {
-                    sess.status = 'SUBMITTED';
-                    await syncCollectionRecord('examSessions', sess.id, sess);
-                }
-                return existingRes;
-            }
-
-            const ex = appData.exams.find(e => e.id === sess.examId);
-            let qList = [];
-            if (ex && Array.isArray(ex.questionIds) && ex.questionIds.length > 0) {
-                qList = ex.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
-            }
-            if (qList.length === 0 && (sess.bankId || (ex && ex.bankId))) {
-                const targetBank = sess.bankId || ex.bankId;
-                qList = appData.questions.filter(q => q.bankId === targetBank);
-            }
-            if (qList.length === 0) {
-                qList = [...appData.questions];
-            }
-
-            const answersSnap = sess.answers ? JSON.parse(JSON.stringify(sess.answers)) : {};
-            const grade = calculateGradingFromQuestionsAndAnswers(qList, answersSnap);
-            const stdObj = appData.students.find(s => s.id === sess.studentId || s.nisn === sess.nisn);
-            const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
-            const submittedAtStr = new Date().toLocaleString('id-ID') + ` (${reasonLabel})`;
-
-            const resultObj = {
-                resultId: 'RES-' + sess.studentId + '-' + sess.examId,
-                examId: sess.examId,
-                examName: sess.examName || (ex ? ex.examName : 'Paket Ujian'),
-                subjectId: sess.subjectId || (ex ? ex.subjectId : ''),
-                studentId: sess.studentId,
-                nisn: sess.nisn || (stdObj ? stdObj.nisn : '-'),
-                studentName: sess.studentName || (stdObj ? stdObj.fullName : 'Siswa'),
-                asalSekolah: schoolVal,
-                classId: sess.classId || (stdObj ? stdObj.classId : ''),
-                className: sess.className || (stdObj ? stdObj.className : '4'),
-                submittedAt: submittedAtStr,
-                totalScoreObtained: grade.totalScore,
-                maxPossibleScore: grade.maxScore,
-                finalScore: grade.finalScore,
-                correctCount: grade.correct,
-                wrongCount: grade.wrong,
-                emptyCount: grade.empty,
-                violationCount: Number(sess.violationCount) || 0,
-                essayGradingStatus: grade.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
-                essayScores: grade.essayScores,
-                answersSnapshot: answersSnap
-            };
-
-            appData.examResults = appData.examResults.filter(r => !(r.studentId === sess.studentId && r.examId === sess.examId));
-            appData.examResults.push(resultObj);
-            await syncCollectionRecord('examResults', resultObj.resultId, resultObj);
-
-            const completedSess = {
-                ...sess,
-                status: 'SUBMITTED',
-                submittedAtMs: Date.now(),
-                submittedAtFormatted: submittedAtStr,
-                finalScore: resultObj.finalScore
-            };
-            const sIdx = appData.examSessions.findIndex(s => s.id === sess.id);
-            if (sIdx !== -1) appData.examSessions[sIdx] = completedSess;
-            await syncCollectionRecord('examSessions', sess.id, completedSess);
-
-            let p = appData.examParticipants.find(x => x.examId === sess.examId && x.studentId === sess.studentId);
-            if (p) {
-                p.status = 'Selesai';
-                p.violationCount = Number(sess.violationCount) || 0;
-                await syncCollectionRecord('examParticipants', p.id, p);
-            }
-
-            logActivity(`Sesi ujian siswa ${resultObj.studentName} (${resultObj.examName}) otomatis diselesaikan & dinilai (${reasonLabel}).`);
-            return resultObj;
-        };
-
-        window.autoFinalizeExpiredSessions = async function() {
-            if (isAutoFinalizingSessions) return;
-            isAutoFinalizingSessions = true;
-            try {
-                const nowMs = Date.now();
-                let finalizedAny = false;
-                const activeSessions = (appData.examSessions || []).filter(s => s && s.status === 'IN_PROGRESS');
-
-                for (const sess of activeSessions) {
-                    const ex = appData.exams.find(e => e.id === sess.examId);
-                    const isTimerExpired = Boolean(sess.endTimeMs && nowMs >= Number(sess.endTimeMs));
-                    const isExamClosedOrScheduleExpired = Boolean(ex && (!isExamStrictlyActive(ex) || checkExamScheduleAccess(ex).state === 'EXPIRED'));
-
-                    if (isTimerExpired || isExamClosedOrScheduleExpired) {
-                        const reason = isTimerExpired ? 'Waktu Habis' : 'Ujian Berakhir';
-                        await window.finalizeSingleSessionToResult(sess, reason);
-                        finalizedAny = true;
-                    }
-                }
-
-                if (finalizedAny && appData.currentUser && appData.currentUser.role === 'admin') {
-                    if (['results', 'analysis', 'participants', 'dashboard'].includes(appData.activeAdminMenu)) {
-                        window.renderAdminCurrentSection();
-                    }
-                }
-            } catch (e) {
-                console.warn('Auto-finalize expired sessions warning:', e);
-            } finally {
-                isAutoFinalizingSessions = false;
-            }
-        };
-
-        window.forceSubmitInProgressSessionsModal = function() {
-            const filterExamId = appData.filters.resultExam || 'ALL';
-            const pendingSessions = (appData.examSessions || []).filter(s => s && s.status === 'IN_PROGRESS' && (filterExamId === 'ALL' || s.examId === filterExamId));
-
-            if (pendingSessions.length === 0) {
-                window.showModal('Tidak Ada Sesi Menggantung', 'Seluruh sesi peserta yang telah selesai maupun yang kehabisan waktu sudah masuk ke daftar Hasil & Koreksi.', 'info');
-                return;
-            }
-
-            const rowsHtml = pendingSessions.map((s, idx) => {
-                const remSecs = Math.max(0, Math.floor(((s.endTimeMs || Date.now()) - Date.now()) / 1000));
-                return `
-                    <tr class="border-b border-slate-100">
-                        <td class="px-3 py-2 text-xs">${idx + 1}</td>
-                        <td class="px-3 py-2 text-xs font-bold text-slate-800">${escapeHtml(s.studentName)} <span class="text-slate-400 font-mono">(${escapeHtml(s.nisn)})</span></td>
-                        <td class="px-3 py-2 text-xs">${escapeHtml(s.examName || '-')}</td>
-                        <td class="px-3 py-2 text-xs text-center font-bold text-indigo-700">${s.answeredCount || 0} / ${s.totalQuestions || 0}</td>
-                        <td class="px-3 py-2 text-xs text-center font-mono ${remSecs <= 0 ? 'text-red-600 font-bold' : 'text-amber-700'}">${remSecs <= 0 ? 'Waktu Habis' : formatHMS(remSecs)}</td>
-                    </tr>
-                `;
-            }).join('');
-
-            const html = `
-                <div class="space-y-3 text-xs">
-                    <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
-                        <p class="font-bold"><i class="fa-solid fa-bolt mr-1 text-amber-600"></i> Tarik & Selesaikan Sesi Peserta (${pendingSessions.length} Siswa)</p>
-                        <p class="text-[11px] text-amber-800 mt-0.5">Tindakan ini akan langsung menilai dan memasukkan jawaban terakhir yang tersimpan di Cloud dari siswa di bawah ini ke daftar Hasil & Koreksi.</p>
-                    </div>
-                    <div class="max-h-64 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase">
-                                    <th class="px-3 py-2">No</th>
-                                    <th class="px-3 py-2">Nama Siswa</th>
-                                    <th class="px-3 py-2">Paket Ujian</th>
-                                    <th class="px-3 py-2 text-center">Terjawab</th>
-                                    <th class="px-3 py-2 text-center">Sisa Waktu</th>
-                                </tr>
-                            </thead>
-                            <tbody>${rowsHtml}</tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-
-            window.showModal('Tarik Jawaban Siswa ke Hasil & Koreksi', '', 'info', async (confirmed) => {
-                if (!confirmed) return true;
-                for (const sess of pendingSessions) {
-                    await window.finalizeSingleSessionToResult(sess, 'Ditarik Pengawas');
-                }
-                renderResultsContent(document.getElementById('adminMainContent'));
-                window.showModal('Berhasil Ditarik & Dinilai', `${pendingSessions.length} sesi ujian siswa berhasil dinilai dan dimasukkan ke daftar Hasil & Koreksi.`, 'success');
-                return true;
-            }, { html, wide: true, showCancel: true, okText: `Ya, Nilai & Masukkan ${pendingSessions.length} Siswa` });
         };
 
         function renderExamsContent(container) {
@@ -3523,11 +3352,224 @@
             }, { okText: 'Hapus' });
         };
 
+        function computeScoreFromAnswersAndQuestions(answersMap, questionsList) {
+            let totalScore = 0;
+            let maxScore = 0;
+            let correct = 0;
+            let wrong = 0;
+            let empty = 0;
+            const essayScores = {};
+
+            (questionsList || []).forEach(q => {
+                maxScore += (Number(q.weight) || 10);
+                const ans = answersMap ? answersMap[q.id] : undefined;
+                if (ans === undefined || ans === null || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0)) {
+                    empty++;
+                    return;
+                }
+                if (q.type === 'pg' || q.type === 'short_answer') {
+                    const cleanAns = String(ans).trim().toLowerCase();
+                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
+                    if (cleanAns === cleanKey) {
+                        totalScore += (Number(q.weight) || 10);
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'true_false') {
+                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
+                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
+
+                    if (isMultiTF) {
+                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+                        const totalStmts = keyArr.length || opts.length || 1;
+                        let matchedStmts = 0;
+                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
+                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
+                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
+                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
+                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
+                            if (normStudent && normStudent === normKey) matchedStmts++;
+                        }
+                        if (matchedStmts === totalStmts) {
+                            totalScore += (Number(q.weight) || 10);
+                            correct++;
+                        } else if (matchedStmts > 0 && q.partialScoring !== false) {
+                            totalScore += Math.round((matchedStmts / totalStmts) * (Number(q.weight) || 10));
+                            correct++;
+                        } else {
+                            wrong++;
+                        }
+                    } else {
+                        const cleanAns = String(ans).trim().toLowerCase();
+                        const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
+                        const cleanKey = String(q.correctAnswer).trim().toLowerCase();
+                        const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
+                        if (normAns === normKey) {
+                            totalScore += (Number(q.weight) || 10);
+                            correct++;
+                        } else {
+                            wrong++;
+                        }
+                    }
+                } else if (q.type === 'pg_complex') {
+                    const rawKeys = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer
+                        : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+                    const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
+                    const matches = studentArr.filter(k => rawKeys.includes(k)).length;
+                    if (matches === rawKeys.length && studentArr.length === rawKeys.length) {
+                        totalScore += (Number(q.weight) || 10);
+                        correct++;
+                    } else if (matches > 0 && q.partialScoring !== false) {
+                        totalScore += Math.round((matches / (rawKeys.length || 1)) * (Number(q.weight) || 10));
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'matching') {
+                    const keyMap = q.correctAnswer || {};
+                    const totalPairs = Object.keys(keyMap).length || 1;
+                    let matchPairs = 0;
+                    Object.keys(keyMap).forEach(k => {
+                        if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) matchPairs++;
+                    });
+                    if (matchPairs === totalPairs) {
+                        totalScore += (Number(q.weight) || 10);
+                        correct++;
+                    } else if (matchPairs > 0) {
+                        totalScore += Math.round((matchPairs / totalPairs) * (Number(q.weight) || 10));
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'essay') {
+                    essayScores[q.id] = 0;
+                }
+            });
+
+            const finalScore = maxScore > 0 ? Math.min(100, Math.round((totalScore / maxScore) * 100)) : 0;
+            return { totalScore, maxScore, finalScore, correct, wrong, empty, essayScores };
+        }
+
+        async function finalizeSingleSessionToResult(sess) {
+            if (!sess || !sess.examId || !sess.studentId) return null;
+            const alreadyExists = appData.examResults.find(r => r.examId === sess.examId && r.studentId === sess.studentId);
+            if (alreadyExists) return alreadyExists;
+
+            const ex = appData.exams.find(e => e.id === sess.examId);
+            let qList = [];
+            if (ex && Array.isArray(ex.questionIds) && ex.questionIds.length > 0) {
+                qList = ex.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
+            }
+            if (qList.length === 0 && (sess.bankId || (ex && ex.bankId))) {
+                const targetBank = sess.bankId || ex.bankId;
+                qList = appData.questions.filter(q => q.bankId === targetBank);
+            }
+            if (qList.length === 0) qList = [...appData.questions];
+
+            const ansMap = sess.answers || {};
+            const calc = computeScoreFromAnswersAndQuestions(ansMap, qList);
+            const hasEssay = qList.some(q => q.type === 'essay');
+            const stdObj = appData.students.find(s => s.id === sess.studentId || s.nisn === sess.nisn);
+
+            const resultObj = {
+                resultId: 'RES-' + sess.studentId + '-' + sess.examId,
+                examId: sess.examId,
+                examName: sess.examName || (ex ? ex.examName : 'Paket Ujian'),
+                subjectId: sess.subjectId || (ex ? ex.subjectId : ''),
+                studentId: sess.studentId,
+                nisn: sess.nisn || (stdObj ? stdObj.nisn : '-'),
+                studentName: sess.studentName || (stdObj ? stdObj.fullName : 'Peserta'),
+                asalSekolah: stdObj && stdObj.asalSekolah !== undefined ? stdObj.asalSekolah : (appData.settings.schoolName || ''),
+                classId: sess.classId || (stdObj ? stdObj.classId : ''),
+                className: sess.className || (stdObj ? stdObj.className : '6'),
+                submittedAt: new Date().toLocaleString('id-ID') + ' (Otomatis Waktu Habis)',
+                totalScoreObtained: calc.totalScore,
+                maxPossibleScore: calc.maxScore,
+                finalScore: calc.finalScore,
+                correctCount: calc.correct,
+                wrongCount: calc.wrong,
+                emptyCount: calc.empty,
+                violationCount: Number(sess.violationCount) || 0,
+                essayGradingStatus: hasEssay ? 'Belum Dinilai' : 'Sudah Dinilai',
+                essayScores: calc.essayScores,
+                answersSnapshot: JSON.parse(JSON.stringify(ansMap))
+            };
+
+            appData.examResults.push(resultObj);
+            await syncCollectionRecord('examResults', resultObj.resultId, resultObj);
+
+            sess.status = 'SUBMITTED';
+            sess.submittedAtMs = Date.now();
+            sess.submittedAtFormatted = resultObj.submittedAt;
+            sess.finalScore = resultObj.finalScore;
+            await syncCollectionRecord('examSessions', sess.id, sess);
+
+            let p = appData.examParticipants.find(x => x.examId === sess.examId && x.studentId === sess.studentId);
+            if (p) {
+                p.status = 'Selesai';
+                await syncCollectionRecord('examParticipants', p.id, p);
+            }
+            return resultObj;
+        }
+
+        function autoFinalizeExpiredSessions() {
+            const nowMs = Date.now();
+            const expiredList = (appData.examSessions || []).filter(s => {
+                if (s.status !== 'IN_PROGRESS') return false;
+                const hasResult = appData.examResults.some(r => r.examId === s.examId && r.studentId === s.studentId);
+                if (hasResult) return false;
+                const timeUp = (Number(s.endTimeMs) > 0 && nowMs >= Number(s.endTimeMs)) || (typeof s.remainingSeconds === 'number' && s.remainingSeconds <= 0);
+                const exObj = appData.exams.find(e => e.id === s.examId);
+                const examClosedOrExpired = exObj && (!isExamStrictlyActive(exObj) || checkExamScheduleAccess(exObj).state === 'EXPIRED');
+                return timeUp || examClosedOrExpired;
+            });
+
+            if (expiredList.length > 0) {
+                Promise.all(expiredList.map(sess => finalizeSingleSessionToResult(sess))).then(() => {
+                    if (appData.currentUser && appData.currentUser.role === 'admin' && (appData.activeAdminMenu === 'results' || appData.activeAdminMenu === 'analysis')) {
+                        window.renderAdminCurrentSection();
+                    }
+                });
+            }
+        }
+
+        window.forceFinalizePendingSessionsForExam = async function() {
+            const filterExamId = appData.filters.resultExam || 'ALL';
+            const pendingList = (appData.examSessions || []).filter(s => {
+                if (s.status !== 'IN_PROGRESS') return false;
+                if (filterExamId !== 'ALL' && s.examId !== filterExamId) return false;
+                return !appData.examResults.some(r => r.examId === s.examId && r.studentId === s.studentId);
+            });
+
+            if (pendingList.length === 0) {
+                window.showModal('Tidak Ada Sesi Menggantung', 'Seluruh sesi peserta sudah masuk ke daftar Hasil & Koreksi.', 'info');
+                return;
+            }
+
+            window.showModal(
+                'Tarik & Selesaikan Sesi Belum Kirim',
+                `Ditemukan ${pendingList.length} siswa yang memiliki jawaban tersimpan (Auto-Save) namun belum menekan tombol Kirim & Selesai. Tarik dan nilai jawaban mereka sekarang ke menu Hasil & Koreksi?`,
+                'info',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    for (const sess of pendingList) {
+                        await finalizeSingleSessionToResult(sess);
+                    }
+                    renderResultsContent(document.getElementById('adminMainContent'));
+                    window.showModal('Berhasil Ditarik', `${pendingList.length} sesi siswa berhasil dinilai dan ditampilkan di Hasil & Koreksi.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: `Tarik ${pendingList.length} Sesi Siswa` }
+            );
+        };
+
         function renderResultsContent(container) {
-            window.autoFinalizeExpiredSessions();
+            autoFinalizeExpiredSessions();
             const filterExamId = appData.filters.resultExam || 'ALL';
             const filteredResults = appData.examResults.filter(r => filterExamId === 'ALL' || r.examId === filterExamId);
-            const pendingInProgressCount = (appData.examSessions || []).filter(s => s && s.status === 'IN_PROGRESS' && (filterExamId === 'ALL' || s.examId === filterExamId)).length;
+            const pendingSessionsCount = (appData.examSessions || []).filter(s => s.status === 'IN_PROGRESS' && (filterExamId === 'ALL' || s.examId === filterExamId) && !appData.examResults.some(r => r.examId === s.examId && r.studentId === s.studentId)).length;
 
             const examFilterOpts = appData.exams.map(ex => {
                 const subName = getSubjectNameById(ex.subjectId);
@@ -3572,10 +3614,10 @@
                                     ${examFilterOpts}
                                 </select>
                             </div>
-                            ${pendingInProgressCount > 0 ? `
-                                <button type="button" onclick="window.forceSubmitInProgressSessionsModal()" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold shadow-sm cursor-pointer" title="Tarik jawaban siswa yang belum menekan tombol Kirim">
-                                    <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Tarik Sesi Belum Kirim (${pendingInProgressCount})
-                                </button>
+                            ${pendingSessionsCount > 0 ? `
+                            <button type="button" onclick="window.forceFinalizePendingSessionsForExam()" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold shadow-sm cursor-pointer" title="Tarik jawaban siswa yang belum sempat klik kirim">
+                                <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Tarik Sesi Belum Kirim (${pendingSessionsCount})
+                            </button>
                             ` : ''}
                             <button type="button" onclick="window.exportResultsExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Nilai Excel
@@ -3818,11 +3860,11 @@
             setTimeout(() => { printWin.print(); }, 250);
         };
 
-        function getQuestionsForAnalysisFilter(filterExamId) {
-            if (!filterExamId || filterExamId === 'ALL') {
+        function getQuestionsForExamFilter(examId) {
+            if (!examId || examId === 'ALL') {
                 return [...appData.questions];
             }
-            const ex = appData.exams.find(e => e.id === filterExamId);
+            const ex = appData.exams.find(e => e.id === examId);
             if (!ex) return [];
             let list = [];
             if (Array.isArray(ex.questionIds) && ex.questionIds.length > 0) {
@@ -3834,95 +3876,78 @@
             return list;
         }
 
-        function computeQuestionItemAnalysis(q, filterExamId) {
-            const relevantResults = appData.examResults.filter(r => {
-                if (filterExamId && filterExamId !== 'ALL') {
-                    return r.examId === filterExamId;
-                }
-                const ex = appData.exams.find(e => e.id === r.examId);
-                if (!ex) return true;
-                if (Array.isArray(ex.questionIds) && ex.questionIds.includes(q.id)) return true;
-                if (ex.bankId && q.bankId && ex.bankId === q.bankId) return true;
-                return false;
-            });
-
+        function computeQuestionItemAnalysis(q, relevantResults) {
             let correctCount = 0;
             let wrongCount = 0;
             let emptyCount = 0;
+            const totalParticipants = relevantResults.length;
 
             relevantResults.forEach(res => {
-                const snap = res.answersSnapshot || {};
-                const ans = snap[q.id];
-                const evalRes = evaluateSingleQuestionForReview(q, ans, res);
-                if (evalRes.status === 'EMPTY') emptyCount++;
-                else if (evalRes.status === 'CORRECT') correctCount++;
-                else if (evalRes.status === 'WRONG') wrongCount++;
-                else if (evalRes.status === 'ESSAY') {
+                const ans = res.answersSnapshot ? res.answersSnapshot[q.id] : undefined;
+                const ev = evaluateSingleQuestionForReview(q, ans, res);
+                if (ev.status === 'EMPTY') emptyCount++;
+                else if (ev.status === 'CORRECT') correctCount++;
+                else if (ev.status === 'WRONG') wrongCount++;
+                else if (ev.status === 'ESSAY') {
                     const sc = (res.essayScores && res.essayScores[q.id]) ? Number(res.essayScores[q.id]) : 0;
-                    if (sc > 0) correctCount++;
+                    if (sc >= (q.weight || 10) * 0.5) correctCount++;
                     else wrongCount++;
                 }
             });
 
-            const totalRespondents = relevantResults.length;
-            const correctPct = totalRespondents > 0 ? Math.round((correctCount / totalRespondents) * 100) : null;
-
             let difficultyLabel = q.difficulty || 'Sedang';
-            let difficultyBadgeClass = 'bg-indigo-50 text-indigo-700';
-
-            if (totalRespondents > 0) {
-                if (correctPct >= 75) {
-                    difficultyLabel = `Mudah (${correctPct}%)`;
-                    difficultyBadgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-                } else if (correctPct >= 40) {
-                    difficultyLabel = `Sedang (${correctPct}%)`;
-                    difficultyBadgeClass = 'bg-indigo-50 text-indigo-700 border border-indigo-200';
-                } else {
-                    difficultyLabel = `Sulit (${correctPct}%)`;
-                    difficultyBadgeClass = 'bg-rose-50 text-rose-700 border border-rose-200';
-                }
+            let propCorrect = null;
+            if (totalParticipants > 0) {
+                propCorrect = Math.round((correctCount / totalParticipants) * 100);
+                if (propCorrect >= 70) difficultyLabel = 'Mudah';
+                else if (propCorrect >= 31) difficultyLabel = 'Sedang';
+                else difficultyLabel = 'Sulit';
             }
 
             return {
-                totalRespondents,
+                totalParticipants,
                 correctCount,
                 wrongCount,
                 emptyCount,
-                correctPct,
-                difficultyLabel,
-                difficultyBadgeClass
+                propCorrect,
+                difficultyLabel
             };
         }
 
         function renderAnalysisContent(container) {
             const filterExamId = appData.filters.analysisExam || 'ALL';
-            const filteredQuestions = getQuestionsForAnalysisFilter(filterExamId);
+            const selectedExam = filterExamId !== 'ALL' ? appData.exams.find(e => e.id === filterExamId) : null;
+            const filteredQuestions = getQuestionsForExamFilter(filterExamId);
+            const relevantResults = filterExamId === 'ALL'
+                ? appData.examResults
+                : appData.examResults.filter(r => r.examId === filterExamId);
 
             const examFilterOpts = appData.exams.map(ex => {
                 const subName = getSubjectNameById(ex.subjectId);
-                const qCount = getQuestionsForAnalysisFilter(ex.id).length;
+                const qCount = getQuestionsForExamFilter(ex.id).length;
                 return `<option value="${escapeHtml(ex.id)}" ${filterExamId === ex.id ? 'selected' : ''}>${escapeHtml(ex.examName)} - ${escapeHtml(subName)} (${qCount} Soal)</option>`;
             }).join('');
 
             const rows = filteredQuestions.map((q, idx) => {
-                const bankObj = appData.questionBanks.find(b => b.id === q.bankId);
-                const bankTitle = bankObj ? bankObj.title : '-';
-                const stats = computeQuestionItemAnalysis(q, filterExamId);
+                const stats = computeQuestionItemAnalysis(q, relevantResults);
+                const diffBadgeClass = stats.difficultyLabel === 'Mudah'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : stats.difficultyLabel === 'Sulit'
+                        ? 'bg-red-50 text-red-700 border border-red-200'
+                        : 'bg-indigo-50 text-indigo-700 border border-indigo-200';
+                const pctText = stats.propCorrect !== null ? ` (${stats.propCorrect}%)` : '';
                 return `
                 <tr class="border-b border-slate-100 hover:bg-slate-50">
-                    <td class="px-4 py-3 text-xs font-bold text-slate-700">#${idx + 1}</td>
-                    <td class="px-4 py-3 text-xs">
-                        <p class="font-semibold text-slate-800">${escapeHtml(q.questionText.length > 75 ? q.questionText.slice(0, 75) + '...' : q.questionText)}</p>
-                        ${filterExamId === 'ALL' ? `<span class="text-[10px] text-slate-400 font-medium">Paket Bank: ${escapeHtml(bankTitle)}</span>` : ''}
-                    </td>
+                    <td class="px-4 py-3 text-xs font-bold">#${q.orderNum || (idx + 1)}</td>
+                    <td class="px-4 py-3 text-xs text-slate-800">${escapeHtml(q.questionText.slice(0, 75))}${q.questionText.length > 75 ? '...' : ''}</td>
                     <td class="px-4 py-3 text-xs font-bold text-indigo-700">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
                     <td class="px-4 py-3 text-xs font-bold text-center">${q.weight}</td>
                     <td class="px-4 py-3 text-xs text-center">
-                        <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-bold">${stats.correctCount}</span> /
-                        <span class="px-2 py-0.5 bg-red-50 text-red-600 rounded font-bold">${stats.wrongCount}</span> /
-                        <span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-bold">${stats.emptyCount}</span>
+                        <span class="text-emerald-700 font-bold">${stats.correctCount} B</span> •
+                        <span class="text-red-600 font-bold">${stats.wrongCount} S</span> •
+                        <span class="text-slate-400 font-semibold">${stats.emptyCount} K</span>
                     </td>
-                    <td class="px-4 py-3 text-xs"><span class="px-2.5 py-0.5 rounded-lg font-bold text-[11px] ${stats.difficultyBadgeClass}">${escapeHtml(stats.difficultyLabel)}</span></td>
+                    <td class="px-4 py-3 text-xs"><span class="px-2.5 py-0.5 rounded-lg font-bold text-[11px] ${diffBadgeClass}">${escapeHtml(stats.difficultyLabel)}${escapeHtml(pctText)}</span></td>
                 </tr>
             `;
             }).join('');
@@ -3932,7 +3957,7 @@
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Analisis Butir Soal & Tingkat Kesulitan</h3>
-                            <p class="text-xs text-slate-500">Pilih paket ujian untuk melihat analisis sebaran tipe soal, bobot, jumlah dijawab benar/salah, dan tingkat kesulitan per mata pelajaran.</p>
+                            <p class="text-xs text-slate-500">Pilih paket ujian untuk menganalisis sebaran tipe soal, bobot, statistik jawaban benar/salah, dan tingkat kesulitan per mata pelajaran.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
@@ -3945,21 +3970,33 @@
                             <button type="button" onclick="window.exportAnalysisExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Analisis Excel
                             </button>
-                            <button type="button" onclick="window.printAnalysisReport()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
+                            <button type="button" onclick="window.printAnalysisReport()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-print mr-1"></i> Cetak Analisis Soal
                             </button>
                         </div>
                     </div>
+                    ${selectedExam ? `
+                    <div class="bg-indigo-50/70 border border-indigo-200 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs text-indigo-950">
+                        <div>
+                            <span class="font-extrabold"><i class="fa-solid fa-book-open mr-1.5 text-indigo-600"></i> Paket Ujian Aktif:</span> ${escapeHtml(selectedExam.examName)} •
+                            <strong>Mata Pelajaran:</strong> ${escapeHtml(getSubjectNameById(selectedExam.subjectId))} •
+                            <strong>Kelas:</strong> ${escapeHtml(getClassNameById(selectedExam.classId))}
+                        </div>
+                        <div class="font-bold text-indigo-700">
+                            Jumlah Soal: ${filteredQuestions.length} Butir • Data Responden: ${relevantResults.length} Siswa
+                        </div>
+                    </div>
+                    ` : ''}
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[700px] text-left border-collapse">
+                            <table class="w-full min-w-[680px] text-left border-collapse">
                                 <thead>
                                     <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
                                         <th class="px-4 py-3">No</th>
                                         <th class="px-4 py-3">Butir Pertanyaan</th>
                                         <th class="px-4 py-3">Jenis Soal</th>
                                         <th class="px-4 py-3 text-center">Bobot</th>
-                                        <th class="px-4 py-3 text-center">Benar / Salah / Kosong</th>
+                                        <th class="px-4 py-3 text-center">Statistik Jawaban (B / S / K)</th>
                                         <th class="px-4 py-3">Tingkat Kesulitan</th>
                                     </tr>
                                 </thead>
@@ -3978,63 +4015,33 @@
 
         window.exportAnalysisExcel = function() {
             const currentExamFilter = appData.filters.analysisExam || 'ALL';
-            const defaultExamId = (currentExamFilter !== 'ALL' && appData.exams.some(e => e.id === currentExamFilter))
-                ? currentExamFilter
-                : (appData.exams[0] ? appData.exams[0].id : '');
+            const selectedExam = currentExamFilter !== 'ALL' ? appData.exams.find(e => e.id === currentExamFilter) : null;
+            const questionsToExport = getQuestionsForExamFilter(currentExamFilter);
+            const relevantResults = currentExamFilter === 'ALL'
+                ? appData.examResults
+                : appData.examResults.filter(r => r.examId === currentExamFilter);
 
-            const examOpts = appData.exams.map(ex => {
-                const subName = getSubjectNameById(ex.subjectId);
-                const qCount = getQuestionsForAnalysisFilter(ex.id).length;
-                return `<option value="${escapeHtml(ex.id)}" ${ex.id === defaultExamId ? 'selected' : ''}>${escapeHtml(ex.examName)} — Mapel: ${escapeHtml(subName)} (${qCount} Soal)</option>`;
-            }).join('');
-
-            const html = `
-                <div class="space-y-4 text-xs">
-                    <div class="space-y-2.5">
-                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
-                            <input type="radio" name="exportAnalysisMode" value="PACKAGE" ${currentExamFilter !== 'ALL' || appData.exams.length > 0 ? 'checked' : ''} onchange="document.getElementById('exportAnalysisExamSelectWrap').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
-                            <div class="w-full">
-                                <span class="font-extrabold text-slate-900 block">Analisis Soal Per Paket Ujian / Mata Pelajaran</span>
-                                <span class="text-[11px] text-slate-500 block mt-0.5">Unduh analisis butir soal khusus satu paket ujian agar tidak tercampur dengan mapel lain.</span>
-                                <div id="exportAnalysisExamSelectWrap" class="mt-2.5">
-                                    <select id="exportAnalysisTargetExamId" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800">
-                                        ${examOpts || '<option value="">-- Belum Ada Paket Ujian --</option>'}
-                                    </select>
-                                </div>
-                            </div>
-                        </label>
-                        <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
-                            <input type="radio" name="exportAnalysisMode" value="ALL" ${currentExamFilter === 'ALL' && appData.exams.length === 0 ? 'checked' : ''} onchange="document.getElementById('exportAnalysisExamSelectWrap').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
-                            <div>
-                                <span class="font-extrabold text-slate-900 block">Analisis Semua Paket Soal Sekaligus (${appData.questions.length} Soal)</span>
-                                <span class="text-[11px] text-slate-500 block mt-0.5">Gabungkan seluruh analisis butir soal dalam satu file Excel.</span>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-            `;
-
-            window.showModal('Ekspor Analisis Butir Soal ke Excel (.xlsx)', '', 'info', (confirmed) => {
-                if (!confirmed) return true;
-                const modeEl = document.querySelector('input[name="exportAnalysisMode"]:checked');
-                const mode = modeEl ? modeEl.value : 'ALL';
-                const targetExamId = document.getElementById('exportAnalysisTargetExamId')?.value || '';
-                const filterId = (mode === 'PACKAGE' && targetExamId) ? targetExamId : 'ALL';
-                const qList = getQuestionsForAnalysisFilter(filterId);
-
-                const exObj = appData.exams.find(e => e.id === targetExamId);
-                const fileSuffix = (mode === 'PACKAGE' && exObj)
-                    ? `_${exObj.examName.replace(/[^a-zA-Z0-9]/g, '_')}`
-                    : '_Semua_Mapel';
-
-                const headers = ['No', 'Pertanyaan Soal', 'Jenis Soal', 'Bobot', 'Jumlah Dijawab Benar', 'Jumlah Dijawab Salah', 'Jumlah Kosong', 'Tingkat Kesulitan'];
-                const rows = qList.map((q, i) => {
-                    const st = computeQuestionItemAnalysis(q, filterId);
-                    return [i + 1, q.questionText, getQuestionTypeBadgeLabel(q.type), q.weight, st.correctCount, st.wrongCount, st.emptyCount, st.difficultyLabel];
-                });
-                window.downloadExcelFile(`Analisis_Butir_Soal${fileSuffix}.xlsx`, headers, rows);
-                return true;
-            }, { html, showCancel: true, okText: 'Unduh Excel (.xlsx)' });
+            const headers = ['No', 'Paket Ujian', 'Mata Pelajaran', 'Pertanyaan Soal', 'Jenis Soal', 'Bobot', 'Jml Benar', 'Jml Salah', 'Jml Kosong', 'Persentase Benar (%)', 'Tingkat Kesulitan'];
+            const rows = questionsToExport.map((q, idx) => {
+                const stats = computeQuestionItemAnalysis(q, relevantResults);
+                const exTitle = selectedExam ? selectedExam.examName : 'Semua Paket Ujian';
+                const subTitle = selectedExam ? getSubjectNameById(selectedExam.subjectId) : getSubjectNameById(q.subjectId);
+                return [
+                    q.orderNum || (idx + 1),
+                    exTitle,
+                    subTitle,
+                    q.questionText,
+                    getQuestionTypeBadgeLabel(q.type),
+                    q.weight,
+                    stats.correctCount,
+                    stats.wrongCount,
+                    stats.emptyCount,
+                    stats.propCorrect !== null ? `${stats.propCorrect}%` : '-',
+                    stats.difficultyLabel
+                ];
+            });
+            const suffix = selectedExam ? `_${selectedExam.examName.replace(/[^a-zA-Z0-9]/g, '_')}` : '_Semua_Paket';
+            window.downloadExcelFile(`Analisis_Butir_Soal${suffix}.xlsx`, headers, rows);
         };
 
         window.printAnalysisReport = function() {
@@ -4045,24 +4052,19 @@
 
             const examOpts = appData.exams.map(ex => {
                 const subName = getSubjectNameById(ex.subjectId);
-                const clsName = getClassNameById(ex.classId);
-                const qCount = getQuestionsForAnalysisFilter(ex.id).length;
-                return `<option value="${escapeHtml(ex.id)}" ${ex.id === defaultExamId ? 'selected' : ''}>${escapeHtml(ex.examName)} — Mapel: ${escapeHtml(subName)} (Kelas ${escapeHtml(clsName)} • ${qCount} Soal)</option>`;
+                const qCount = getQuestionsForExamFilter(ex.id).length;
+                return `<option value="${escapeHtml(ex.id)}" ${ex.id === defaultExamId ? 'selected' : ''}>${escapeHtml(ex.examName)} — Mapel: ${escapeHtml(subName)} (${qCount} Soal)</option>`;
             }).join('');
 
             const html = `
                 <div class="space-y-4 text-xs">
-                    <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900">
-                        <p class="font-bold"><i class="fa-solid fa-print mr-1.5 text-indigo-600"></i> Pilih Mode Cetak Analisis Butir Soal</p>
-                        <p class="text-[11px] text-indigo-700 mt-0.5">Pilih paket ujian untuk mencetak laporan analisis butir soal per mata pelajaran secara terpisah.</p>
-                    </div>
                     <div class="space-y-2.5">
                         <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
-                            <input type="radio" name="printAnalysisMode" value="PACKAGE" ${currentExamFilter !== 'ALL' || appData.exams.length > 0 ? 'checked' : ''} onchange="document.getElementById('printAnalysisSelectWrap').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                            <input type="radio" name="printAnalysisMode" value="PACKAGE" ${currentExamFilter !== 'ALL' || appData.exams.length > 0 ? 'checked' : ''} onchange="document.getElementById('printAnalysisExamWrap').classList.remove('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
                             <div class="w-full">
                                 <span class="font-extrabold text-slate-900 block">Cetak Analisis Per Paket Ujian / Mata Pelajaran</span>
-                                <span class="text-[11px] text-slate-500 block mt-0.5">Hanya mencetak analisis butir soal pada paket ujian yang dipilih.</span>
-                                <div id="printAnalysisSelectWrap" class="mt-2.5">
+                                <span class="text-[11px] text-slate-500 block mt-0.5">Mencetak analisis butir soal khusus untuk paket ujian / mata pelajaran yang dipilih.</span>
+                                <div id="printAnalysisExamWrap" class="mt-2.5">
                                     <select id="printAnalysisTargetExamId" class="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-bold text-slate-800">
                                         ${examOpts || '<option value="">-- Belum Ada Paket Ujian --</option>'}
                                     </select>
@@ -4070,10 +4072,9 @@
                             </div>
                         </label>
                         <label class="flex items-start gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-white cursor-pointer transition">
-                            <input type="radio" name="printAnalysisMode" value="ALL" ${currentExamFilter === 'ALL' && appData.exams.length === 0 ? 'checked' : ''} onchange="document.getElementById('printAnalysisSelectWrap').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
+                            <input type="radio" name="printAnalysisMode" value="ALL" ${currentExamFilter === 'ALL' && appData.exams.length === 0 ? 'checked' : ''} onchange="document.getElementById('printAnalysisExamWrap').classList.add('hidden')" class="mt-0.5 w-4 h-4 text-indigo-600">
                             <div>
-                                <span class="font-extrabold text-slate-900 block">Cetak Semua Soal Sekaligus (${appData.questions.length} Soal)</span>
-                                <span class="text-[11px] text-slate-500 block mt-0.5">Mencetak seluruh analisis butir soal dari semua paket ujian.</span>
+                                <span class="font-extrabold text-slate-900 block">Cetak Semua Butir Soal (${appData.questions.length} Soal)</span>
                             </div>
                         </label>
                     </div>
@@ -4082,49 +4083,44 @@
 
             window.showModal('Cetak Analisis Butir Soal', '', 'info', (confirmed) => {
                 if (!confirmed) return true;
-                const selectedModeEl = document.querySelector('input[name="printAnalysisMode"]:checked');
-                const mode = selectedModeEl ? selectedModeEl.value : 'ALL';
+                const modeEl = document.querySelector('input[name="printAnalysisMode"]:checked');
+                const mode = modeEl ? modeEl.value : 'ALL';
                 const targetExamId = document.getElementById('printAnalysisTargetExamId')?.value || '';
-                window.executePrintAnalysisReport(mode, targetExamId);
+                const filterId = (mode === 'PACKAGE' && targetExamId) ? targetExamId : 'ALL';
+
+                const printWin = window.open('', '_blank', 'width=960,height=720');
+                if (!printWin) {
+                    window.showModal('Pop-up Diblokir', 'Izinkan pop-up browser untuk mencetak laporan analisis soal.', 'error');
+                    return true;
+                }
+
+                const selectedExam = filterId !== 'ALL' ? appData.exams.find(e => e.id === filterId) : null;
+                const questionsList = getQuestionsForExamFilter(filterId);
+                const relevantResults = filterId === 'ALL' ? appData.examResults : appData.examResults.filter(r => r.examId === filterId);
+                const examTitle = selectedExam ? selectedExam.examName : 'Semua Paket Ujian';
+                const subjectTitle = selectedExam ? getSubjectNameById(selectedExam.subjectId) : 'Semua Mata Pelajaran';
+
+                const rowsHtml = questionsList.map((q, i) => {
+                    const st = computeQuestionItemAnalysis(q, relevantResults);
+                    return `
+                        <tr>
+                            <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">#${q.orderNum || (i + 1)}</td>
+                            <td style="border:1px solid #cbd5e1;padding:7px;">${escapeHtml(q.questionText)}</td>
+                            <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
+                            <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;font-weight:bold;">${q.weight}</td>
+                            <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">${st.correctCount} / ${st.wrongCount} / ${st.emptyCount}</td>
+                            <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;font-weight:bold;">${escapeHtml(st.difficultyLabel)}${st.propCorrect !== null ? ` (${st.propCorrect}%)` : ''}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="6" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada butir soal.</td></tr>';
+
+                const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
+                printWin.document.write(`<!DOCTYPE html><html><head><title>Analisis Soal - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:15mm;}body{font-family:sans-serif;padding:10px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:11px;}th{background:#1e293b;color:#fff;padding:7px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:54px;height:54px;object-fit:contain;}.meta{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">LAPORAN ANALISIS BUTIR SOAL & TINGKAT KESULITAN</p></div></div><div class="meta"><div><strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}</div><div style="text-align:right;"><strong>Jumlah Soal:</strong> ${questionsList.length} Butir<br><strong>Jumlah Responden:</strong> ${relevantResults.length} Siswa</div></div><table><thead><tr><th>No</th><th>Butir Pertanyaan</th><th>Jenis Soal</th><th>Bobot</th><th>Benar / Salah / Kosong</th><th>Tingkat Kesulitan</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
+                printWin.document.close();
+                printWin.focus();
+                setTimeout(() => { printWin.print(); }, 250);
                 return true;
             }, { html, showCancel: true, okText: 'Buka Jendela Cetak' });
-        };
-
-        window.executePrintAnalysisReport = function(mode = 'ALL', examId = '') {
-            const printWin = window.open('', '_blank', 'width=960,height=720');
-            if (!printWin) {
-                window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak laporan analisis soal.', 'error');
-                return;
-            }
-
-            const filterId = (mode === 'PACKAGE' && examId) ? examId : 'ALL';
-            const selectedExam = filterId !== 'ALL' ? appData.exams.find(e => e.id === filterId) : null;
-            const questionsToPrint = getQuestionsForAnalysisFilter(filterId);
-
-            const subjectTitle = selectedExam ? getSubjectNameById(selectedExam.subjectId) : 'Semua Mata Pelajaran';
-            const examTitle = selectedExam ? selectedExam.examName : 'Semua Paket Ujian';
-            const classTitle = selectedExam ? `Kelas ${getClassNameById(selectedExam.classId)}` : 'Semua Kelas';
-
-            const rowsHtml = questionsToPrint.map((q, i) => {
-                const st = computeQuestionItemAnalysis(q, filterId);
-                return `
-                <tr>
-                    <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">#${i + 1}</td>
-                    <td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(q.questionText)}</td>
-                    <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
-                    <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">${q.weight}</td>
-                    <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${st.correctCount} / ${st.wrongCount} / ${st.emptyCount}</td>
-                    <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">${escapeHtml(st.difficultyLabel)}</td>
-                </tr>
-            `;
-            }).join('') || '<tr><td colspan="6" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada butir soal pada paket ini.</td></tr>';
-
-            const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-
-            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Analisis Soal - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:15mm;}body{font-family:sans-serif;padding:10px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}.meta{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • LAPORAN ANALISIS BUTIR SOAL</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><div class="meta"><div><strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}</div><div style="text-align:right;"><strong>Kelas:</strong> ${escapeHtml(classTitle)}<br><strong>Jumlah Butir Soal:</strong> ${questionsToPrint.length} Soal</div></div><table><thead><tr><th>No</th><th>Butir Pertanyaan</th><th>Jenis Soal</th><th>Bobot</th><th>Benar / Salah / Kosong</th><th>Tingkat Kesulitan</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
-            printWin.document.close();
-            printWin.focus();
-            setTimeout(() => { printWin.print(); }, 250);
         };
 
         function renderSpreadsheetContent(container) {
@@ -4250,972 +4246,13 @@
                 return;
             }
 
-            if (file.size > 2 * 1024 * 1024) {
-                window.showModal('Ukuran File Terlalu Besar', 'Ukuran file logo maksimal 2 MB agar cepat dimuat pada jaringan HP.', 'error');
-                event.target.value = '';
-                return;
-            }
-
-            try {
-                // Kompresi cepat ukuran optimal 180x180px (~10KB) agar pratinjau dan simpan ke Cloud instan (< 1 detik)
-                const compressed = await compressAndConvertImage(file, 180, 180, 0.82);
-                pendingLogoFile = compressed.blob;
-                pendingLogoDataUrl = compressed.dataUrl;
-                const mainEl = document.getElementById('adminMainContent');
-                if (mainEl && appData.activeAdminMenu === 'settings') {
-                    renderSettingsContent(mainEl);
-                }
-            } catch (err) {
-                console.error('Logo preview error:', err);
-                window.showModal('Gagal Memuat Pratinjau', 'File gambar tidak dapat diproses. Silakan pilih file gambar lain.', 'error');
-            }
-        };
-
-        window.saveSchoolLogoToCloud = async function() {
-            if (!pendingLogoDataUrl || isUploadingLogo) return;
-            isUploadingLogo = true;
-            const previousLogoUrl = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-            const finalLogoUrl = pendingLogoDataUrl;
-
-            // Terapkan secara optimis ke UI agar terasa instan tanpa jeda
-            appData.settings.schoolLogo = finalLogoUrl;
-            updateBrowserFaviconAndTitle();
-
-            const mainEl = document.getElementById('adminMainContent');
-            if (mainEl && appData.activeAdminMenu === 'settings') {
-                renderSettingsContent(mainEl);
-            }
-
-            try {
-                const updatedSettings = {
-                    ...appData.settings,
-                    schoolLogo: finalLogoUrl,
-                    updatedAtMs: Date.now()
-                };
-
-                // Simpan langsung ke Firestore (tanpa menunggu timeout retry Firebase Storage yang memakan waktu lama)
-                const savedOk = await syncCollectionRecord('appSettings', 'global', updatedSettings);
-                if (!savedOk) {
-                    throw new Error('Gagal menyinkronkan logo ke dokumen Firestore.');
-                }
-
-                pendingLogoFile = null;
-                pendingLogoDataUrl = null;
-                isUploadingLogo = false;
-
-                logActivity('Administrator memperbarui logo identitas visual sekolah.');
-                window.renderAdminLayout();
-                window.showModal('Logo Berhasil Disimpan', 'Logo sekolah berhasil disimpan secara instan ke Cloud dan diterapkan di seluruh perangkat.', 'success');
-            } catch (err) {
-                console.error('Save School Logo Error:', err);
-                appData.settings.schoolLogo = previousLogoUrl;
-                updateBrowserFaviconAndTitle();
-                isUploadingLogo = false;
-                if (mainEl && appData.activeAdminMenu === 'settings') {
-                    renderSettingsContent(mainEl);
-                }
-                window.showModal('Gagal Menyimpan Logo', 'Terjadi kendala jaringan saat menyimpan logo baru. Logo lama tetap dipertahankan.', 'error');
-            }
-        };
-
-        window.removeSchoolLogoFromCloud = function() {
-            if (pendingLogoDataUrl && (!appData.settings.schoolLogo || appData.settings.schoolLogo === DEFAULT_SCHOOL_LOGO)) {
-                pendingLogoFile = null;
-                pendingLogoDataUrl = null;
-                renderSettingsContent(document.getElementById('adminMainContent'));
-                return;
-            }
-
-            window.showModal(
-                'Hapus Logo Sekolah',
-                'Apakah Anda yakin ingin menghapus logo kustom saat ini dan mengembalikannya ke logo standar?',
-                'error',
-                async (confirmed) => {
-                    if (!confirmed) return true;
-                    const previousLogo = appData.settings.schoolLogo;
-                    try {
-                        const updatedSettings = {
-                            ...appData.settings,
-                            schoolLogo: DEFAULT_SCHOOL_LOGO,
-                            updatedAtMs: Date.now()
-                        };
-                        const ok = await syncCollectionRecord('appSettings', 'global', updatedSettings);
-                        if (!ok) throw new Error('Gagal menghapus logo di Firestore');
-
-                        appData.settings.schoolLogo = DEFAULT_SCHOOL_LOGO;
-                        pendingLogoFile = null;
-                        pendingLogoDataUrl = null;
-                        updateBrowserFaviconAndTitle();
-                        logActivity('Administrator mereset logo sekolah ke logo default.');
-                        window.renderAdminLayout();
-                        window.showModal('Logo Dihapus', 'Logo sekolah telah dikembalikan ke pengaturan default.', 'success');
-                    } catch (e) {
-                        appData.settings.schoolLogo = previousLogo;
-                        window.showModal('Gagal Menghapus Logo', 'Tidak dapat menghapus logo saat ini. Silakan periksa koneksi internet.', 'error');
-                    }
-                    return true;
-                },
-                { showCancel: true, okText: 'Ya, Hapus Logo' }
-            );
-        };
-
-        function renderSchedulesContent(container) {
-            const rows = appData.exams.map(e => `
-                <tr class="border-b border-slate-100 hover:bg-slate-50">
-                    <td class="px-4 py-3 text-xs font-bold">${escapeHtml(e.examName)}</td>
-                    <td class="px-4 py-3 text-xs">${escapeHtml(getClassNameById(e.classId))}</td>
-                    <td class="px-4 py-3 text-xs">${escapeHtml(formatIsoToDDMMYYYY(e.startDate || '2026-11-04'))} - ${escapeHtml(formatIsoToDDMMYYYY(e.endDate || '2026-12-04'))} (${escapeHtml(e.startTime || '07:00')} - ${escapeHtml(e.endTime || '23:59')})</td>
-                    <td class="px-4 py-3 text-xs font-mono font-extrabold text-indigo-700">${escapeHtml(e.token)}</td>
-                    <td class="px-4 py-3 text-xs space-x-1">
-                        <button type="button" onclick="window.regenerateExamToken('${e.id}')" class="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg font-bold"><i class="fa-solid fa-arrows-rotate mr-1"></i> Acak Token</button>
-                    </td>
-                </tr>
-            `).join('');
-
-            container.innerHTML = `
-                <div class="space-y-4">
-                    <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200">
-                        <h3 class="font-bold text-sm text-slate-800">Jadwal Pelaksanaan & Generator Token Ujian</h3>
-                        <p class="text-xs text-slate-500">Perbarui token keamanan ujian secara dinamis.</p>
-                    </div>
-                    <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-                        <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[600px] text-left border-collapse">
-                                <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">Nama Ujian</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Waktu Pelaksanaan</th><th class="px-4 py-3">Token Aktif</th><th class="px-4 py-3">Aksi</th></tr></thead>
-                                <tbody>${rows}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        window.regenerateExamToken = function(examId) {
-            const ex = appData.exams.find(x => x.id === examId);
-            if (!ex) return;
-            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-            let newToken = '';
-            for (let i = 0; i < 6; i++) newToken += chars.charAt(Math.floor(Math.random() * chars.length));
-            ex.token = newToken;
-            syncCollectionRecord('exams', ex.id, ex);
-            logActivity(`Token ujian ${ex.examName} diperbarui menjadi ${newToken}.`);
-            renderSchedulesContent(document.getElementById('adminMainContent'));
-        };
-
-        function renderParticipantsContent(container) {
-            const activeExamId = (appData.filters.participantExam && appData.filters.participantExam !== 'ALL')
-                ? appData.filters.participantExam
-                : (appData.exams[0] ? appData.exams[0].id : '');
-
-            const examOptions = appData.exams.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === activeExamId ? 'selected' : ''}>${escapeHtml(e.examName)} (Kelas ${escapeHtml(getClassNameById(e.classId))})</option>`).join('');
-
-            const rows = appData.students.map((s, idx) => {
-                const res = appData.examResults.find(r => r.studentId === s.id && (!activeExamId || r.examId === activeExamId));
-                const sess = appData.examSessions.find(ss => ss.studentId === s.id && (!activeExamId || ss.examId === activeExamId) && ss.status === 'IN_PROGRESS');
-                const part = appData.examParticipants.find(p => p.studentId === s.id && (!activeExamId || p.examId === activeExamId));
-                const status = res ? 'Selesai' : (sess ? 'Sedang Mengerjakan' : (part && part.status ? part.status : 'Belum Mulai'));
-                const violations = res && typeof res.violationCount === 'number'
-                    ? res.violationCount
-                    : (sess && typeof sess.violationCount === 'number' ? sess.violationCount : (part && typeof part.violationCount === 'number' ? part.violationCount : 0));
-                const progressInfo = sess ? `<span class="block text-[10px] text-indigo-600 font-semibold mt-0.5">Progres: ${sess.answeredCount || 0} terjawab • Soal #${(sess.lastQuestionIndex || 0) + 1}</span>` : '';
-                const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
-                return `
-                    <tr class="border-b border-slate-100 hover:bg-slate-50">
-                        <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
-                        <td class="px-4 py-3 text-xs font-mono font-bold">${escapeHtml(s.nisn)}</td>
-                        <td class="px-4 py-3 text-xs font-bold">${escapeHtml(s.fullName)}</td>
-                        <td class="px-4 py-3 text-xs font-semibold ${schoolDisplay === '-' ? 'text-slate-400 italic' : 'text-indigo-700'}">${escapeHtml(schoolDisplay)}</td>
-                        <td class="px-4 py-3 text-xs">${escapeHtml(s.className)}</td>
-                        <td class="px-4 py-3 text-xs">
-                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${status === 'Selesai' ? 'bg-emerald-50 text-emerald-700' : status === 'Sedang Mengerjakan' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(status)}</span>
-                            ${progressInfo}
-                        </td>
-                        <td class="px-4 py-3 text-xs">
-                            <span class="px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold ${violations > 0 ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-slate-100 text-slate-500'}">
-                                <i class="fa-solid fa-triangle-exclamation mr-1"></i> ${violations}x
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-xs">
-                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-xs"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : '<span class="text-slate-400 text-[11px]">Siap Ujian</span>'}
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-
-            container.innerHTML = `
-                <div class="space-y-4">
-                    <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-bold text-sm text-slate-800">Pemantauan Peserta Ujian, Progres Lintas Perangkat & Reset Sesi</h3>
-                            </div>
-                            <p class="text-xs text-slate-500 mt-0.5">Pantau status pengerjaan real-time masing-masing siswa, jumlah jawaban tersimpan, pelanggaran pindah tab, dan reset sesi.</p>
-                        </div>
-                        <div class="flex flex-wrap items-center gap-3">
-                            <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
-                                <i class="fa-solid fa-rotate"></i> Reset Semua Sesi
-                            </button>
-                            <div class="flex items-center gap-2">
-                                <label class="text-xs font-bold text-slate-600">Paket Ujian:</label>
-                                <select onchange="window.filterParticipantExam(this.value)" class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
-                                    ${examOptions || '<option value="">Belum Ada Paket Ujian</option>'}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
-                        <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[740px] text-left border-collapse">
-                                <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Peserta</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status Sesi</th><th class="px-4 py-3">Pelanggaran</th><th class="px-4 py-3">Aksi Pengawas</th></tr></thead>
-                                <tbody>${rows}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        window.filterParticipantExam = function(examId) {
-            appData.filters.participantExam = examId;
-            renderParticipantsContent(document.getElementById('adminMainContent'));
-        };
-
-        window.resetStudentExamSession = function(studentId, examId = '') {
-            window.showModal('Konfirmasi Reset Sesi', 'Mereset sesi akan menghapus progres aktif, jawaban tersimpan, hasil ujian, dan hitungan pelanggaran siswa ini agar siswa dapat mengerjakan ujian kembali dari awal. Lanjutkan?', 'error', async (confirmed) => {
-                if (confirmed) {
-                    updateLiveSyncIndicator('syncing', 'Mereset Sesi...');
-                    const toRemoveRes = appData.examResults.filter(r => r.studentId === studentId && (!examId || r.examId === examId));
-                    for (const r of toRemoveRes) {
-                        const docId = r.id || r.resultId;
-                        await syncCollectionRecord('examResults', docId, null, true);
-                    }
-                    appData.examResults = appData.examResults.filter(r => !(r.studentId === studentId && (!examId || r.examId === examId)));
-
-                    // Hapus sesi dari daftar examSessions & pastikan ID deterministik SES_{examId}_{studentId} juga dihapus dari Firestore
-                    const toRemoveSess = appData.examSessions.filter(ss => ss.studentId === studentId && (!examId || ss.examId === examId));
-                    const deletedSessIds = new Set();
-                    for (const ss of toRemoveSess) {
-                        deletedSessIds.add(ss.id);
-                        await syncCollectionRecord('examSessions', ss.id, null, true);
-                    }
-                    const targetExams = examId ? [examId] : appData.exams.map(e => e.id);
-                    for (const exId of targetExams) {
-                        const deterministicSessId = getSessionDocId(exId, studentId);
-                        if (!deletedSessIds.has(deterministicSessId)) {
-                            await syncCollectionRecord('examSessions', deterministicSessId, null, true);
-                        }
-                    }
-                    appData.examSessions = appData.examSessions.filter(ss => !(ss.studentId === studentId && (!examId || ss.examId === examId)));
-
-                    const matchingParts = appData.examParticipants.filter(p => p.studentId === studentId && (!examId || p.examId === examId));
-                    if (matchingParts.length > 0) {
-                        for (const part of matchingParts) {
-                            part.status = 'Belum Mulai';
-                            part.violationCount = 0;
-                            await syncCollectionRecord('examParticipants', part.id, part);
-                        }
-                    } else if (examId) {
-                        const stdObj = appData.students.find(s => s.id === studentId);
-                        if (stdObj) {
-                            const newPart = {
-                                id: 'PRT-' + stdObj.id + '-' + examId,
-                                examId,
-                                studentId: stdObj.id,
-                                nisn: stdObj.nisn,
-                                studentName: stdObj.fullName,
-                                className: stdObj.className || '4',
-                                status: 'Belum Mulai',
-                                violationCount: 0,
-                                extraTimeMinutes: 0
-                            };
-                            appData.examParticipants.push(newPart);
-                            await syncCollectionRecord('examParticipants', newPart.id, newPart);
-                        }
-                    }
-
-                    const stdObj = appData.students.find(s => s.id === studentId);
-                    logActivity(`Sesi ujian siswa ${stdObj ? stdObj.fullName : studentId} telah direset oleh Administrator.`);
-                    window.renderAdminCurrentSection();
-                    updateLiveSyncIndicator('updated', 'Sesi Direset');
-                }
-            }, { okText: 'Ya, Reset Sesi' });
-        };
-
-        window.resetAllExamSessions = function(examId) {
-            if (!examId) {
-                window.showModal('Pilih Paket Ujian', 'Tidak ada paket ujian aktif yang dipilih untuk direset.', 'error');
-                return;
-            }
-            const activeExam = appData.exams.find(e => e.id === examId);
-            const examName = activeExam ? activeExam.examName : 'Paket Ujian Ini';
-
-            window.showModal(
-                'Konfirmasi Reset Semua Sesi',
-                `Apakah Anda yakin ingin mereset sesi seluruh peserta pada paket ujian "${examName}"? Semua siswa dapat memulai ulang ujian dari awal.`,
-                'error',
-                async (confirmed) => {
-                    if (confirmed) {
-                        updateLiveSyncIndicator('syncing', 'Mereset Semua Sesi...');
-                        let successCount = 0;
-                        for (const s of appData.students) {
-                            const toRemove = appData.examResults.filter(r => r.studentId === s.id && r.examId === examId);
-                            for (const r of toRemove) {
-                                await syncCollectionRecord('examResults', r.id || r.resultId, null, true);
-                            }
-                            appData.examResults = appData.examResults.filter(r => !(r.studentId === s.id && r.examId === examId));
-
-                            const sessRemove = appData.examSessions.filter(ss => ss.studentId === s.id && ss.examId === examId);
-                            const removedIds = new Set();
-                            for (const ss of sessRemove) {
-                                removedIds.add(ss.id);
-                                await syncCollectionRecord('examSessions', ss.id, null, true);
-                            }
-                            const detId = getSessionDocId(examId, s.id);
-                            if (!removedIds.has(detId)) {
-                                await syncCollectionRecord('examSessions', detId, null, true);
-                            }
-                            appData.examSessions = appData.examSessions.filter(ss => !(ss.studentId === s.id && ss.examId === examId));
-
-                            let part = appData.examParticipants.find(p => p.studentId === s.id && p.examId === examId);
-                            if (part) {
-                                part.status = 'Belum Mulai';
-                                part.violationCount = 0;
-                                await syncCollectionRecord('examParticipants', part.id, part);
-                            } else {
-                                const newPart = {
-                                    id: 'PRT-' + s.id + '-' + examId,
-                                    examId,
-                                    studentId: s.id,
-                                    nisn: s.nisn,
-                                    studentName: s.fullName,
-                                    className: s.className || '4',
-                                    status: 'Belum Mulai',
-                                    violationCount: 0,
-                                    extraTimeMinutes: 0
-                                };
-                                appData.examParticipants.push(newPart);
-                                await syncCollectionRecord('examParticipants', newPart.id, newPart);
-                            }
-                            successCount++;
-                        }
-
-                        logActivity(`Administrator mereset sesi seluruh peserta (${successCount} siswa) untuk paket ujian ${examName}.`);
-                        window.renderAdminCurrentSection();
-                        updateLiveSyncIndicator('updated', 'Semua Sesi Direset');
-                        window.showModal('Reset Sesi Berhasil', `Berhasil mereset sesi ujian untuk ${successCount} peserta. Seluruh siswa kini dapat mengikuti ujian kembali dari awal.`, 'success');
-                    }
-                    return true;
-                },
-                { showCancel: true, okText: 'Ya, Reset Semua Sesi' }
-            );
-        };
-
-        window.saveAppSettings = async function() {
-            const name = document.getElementById('settingSchoolName')?.value.trim();
-            const appNameVal = document.getElementById('settingAppName')?.value.trim();
-            const year = document.getElementById('settingAcademicYear')?.value.trim();
-            const sem = document.getElementById('settingSemester')?.value;
-            if (!name) {
-                window.showModal('Validasi Pengaturan', 'Nama SD / Sekolah tidak boleh kosong.', 'error');
-                return;
-            }
-            appData.settings.schoolName = name;
-            if (appNameVal) appData.settings.appName = appNameVal;
-            if (year) appData.settings.academicYear = year;
-            if (sem) appData.settings.semester = sem;
-            const ok = await syncCollectionRecord('appSettings', 'global', appData.settings);
-            updateBrowserFaviconAndTitle();
-            if (ok) {
-                window.showModal('Pengaturan Disimpan', 'Identitas sekolah dan aplikasi berhasil disimpan ke Cloud dan disinkronkan ke seluruh perangkat.', 'success');
-            } else {
-                window.showModal('Peringatan Sinkronisasi', 'Pengaturan disimpan secara lokal namun gagal tersinkron ke server.', 'error');
-            }
-            window.renderAdminLayout();
-        };
-
-        // ============================================================================
-        // FITUR AUTO-SAVE & LANJUTKAN UJIAN ANTARPERANGKAT (RESUME EXAM)
-        // ============================================================================
-        function getSessionDocId(examId, studentId) {
-            return `SES_${examId}_${studentId}`;
-        }
-
-        function computeProgressMetrics() {
-            let answeredCount = 0;
-            let doubtfulCount = 0;
-            const questionStatusMap = {};
-            currentExamQuestions.forEach(q => {
-                const ans = currentStudentAnswers[q.id];
-                const isAns = isQuestionAnswered(ans);
-                const isDoubt = !!currentDoubtfulMap[q.id];
-                if (isAns) answeredCount++;
-                if (isDoubt) doubtfulCount++;
-                questionStatusMap[q.id] = isDoubt ? 'ragu-ragu' : (isAns ? 'dijawab' : 'belum_dijawab');
-            });
-            return { answeredCount, doubtfulCount, questionStatusMap };
-        }
-
-        function setAutosaveIndicator(status) {
-            const badge = document.getElementById('autosaveBadge');
-            if (!badge) return;
-            if (status === 'saving') {
-                badge.className = 'text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md flex items-center gap-1';
-                badge.innerHTML = '<i class="fa-solid fa-rotate fa-spin"></i> Menyimpan...';
-            } else if (status === 'error') {
-                badge.className = 'text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md flex items-center gap-1';
-                badge.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Gangguan Sinyal';
-            } else {
-                badge.className = 'text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1';
-                badge.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Tersimpan Cloud';
-            }
-        }
-
-        window.persistExamSessionToCloud = async function(immediate = false) {
-            if (!isExamWorkspaceActive || !currentActiveExam || !appData.currentUser || isSubmittingFinalExam) return false;
-            const student = appData.currentUser;
-            const sessId = getSessionDocId(currentActiveExam.id, student.studentId);
-            const nowMs = Date.now();
-            const realRemSecs = Math.max(0, Math.floor((currentExamEndTimeMs - nowMs) / 1000));
-            remainingSeconds = realRemSecs;
-
-            const { answeredCount, doubtfulCount, questionStatusMap } = computeProgressMetrics();
-
-            const sessionPayload = {
-                id: sessId,
-                examId: currentActiveExam.id,
-                examName: currentActiveExam.examName,
-                bankId: currentActiveExam.bankId || '',
-                subjectId: currentActiveExam.subjectId || '',
-                subjectName: getSubjectNameById(currentActiveExam.subjectId),
-                studentId: student.studentId,
-                nisn: student.nisn,
-                studentName: student.name,
-                classId: student.classId || '',
-                className: student.className || '4',
-                answers: sanitizeFirestoreData(currentStudentAnswers || {}),
-                doubtfulMap: sanitizeFirestoreData(currentDoubtfulMap || {}),
-                questionStatusMap,
-                lastQuestionIndex: currentQuestionIndex,
-                answeredCount,
-                doubtfulCount,
-                totalQuestions: currentExamQuestions.length,
-                startedAtMs: currentExamStartedAtMs,
-                endTimeMs: currentExamEndTimeMs,
-                remainingSeconds: realRemSecs,
-                violationCount: currentViolationCount,
-                violationLogs: currentViolationLogs,
-                status: 'IN_PROGRESS',
-                sessionToken: currentSessionToken,
-                deviceInfo: getDeviceLabel(),
-                updatedAtMs: nowMs,
-                updatedAtFormatted: new Date(nowMs).toLocaleString('id-ID')
-            };
-
-            const existingIdx = appData.examSessions.findIndex(s => s.id === sessId);
-            if (existingIdx !== -1) {
-                appData.examSessions[existingIdx] = sessionPayload;
-            } else {
-                appData.examSessions.push(sessionPayload);
-            }
-
-            setAutosaveIndicator('saving');
-            const ok = await syncCollectionRecord('examSessions', sessId, sessionPayload);
-            setAutosaveIndicator(ok ? 'saved' : 'error');
-            return ok;
-        };
-
-        window.scheduleAutoSave = function(immediate = false) {
-            if (autoSaveDebounceTimer) clearTimeout(autoSaveDebounceTimer);
-            if (immediate) {
-                window.persistExamSessionToCloud(true);
-            } else {
-                setAutosaveIndicator('saving');
-                autoSaveDebounceTimer = setTimeout(() => {
-                    window.persistExamSessionToCloud(false);
-                }, 350);
-            }
-        };
-
-        function attachRealtimeSessionTokenListener(sessId) {
-            if (sessionWatcherUnsubscribe) {
-                sessionWatcherUnsubscribe();
-                sessionWatcherUnsubscribe = null;
-            }
-            if (IS_PREVIEW || !db) return;
-            try {
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'examSessions', sessId);
-                sessionWatcherUnsubscribe = onSnapshot(ref, (snap) => {
-                    if (!isExamWorkspaceActive) return;
-                    if (!snap.exists()) {
-                        // Dokumen sesi dihapus oleh Admin (Reset Sesi saat siswa sedang membuka ruang ujian)
-                        window.stopAllExamTimersAndWatchers();
-                        window.showModal(
-                            'Sesi Ujian Direset Pengawas',
-                            'Sesi ujian Anda telah direset oleh Pengawas / Administrator. Silakan mulai kembali ujian dari halaman Portal Siswa.',
-                            'info',
-                            () => {
-                                window.renderStudentPortal(false);
-                            }
-                        );
-                        return;
-                    }
-                    const remoteData = snap.data();
-                    if (remoteData.status === 'SUBMITTED') {
-                        window.stopAllExamTimersAndWatchers();
-                        window.showModal('Ujian Telah Dikirim', 'Sesi ujian ini telah diselesaikan dan dikirim dari perangkat Anda yang lain.', 'info', () => {
-                            window.renderStudentPortal(false);
-                        });
-                        return;
-                    }
-                    if (remoteData.sessionToken && currentSessionToken && remoteData.sessionToken !== currentSessionToken) {
-                        window.stopAllExamTimersAndWatchers();
-                        window.showModal(
-                            'Sesi Berpindah ke Perangkat Lain',
-                            `Ujian Anda baru saja dibuka dan diambil alih pada perangkat lain (${remoteData.deviceInfo || 'Perangkat Baru'}). Halaman pada perangkat ini dinonaktifkan agar tidak menimpa jawaban terbaru Anda.`,
-                            'error',
-                            () => {
-                                window.renderStudentPortal(false);
-                            }
-                        );
-                    }
-                }, (err) => {
-                    console.warn('Realtime session listener warning:', err);
-                });
-            } catch (e) {
-                console.warn('Gagal memasang listener sesi:', e);
-            }
-        }
-
-        window.renderStudentPortal = function(checkActivePrompt = false) {
-            window.stopAllExamTimersAndWatchers();
-            isViewingResultReview = false;
-            const container = document.getElementById('appContainer');
-            const student = appData.currentUser;
-            if (!student) {
-                window.renderLoginView();
-                return;
-            }
-            // WAJIB: Hanya tampilkan ujian yang berstatus 'Aktif' DAN sesuai kelas siswa DAN berada dalam jadwal ujian
-            const availableExams = appData.exams.filter(e => isExamEligibleForStudent(e, student));
-
-            let unfinishedSessionToPrompt = null;
-
-            const examCards = availableExams.map(ex => {
-                const finishedRes = appData.examResults.find(r => r.studentId === student.studentId && r.examId === ex.id);
-                const sessId = getSessionDocId(ex.id, student.studentId);
-                const activeSess = !finishedRes
-                    ? appData.examSessions.find(s => s.id === sessId && s.status === 'IN_PROGRESS')
-                    : null;
-
-                if (activeSess && !unfinishedSessionToPrompt) {
-                    unfinishedSessionToPrompt = { exam: ex, session: activeSess };
-                }
-
-                let actionAreaHtml = '';
-                if (finishedRes) {
-                    actionAreaHtml = `
-                        <div class="w-full space-y-2.5">
-                            <div class="flex items-center justify-between w-full">
-                                <span class="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Ujian Selesai</span>
-                                ${ex.isPublished !== false ? `<span class="text-sm font-extrabold text-indigo-700">Nilai: ${finishedRes.finalScore}</span>` : ''}
-                            </div>
-                            <button type="button" onclick="window.openSavedExamResultReview('${escapeHtml(finishedRes.resultId || finishedRes.id)}')" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
-                                <i class="fa-solid fa-award"></i> Lihat Ringkasan Nilai Akhir
-                            </button>
-                        </div>
-                    `;
-                } else if (activeSess) {
-                    const remSecs = Math.max(0, Math.floor(((activeSess.endTimeMs || Date.now()) - Date.now()) / 1000));
-                    const remMinutes = Math.ceil(remSecs / 60);
-                    actionAreaHtml = `
-                        <div class="w-full space-y-2.5">
-                            <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
-                                <div class="font-extrabold flex items-center justify-between">
-                                    <span><i class="fa-solid fa-clock-rotate-left mr-1 text-amber-600"></i> UJIAN BELUM SELESAI</span>
-                                    <span class="font-mono text-[11px] bg-amber-200/70 px-2 py-0.5 rounded font-extrabold">${remSecs > 0 ? `Sisa ~${remMinutes} Menit` : 'Waktu Habis'}</span>
-                                </div>
-                                <p class="text-[11px] text-amber-800">Progres Tersimpan: <strong>${activeSess.answeredCount || 0} / ${activeSess.totalQuestions || (ex.questionIds || []).length} soal dijawab</strong> • Terakhir di Soal <strong>#${(activeSess.lastQuestionIndex || 0) + 1}</strong></p>
-                            </div>
-                            <button type="button" onclick="window.promptResumeOrStartExam('${ex.id}')" class="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold transition shadow-sm flex items-center justify-center gap-1.5">
-                                <i class="fa-solid fa-play"></i> LANJUTKAN UJIAN
-                            </button>
-                        </div>
-                    `;
-                } else {
-                    actionAreaHtml = `
-                        <button type="button" onclick="window.promptResumeOrStartExam('${ex.id}')" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm">
-                            Mulai Kerjakan Ujian <i class="fa-solid fa-arrow-right ml-1"></i>
-                        </button>
-                    `;
-                }
-
-                return `
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border ${activeSess ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-200'} flex flex-col justify-between space-y-4">
-                        <div>
-                            <div class="flex justify-between items-center">
-                                <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold">${escapeHtml(getSubjectNameById(ex.subjectId))}</span>
-                                <span class="font-mono text-xs font-bold text-slate-500">Token: ${escapeHtml(ex.token)}</span>
-                            </div>
-                            <h3 class="text-lg font-extrabold text-slate-900 mt-2">${escapeHtml(ex.examName)}</h3>
-                            <p class="text-xs text-slate-500 mt-1">Durasi: <strong>${ex.durationMinutes} Menit</strong> | Jumlah Soal: <strong>${(ex.questionIds || []).length} Soal</strong></p>
-                        </div>
-                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
-                            ${actionAreaHtml}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            container.innerHTML = `
-                <div class="flex-1 flex flex-col h-full bg-slate-100 overflow-y-auto">
-                    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 flex flex-wrap justify-between items-center gap-3 shrink-0">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo Sekolah" class="w-10 h-10 rounded-xl object-contain bg-slate-50 border border-slate-200 p-0.5 shrink-0">
-                            <div class="min-w-0">
-                                <h1 class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Portal Ujian Siswa • ${escapeHtml(appData.settings.schoolName)}</h1>
-                                <p class="text-[11px] sm:text-xs text-slate-500 truncate">Peserta: <strong>${escapeHtml(student.name)}</strong> (Kelas: ${escapeHtml(student.className || '4')} • NISN: ${escapeHtml(student.nisn)})</p>
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            <div class="live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/80 text-emerald-700 text-[10px] sm:text-[11px] font-bold flex items-center gap-1.5 transition-all">
-                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span class="hidden sm:inline">Live Sync Aktif</span><span class="sm:hidden">Sync</span>
-                            </div>
-                            <button type="button" onclick="window.logoutApp()" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-power-off mr-1"></i> Keluar</button>
-                        </div>
-                    </header>
-                    <main class="p-4 sm:p-6 max-w-4xl mx-auto w-full space-y-6">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">${examCards || '<p class="text-xs text-slate-400">Tidak ada jadwal ujian aktif.</p>'}</div>
-                    </main>
-                </div>
-            `;
-
-            // Jika siswa baru login dan terdeteksi memiliki sesi ujian yang belum selesai, tampilkan modal pemberitahuan otomatis
-            if (checkActivePrompt && unfinishedSessionToPrompt) {
-                setTimeout(() => {
-                    window.showUnfinishedExamNotificationModal(unfinishedSessionToPrompt.exam.id);
-                }, 150);
-            }
-        };
-
-        window.showUnfinishedExamNotificationModal = async function(examId) {
-            const student = appData.currentUser;
-            if (!student) return;
-            const verification = await verifyExamEligibilityFromServer(examId, student);
-            if (!verification.allowed) {
-                window.renderStudentPortal(false);
-                return;
-            }
-            const ex = verification.exam;
-
-            const sessId = getSessionDocId(examId, student.studentId);
-            const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
-            const activeSess = cloudSess || appData.examSessions.find(s => s.id === sessId);
-
-            if (!activeSess || activeSess.status !== 'IN_PROGRESS') return;
-
-            const remSecs = Math.max(0, Math.floor(((activeSess.endTimeMs || Date.now()) - Date.now()) / 1000));
-            const currentDevice = getDeviceLabel();
-            const isDifferentDevice = activeSess.deviceInfo && activeSess.deviceInfo !== currentDevice;
-
-            const html = `
-                <div class="space-y-3 text-xs">
-                    <div class="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-950 space-y-1.5">
-                        <p class="font-extrabold text-sm flex items-center gap-2 text-amber-800">
-                            <i class="fa-solid fa-laptop-medical text-base"></i> UJIAN SEBELUMNYA BELUM SELESAI
-                        </p>
-                        <p class="text-xs text-amber-900 leading-relaxed">
-                            Ujian Anda masih memiliki progres yang tersimpan di server cloud. Anda dapat melanjutkan ujian tepat dari nomor soal terakhir tanpa kehilangan jawaban.
-                        </p>
-                    </div>
-                    <div class="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5 font-medium text-slate-700">
-                        <div class="flex justify-between"><span>Paket Ujian:</span> <strong class="text-slate-900">${escapeHtml(ex.examName)}</strong></div>
-                        <div class="flex justify-between"><span>Mata Pelajaran:</span> <strong class="text-indigo-700">${escapeHtml(getSubjectNameById(ex.subjectId))}</strong></div>
-                        <div class="flex justify-between"><span>Jawaban Tersimpan:</span> <strong class="text-blue-600">${activeSess.answeredCount || 0} dari ${activeSess.totalQuestions || (ex.questionIds || []).length} Soal</strong></div>
-                        <div class="flex justify-between"><span>Ditandai Ragu-ragu:</span> <strong class="text-amber-600">${activeSess.doubtfulCount || 0} Soal</strong></div>
-                        <div class="flex justify-between"><span>Nomor Soal Terakhir:</span> <strong class="text-slate-900">Soal Nomor ${(activeSess.lastQuestionIndex || 0) + 1}</strong></div>
-                        <div class="flex justify-between"><span>Sisa Waktu Sebenarnya:</span> <strong class="font-mono text-red-600">${formatHMS(remSecs)}</strong></div>
-                        <div class="flex justify-between"><span>Riwayat Pelanggaran:</span> <strong class="text-red-600">${activeSess.violationCount || 0} Kali</strong></div>
-                    </div>
-                    ${isDifferentDevice ? `
-                        <div class="p-3 bg-blue-50 border border-blue-200 rounded-xl text-[11px] text-blue-900 flex items-start gap-2">
-                            <i class="fa-solid fa-mobile-screen-button text-blue-600 mt-0.5"></i>
-                            <span><strong>Konfirmasi Perpindahan Perangkat:</strong> Sesi ini sebelumnya dibuka pada <em>${escapeHtml(activeSess.deviceInfo)}</em>. Melanjutkan di perangkat ini (<em>${escapeHtml(currentDevice)}</em>) akan memindahkan kendali sesi aktif ke perangkat ini.</span>
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-
-            window.showModal(
-                'UJIAN SEBELUMNYA BELUM SELESAI',
-                '',
-                'info',
-                (confirmed) => {
-                    if (confirmed) {
-                        window.startExamSession(examId, activeSess);
-                    }
-                    return true;
-                },
-                {
-                    html,
-                    showCancel: true,
-                    okText: 'LANJUTKAN UJIAN',
-                    cancelText: 'KEMBALI'
-                }
-            );
-        };
-
-        window.promptResumeOrStartExam = async function(examId) {
-            const student = appData.currentUser;
-            if (!student) return;
-
-            const verification = await verifyExamEligibilityFromServer(examId, student);
-            if (!verification.allowed) {
-                window.renderStudentPortal(false);
-                window.showModal('Ujian Tidak Tersedia', verification.message, 'error');
-                return;
-            }
-
-            // Cek apakah sudah pernah disubmit selesai
-            const finishedRes = appData.examResults.find(r => r.studentId === student.studentId && r.examId === examId);
-            if (finishedRes) {
-                window.showModal('Ujian Sudah Selesai', 'Anda telah menyelesaikan dan mengirim ujian ini sebelumnya.', 'info');
-                window.renderStudentPortal(false);
-                return;
-            }
-
-            // Ambil dokumen sesi terbaru dari Firestore untuk memastikan sinkronisasi lintas perangkat
-            const sessId = getSessionDocId(examId, student.studentId);
-            const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
-            if (cloudSess) {
-                const idx = appData.examSessions.findIndex(s => s.id === sessId);
-                if (idx !== -1) appData.examSessions[idx] = cloudSess;
-                else appData.examSessions.push(cloudSess);
-            }
-
-            const existingSess = cloudSess || appData.examSessions.find(s => s.id === sessId);
-            if (existingSess && existingSess.status === 'SUBMITTED') {
-                window.showModal('Ujian Telah Dikirim', 'Sesi ujian Anda telah berstatus selesai.', 'info');
-                window.renderStudentPortal(false);
-                return;
-            }
-
-            if (existingSess && existingSess.status === 'IN_PROGRESS') {
-                window.showUnfinishedExamNotificationModal(examId);
-            } else {
-                window.startExamSession(examId, null);
-            }
-        };
-
-        let currentActiveExam = null;
-        let currentExamQuestions = [];
-
-        window.recordStudentViolation = function(reasonText) {
-            if (isViolationModalOpen || !isExamWorkspaceActive || !currentActiveExam) return;
-            isViolationModalOpen = true;
-            currentViolationCount++;
-            currentViolationLogs.push({
-                time: new Date().toLocaleTimeString('id-ID'),
-                reason: reasonText,
-                device: getDeviceLabel()
-            });
-
-            const badgeEl = document.getElementById('examViolationCounter');
-            if (badgeEl) {
-                badgeEl.innerText = `Pelanggaran: ${currentViolationCount}x`;
-            }
-
-            const student = appData.currentUser;
-            if (student && currentActiveExam) {
-                let p = appData.examParticipants.find(x => x.examId === currentActiveExam.id && x.studentId === student.studentId);
-                if (!p) {
-                    p = {
-                        id: 'PRT-' + student.studentId + '-' + currentActiveExam.id,
-                        examId: currentActiveExam.id,
-                        studentId: student.studentId,
-                        nisn: student.nisn,
-                        studentName: student.name,
-                        className: student.className || '4',
-                        status: 'Sedang Mengerjakan',
-                        violationCount: currentViolationCount,
-                        extraTimeMinutes: 0
-                    };
-                    appData.examParticipants.push(p);
-                } else {
-                    p.violationCount = currentViolationCount;
-                }
-                syncCollectionRecord('examParticipants', p.id, p);
-                window.persistExamSessionToCloud(true);
-                logActivity(`Peringatan Pengawasan: ${student.name} melakukan pelanggaran ke-${currentViolationCount} (${reasonText}).`);
-            }
-
-            const modal = document.getElementById('customModal');
-            const dialogBox = document.getElementById('modalDialogBox');
-            const headerEl = document.getElementById('modalHeader');
-            const footerEl = document.getElementById('modalFooter');
-            const msgEl = document.getElementById('modalMessage');
-            const bodyEl = document.getElementById('modalDynamicBody');
-
-            if (headerEl && headerEl.parentElement) {
-                headerEl.parentElement.classList.remove('hidden');
-            }
-            if (headerEl) headerEl.classList.remove('hidden');
-            if (msgEl) msgEl.classList.add('hidden');
-            if (footerEl) footerEl.classList.add('hidden');
-
-            if (dialogBox) {
-                dialogBox.className = 'bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden transform transition-all my-8 flex flex-col max-h-[90vh]';
-            }
-
-            const titleEl = document.getElementById('modalTitle');
-            if (titleEl) {
-                titleEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> <span>Peringatan Pengawasan</span>`;
-            }
-
-            if (bodyEl) {
-                bodyEl.innerHTML = `
-                    <div class="space-y-4 p-2 text-center">
-                        <div class="w-16 h-16 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-2xl border border-red-200 shadow-xs">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
-                        </div>
-                        <div>
-                            <h4 class="text-lg font-extrabold text-slate-900 uppercase tracking-wide">PERINGATAN PELANGGARAN!</h4>
-                            <p class="text-xs text-slate-600 mt-1.5 leading-relaxed">
-                                Sistem mendeteksi Anda <strong>keluar dari halaman ujian / berpindah tab browser</strong>. Aktivitas ini tercatat secara otomatis di server pengawas!
-                            </p>
-                        </div>
-                        <div class="p-3 bg-red-50 rounded-2xl border border-red-200 text-xs font-bold text-red-800">
-                            Total Pelanggaran Anda: <span class="underline text-red-700 text-sm font-extrabold">${currentViolationCount} Kali</span>
-                        </div>
-                        <button type="button" onclick="window.closeViolationModal()" class="w-full py-3.5 bg-red-700 hover:bg-red-800 text-white rounded-2xl font-extrabold text-xs shadow-md transition cursor-pointer">
-                            Saya Mengerti & Kembali Mengerjakan
-                        </button>
-                    </div>
-                `;
-            }
-
-            if (modal) modal.classList.remove('hidden');
-        };
-
-        window.closeViolationModal = function() {
-            isViolationModalOpen = false;
-            window.closeModal();
-        };
-
-        window.attachAntiCheatListeners = function() {
-            window.detachAntiCheatListeners();
-            isExamWorkspaceActive = true;
-            isViolationModalOpen = false;
-            document.addEventListener('visibilitychange', handleVisibilityViolation);
-            window.addEventListener('blur', handleWindowBlurViolation);
-        };
-
-        window.detachAntiCheatListeners = function() {
-            isExamWorkspaceActive = false;
-            document.removeEventListener('visibilitychange', handleVisibilityViolation);
-            window.removeEventListener('blur', handleWindowBlurViolation);
-        };
-
-        window.previewZoomImage = function(imgUrl, caption) {
-            if (!imgUrl) return;
-            const html = `
-                <div class="text-center space-y-2">
-                    <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(caption || 'Gambar')}" class="max-h-[65vh] w-auto mx-auto rounded-xl border border-slate-200 object-contain bg-slate-50 p-2">
-                    <p class="text-xs text-slate-500 font-medium">${escapeHtml(caption || '')}</p>
-                </div>
-            `;
-            window.showModal(caption || 'Pratinjau Gambar', '', 'info', null, { html, wide: true, okText: 'Tutup Gambar' });
-        };
-
-        window.startExamSession = async function(examId, resumeSessionObj = null) {
-            const student = appData.currentUser;
-            if (!student) return;
-
-            const verification = await verifyExamEligibilityFromServer(examId, student);
-            if (!verification.allowed) {
-                window.renderStudentPortal(false);
-                window.showModal('Ujian Ditutup / Belum Tersedia', verification.message, 'error');
-                return;
-            }
-            const ex = verification.exam;
-
-            // Pastikan ujian belum disubmit
-            const alreadyDone = appData.examResults.find(r => r.studentId === student.studentId && r.examId === ex.id);
-            if (alreadyDone) {
-                window.showModal('Ujian Telah Diselesaikan', 'Anda tidak dapat mengerjakan ulang ujian yang sudah dikirim.', 'info');
-                window.renderStudentPortal(false);
-                return;
-            }
-
-            currentActiveExam = ex;
-            currentExamQuestions = (ex.questionIds || []).map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
-            if (currentExamQuestions.length === 0) {
-                currentExamQuestions = appData.questions.filter(q => q.bankId === ex.bankId);
-                if (currentExamQuestions.length === 0) currentExamQuestions = [...appData.questions];
-            }
-
-            isSubmittingFinalExam = false;
-            currentSessionId = getSessionDocId(ex.id, student.studentId);
-            currentSessionToken = 'TOK-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-
-            // Cek kembali dari cloud jika resumeSessionObj belum diberikan
-            if (!resumeSessionObj) {
-                const cloudSess = await fetchSingleFirestoreDoc('examSessions', currentSessionId);
-                if (cloudSess && cloudSess.status === 'IN_PROGRESS') {
-                    resumeSessionObj = cloudSess;
-                }
-            }
-
-            const nowMs = Date.now();
-            if (resumeSessionObj && resumeSessionObj.status === 'IN_PROGRESS') {
-                // Pulihkan progres ujian sebelumnya (Resume)
-                currentStudentAnswers = resumeSessionObj.answers ? JSON.parse(JSON.stringify(resumeSessionObj.answers)) : {};
-                currentDoubtfulMap = resumeSessionObj.doubtfulMap ? JSON.parse(JSON.stringify(resumeSessionObj.doubtfulMap)) : {};
-                const savedIdx = Number(resumeSessionObj.lastQuestionIndex) || 0;
-                currentQuestionIndex = (savedIdx >= 0 && savedIdx < currentExamQuestions.length) ? savedIdx : 0;
-                currentViolationCount = Number(resumeSessionObj.violationCount) || 0;
-                currentViolationLogs = Array.isArray(resumeSessionObj.violationLogs) ? resumeSessionObj.violationLogs : [];
-                currentExamStartedAtMs = Number(resumeSessionObj.startedAtMs) || nowMs;
-                currentExamEndTimeMs = Number(resumeSessionObj.endTimeMs) || (currentExamStartedAtMs + (ex.durationMinutes * 60 * 1000));
-                remainingSeconds = Math.max(0, Math.floor((currentExamEndTimeMs - nowMs) / 1000));
-            } else {
-                // Sesi baru pertama kali
-                currentStudentAnswers = {};
-                currentDoubtfulMap = {};
-                currentQuestionIndex = 0;
-                currentViolationCount = 0;
-                currentViolationLogs = [];
-                currentExamStartedAtMs = nowMs;
-                currentExamEndTimeMs = nowMs + (ex.durationMinutes * 60 * 1000);
-                remainingSeconds = ex.durationMinutes * 60;
-            }
-
-            let p = appData.examParticipants.find(x => x.examId === ex.id && x.studentId === student.studentId);
-            if (!p) {
-                p = {
-                    id: 'PRT-' + student.studentId + '-' + ex.id,
-                    examId: ex.id,
-                    studentId: student.studentId,
-                    nisn: student.nisn,
-                    studentName: student.name,
-                    className: student.className || '4',
-                    status: 'Sedang Mengerjakan',
-                    violationCount: currentViolationCount,
-                    extraTimeMinutes: 0
-                };
-                appData.examParticipants.push(p);
-            } else {
-                p.status = 'Sedang Mengerjakan';
-                p.violationCount = currentViolationCount;
-            }
-            syncCollectionRecord('examParticipants', p.id, p);
-
             // Jika waktu ujian ternyata sudah habis saat siswa berada di luar aplikasi, langsung jalankan mekanisme penyelesaian otomatis
             if (remainingSeconds <= 0) {
                 isExamWorkspaceActive = true;
                 await window.submitExamFinal(true);
                 window.showModal(
                     'Waktu Ujian Telah Berakhir',
-                    'Batas waktu pengerjaan ujian telah habis. Sistem secara otomatis telah menyimpan, menilai, dan mengirim seluruh jawaban terakhir Anda.',
+                    'Batas waktu pengerjaan ujian telah habis. Sistem telah otomatis menyimpan dan mengirim seluruh jawaban terakhir Anda.',
                     'info'
                 );
                 return;
@@ -5245,7 +4282,9 @@
                 if (currentActiveExam) {
                     const latestExamInState = appData.exams.find(e => e.id === currentActiveExam.id);
                     if (!latestExamInState || !isExamStrictlyActive(latestExamInState) || !checkExamScheduleAccess(latestExamInState).allowed) {
-                        window.forceCloseStudentExamByAdmin('Waktu pelaksanaan ujian telah berakhir atau ujian ditutup oleh administrator sekolah. Jawaban yang sudah Anda isi otomatis dikirim dan dinilai.');
+                        clearInterval(examTimerInterval);
+                        await window.submitExamFinal(true);
+                        window.showModal('Waktu / Akses Ujian Berakhir', 'Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Seluruh jawaban Anda telah dikirim secara otomatis ke Hasil & Koreksi.', 'info');
                         return;
                     }
                 }
@@ -5259,7 +4298,7 @@
                     clearInterval(examTimerInterval);
                     window.stopAllExamTimersAndWatchers();
                     await window.submitExamFinal(true);
-                    window.showModal('Waktu Habis', 'Waktu pengerjaan ujian telah berakhir. Jawaban Anda telah dikirim dan dinilai secara otomatis.', 'info');
+                    window.showModal('Waktu Habis', 'Waktu pengerjaan ujian telah berakhir. Seluruh jawaban Anda telah dikirim secara otomatis.', 'info');
                 }
             }, 1000);
 
@@ -5720,8 +4759,10 @@
             if (!isForcedAutoSubmit) {
                 const verification = await verifyExamEligibilityFromServer(currentActiveExam.id, student);
                 if (!verification.allowed) {
-                    // Jika jadwal baru saja habis saat siswa menekan tombol kirim, tetap simpan nilainya secara otomatis
-                    isForcedAutoSubmit = true;
+                    isSubmittingFinalExam = false;
+                    window.renderStudentPortal(false);
+                    window.showModal('Ujian Telah Ditutup', verification.message, 'error');
+                    return;
                 }
             }
 
@@ -5730,25 +4771,120 @@
             const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
             if (cloudSess && cloudSess.status === 'SUBMITTED') {
                 isSubmittingFinalExam = false;
-                const existingRes = appData.examResults.find(r => r.studentId === student.studentId && r.examId === currentActiveExam.id);
-                if (existingRes) {
-                    window.renderExamResultReviewPage(existingRes);
-                } else {
-                    window.renderStudentPortal(false);
-                }
+                window.showModal('Sudah Terkirim', 'Ujian Anda telah dikirim sebelumnya.', 'info');
+                window.renderStudentPortal(false);
                 return;
             }
-            if (!isForcedAutoSubmit && cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
+            if (cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
                 isSubmittingFinalExam = false;
                 window.showModal('Sesi Tidak Valid', 'Sesi ujian ini sedang aktif pada perangkat lain. Pengiriman hanya dapat dilakukan dari perangkat terbaru.', 'error');
                 window.renderStudentPortal(false);
                 return;
             }
 
+            let totalScore = 0;
+            let maxScore = 0;
+            let correct = 0;
+            let wrong = 0;
+            let empty = 0;
+            const essayScores = {};
+
+            currentExamQuestions.forEach(q => {
+                maxScore += q.weight;
+                const ans = currentStudentAnswers[q.id];
+                if (ans === undefined || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0)) {
+                    empty++;
+                    return;
+                }
+                if (q.type === 'pg' || q.type === 'short_answer') {
+                    const cleanAns = String(ans).trim().toLowerCase();
+                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
+                    if (cleanAns === cleanKey) {
+                        totalScore += q.weight;
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'true_false') {
+                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
+                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
+
+                    if (isMultiTF) {
+                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+                        const totalStmts = keyArr.length || opts.length || 1;
+                        let matchedStmts = 0;
+                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
+                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
+                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
+                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
+                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
+                            if (normStudent && normStudent === normKey) {
+                                matchedStmts++;
+                            }
+                        }
+                        if (matchedStmts === totalStmts) {
+                            totalScore += q.weight;
+                            correct++;
+                        } else if (matchedStmts > 0 && q.partialScoring !== false) {
+                            totalScore += Math.round((matchedStmts / totalStmts) * q.weight);
+                            correct++;
+                        } else {
+                            wrong++;
+                        }
+                    } else {
+                        const cleanAns = String(ans).trim().toLowerCase();
+                        const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
+                        const cleanKey = String(q.correctAnswer).trim().toLowerCase();
+                        const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
+                        if (normAns === normKey) {
+                            totalScore += q.weight;
+                            correct++;
+                        } else {
+                            wrong++;
+                        }
+                    }
+                } else if (q.type === 'pg_complex') {
+                    const rawKeys = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer
+                        : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+                    const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
+                    const matches = studentArr.filter(k => rawKeys.includes(k)).length;
+                    if (matches === rawKeys.length && studentArr.length === rawKeys.length) {
+                        totalScore += q.weight;
+                        correct++;
+                    } else if (matches > 0 && q.partialScoring !== false) {
+                        const partial = Math.round((matches / (rawKeys.length || 1)) * q.weight);
+                        totalScore += partial;
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'matching') {
+                    const keyMap = q.correctAnswer || {};
+                    const totalPairs = Object.keys(keyMap).length || 1;
+                    let matchPairs = 0;
+                    Object.keys(keyMap).forEach(k => {
+                        if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) {
+                            matchPairs++;
+                        }
+                    });
+                    if (matchPairs === totalPairs) {
+                        totalScore += q.weight;
+                        correct++;
+                    } else if (matchPairs > 0) {
+                        totalScore += Math.round((matchPairs / totalPairs) * q.weight);
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'essay') {
+                    essayScores[q.id] = 0;
+                }
+            });
+
+            const hasEssayQuestion = currentExamQuestions.some(q => q.type === 'essay');
             const clonedAnswers = JSON.parse(JSON.stringify(currentStudentAnswers || {}));
-            const grade = calculateGradingFromQuestionsAndAnswers(currentExamQuestions, clonedAnswers);
-            const stdObj = appData.students.find(s => s.id === student.studentId || s.nisn === student.nisn);
-            const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
+            const stdRecord = appData.students.find(s => s.id === student.studentId || s.nisn === student.nisn);
 
             appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === currentActiveExam.id));
 
@@ -5760,19 +4896,19 @@
                 studentId: student.studentId,
                 nisn: student.nisn,
                 studentName: student.name,
-                asalSekolah: schoolVal,
+                asalSekolah: stdRecord && stdRecord.asalSekolah !== undefined ? stdRecord.asalSekolah : (appData.settings.schoolName || ''),
                 classId: student.classId,
                 className: student.className || '4',
-                submittedAt: new Date().toLocaleString('id-ID') + (isForcedAutoSubmit ? ' (Otomatis)' : ''),
-                totalScoreObtained: grade.totalScore,
-                maxPossibleScore: grade.maxScore,
-                finalScore: grade.finalScore,
-                correctCount: grade.correct,
-                wrongCount: grade.wrong,
-                emptyCount: grade.empty,
+                submittedAt: new Date().toLocaleString('id-ID'),
+                totalScoreObtained: totalScore,
+                maxPossibleScore: maxScore,
+                finalScore: Math.round((totalScore / maxScore) * 100) || 0,
+                correctCount: correct,
+                wrongCount: wrong,
+                emptyCount: empty,
                 violationCount: currentViolationCount,
-                essayGradingStatus: grade.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
-                essayScores: grade.essayScores,
+                essayGradingStatus: hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
+                essayScores,
                 answersSnapshot: clonedAnswers
             };
 
@@ -5819,7 +4955,7 @@
 
             isSubmittingFinalExam = false;
             isViewingResultReview = true;
-            logActivity(`Siswa ${student.name} menyelesaikan ujian ${currentActiveExam.examName}${isForcedAutoSubmit ? ' (Otomatis Waktu Habis)' : ''}.`);
+            logActivity(`Siswa ${student.name} menyelesaikan ujian ${currentActiveExam.examName}.`);
             window.renderExamResultReviewPage(resultObj);
         };
 
