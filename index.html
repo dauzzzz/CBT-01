@@ -535,12 +535,15 @@
                     if (colName === 'exams' && appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
                         const updatedExam = docsList.find(x => x.id === currentActiveExam.id);
                         if (!updatedExam || !isExamStrictlyActive(updatedExam) || !checkExamScheduleAccess(updatedExam).allowed) {
-                            window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau dinonaktifkan oleh Administrator. Seluruh jawaban yang sudah Anda isi tetap tersimpan dengan aman.');
+                            window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau waktu jadwalnya telah berakhir. Seluruh jawaban yang sudah Anda isi otomatis dikirim dan dinilai.');
                             return;
                         }
                     }
 
                     if (!isInitialRealtimeLoad) {
+                        if (colName === 'examSessions' || colName === 'exams') {
+                            window.autoFinalizeExpiredSessions();
+                        }
                         window.triggerRealtimeUIRefresh(colName);
                     }
                 }, (err) => {
@@ -567,6 +570,7 @@
 
             setTimeout(() => {
                 isInitialRealtimeLoad = false;
+                window.autoFinalizeExpiredSessions();
             }, 800);
 
             // Pemantau transisi jadwal ujian berbasis waktu setiap 2 detik
@@ -614,10 +618,12 @@
                     if (appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
                         const latestExam = appData.exams.find(e => e.id === currentActiveExam.id);
                         if (!latestExam || !isExamStrictlyActive(latestExam) || !checkExamScheduleAccess(latestExam).allowed) {
-                            window.forceCloseStudentExamByAdmin('Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Jawaban Anda tetap tersimpan.');
+                            window.forceCloseStudentExamByAdmin('Waktu jadwal pelaksanaan ujian telah berakhir atau ujian ditutup oleh Administrator. Jawaban Anda otomatis dikirim dan dinilai.');
                             return;
                         }
                     }
+
+                    window.autoFinalizeExpiredSessions();
 
                     // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis dan instan
                     if (appData.currentUser) {
@@ -2965,16 +2971,298 @@
 
         window.forceCloseStudentExamByAdmin = async function(noticeMessage) {
             if (!isExamWorkspaceActive) return;
-            await window.persistExamSessionToCloud(true);
-            window.stopAllExamTimersAndWatchers();
-            currentActiveExam = null;
-            currentExamQuestions = [];
-            window.renderStudentPortal(false);
+            await window.submitExamFinal(true);
             window.showModal(
-                'Akses Ujian Berakhir / Ditutup',
-                noticeMessage || 'Ujian ini telah ditutup atau melewati batas jadwal pelaksanaan. Jawaban yang sudah Anda isi tetap tersimpan.',
-                'error'
+                'Waktu Ujian Berakhir / Ditutup',
+                noticeMessage || 'Ujian ini telah berakhir atau ditutup oleh Administrator. Seluruh jawaban yang sudah Anda isi telah dikirim dan dinilai secara otomatis.',
+                'info'
             );
+        };
+
+        function calculateGradingFromQuestionsAndAnswers(questionsList, answersMap) {
+            let totalScore = 0;
+            let maxScore = 0;
+            let correct = 0;
+            let wrong = 0;
+            let empty = 0;
+            const essayScores = {};
+
+            (questionsList || []).forEach(q => {
+                maxScore += (Number(q.weight) || 0);
+                const ans = (answersMap || {})[q.id];
+                if (ans === undefined || ans === null || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0)) {
+                    empty++;
+                    return;
+                }
+                if (q.type === 'pg' || q.type === 'short_answer') {
+                    const cleanAns = String(ans).trim().toLowerCase();
+                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
+                    if (cleanAns === cleanKey) {
+                        totalScore += q.weight;
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'true_false') {
+                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
+                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
+
+                    if (isMultiTF) {
+                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
+                        const totalStmts = keyArr.length || opts.length || 1;
+                        let matchedStmts = 0;
+                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
+                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
+                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
+                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
+                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
+                            if (normStudent && normStudent === normKey) {
+                                matchedStmts++;
+                            }
+                        }
+                        if (matchedStmts === totalStmts) {
+                            totalScore += q.weight;
+                            correct++;
+                        } else if (matchedStmts > 0 && q.partialScoring !== false) {
+                            totalScore += Math.round((matchedStmts / totalStmts) * q.weight);
+                            correct++;
+                        } else {
+                            wrong++;
+                        }
+                    } else {
+                        const cleanAns = String(ans).trim().toLowerCase();
+                        const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
+                        const cleanKey = String(q.correctAnswer).trim().toLowerCase();
+                        const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
+                        if (normAns === normKey) {
+                            totalScore += q.weight;
+                            correct++;
+                        } else {
+                            wrong++;
+                        }
+                    }
+                } else if (q.type === 'pg_complex') {
+                    const rawKeys = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer
+                        : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+                    const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
+                    const matches = studentArr.filter(k => rawKeys.includes(k)).length;
+                    if (matches === rawKeys.length && studentArr.length === rawKeys.length) {
+                        totalScore += q.weight;
+                        correct++;
+                    } else if (matches > 0 && q.partialScoring !== false) {
+                        const partial = Math.round((matches / (rawKeys.length || 1)) * q.weight);
+                        totalScore += partial;
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'matching') {
+                    const keyMap = q.correctAnswer || {};
+                    const totalPairs = Object.keys(keyMap).length || 1;
+                    let matchPairs = 0;
+                    Object.keys(keyMap).forEach(k => {
+                        if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) {
+                            matchPairs++;
+                        }
+                    });
+                    if (matchPairs === totalPairs) {
+                        totalScore += q.weight;
+                        correct++;
+                    } else if (matchPairs > 0) {
+                        totalScore += Math.round((matchPairs / totalPairs) * q.weight);
+                        correct++;
+                    } else {
+                        wrong++;
+                    }
+                } else if (q.type === 'essay') {
+                    essayScores[q.id] = 0;
+                }
+            });
+
+            const hasEssayQuestion = (questionsList || []).some(q => q.type === 'essay');
+            const finalScore = maxScore > 0 ? (Math.round((totalScore / maxScore) * 100) || 0) : 0;
+
+            return {
+                totalScore,
+                maxScore,
+                finalScore,
+                correct,
+                wrong,
+                empty,
+                essayScores,
+                hasEssayQuestion
+            };
+        }
+
+        let isAutoFinalizingSessions = false;
+
+        window.finalizeSingleSessionToResult = async function(sess, reasonLabel = 'Otomatis Waktu Habis') {
+            if (!sess || !sess.examId || !sess.studentId) return null;
+            const existingRes = appData.examResults.find(r => r.studentId === sess.studentId && r.examId === sess.examId);
+            if (existingRes) {
+                if (sess.status === 'IN_PROGRESS') {
+                    sess.status = 'SUBMITTED';
+                    await syncCollectionRecord('examSessions', sess.id, sess);
+                }
+                return existingRes;
+            }
+
+            const ex = appData.exams.find(e => e.id === sess.examId);
+            let qList = [];
+            if (ex && Array.isArray(ex.questionIds) && ex.questionIds.length > 0) {
+                qList = ex.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
+            }
+            if (qList.length === 0 && (sess.bankId || (ex && ex.bankId))) {
+                const targetBank = sess.bankId || ex.bankId;
+                qList = appData.questions.filter(q => q.bankId === targetBank);
+            }
+            if (qList.length === 0) {
+                qList = [...appData.questions];
+            }
+
+            const answersSnap = sess.answers ? JSON.parse(JSON.stringify(sess.answers)) : {};
+            const grade = calculateGradingFromQuestionsAndAnswers(qList, answersSnap);
+            const stdObj = appData.students.find(s => s.id === sess.studentId || s.nisn === sess.nisn);
+            const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
+            const submittedAtStr = new Date().toLocaleString('id-ID') + ` (${reasonLabel})`;
+
+            const resultObj = {
+                resultId: 'RES-' + sess.studentId + '-' + sess.examId,
+                examId: sess.examId,
+                examName: sess.examName || (ex ? ex.examName : 'Paket Ujian'),
+                subjectId: sess.subjectId || (ex ? ex.subjectId : ''),
+                studentId: sess.studentId,
+                nisn: sess.nisn || (stdObj ? stdObj.nisn : '-'),
+                studentName: sess.studentName || (stdObj ? stdObj.fullName : 'Siswa'),
+                asalSekolah: schoolVal,
+                classId: sess.classId || (stdObj ? stdObj.classId : ''),
+                className: sess.className || (stdObj ? stdObj.className : '4'),
+                submittedAt: submittedAtStr,
+                totalScoreObtained: grade.totalScore,
+                maxPossibleScore: grade.maxScore,
+                finalScore: grade.finalScore,
+                correctCount: grade.correct,
+                wrongCount: grade.wrong,
+                emptyCount: grade.empty,
+                violationCount: Number(sess.violationCount) || 0,
+                essayGradingStatus: grade.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
+                essayScores: grade.essayScores,
+                answersSnapshot: answersSnap
+            };
+
+            appData.examResults = appData.examResults.filter(r => !(r.studentId === sess.studentId && r.examId === sess.examId));
+            appData.examResults.push(resultObj);
+            await syncCollectionRecord('examResults', resultObj.resultId, resultObj);
+
+            const completedSess = {
+                ...sess,
+                status: 'SUBMITTED',
+                submittedAtMs: Date.now(),
+                submittedAtFormatted: submittedAtStr,
+                finalScore: resultObj.finalScore
+            };
+            const sIdx = appData.examSessions.findIndex(s => s.id === sess.id);
+            if (sIdx !== -1) appData.examSessions[sIdx] = completedSess;
+            await syncCollectionRecord('examSessions', sess.id, completedSess);
+
+            let p = appData.examParticipants.find(x => x.examId === sess.examId && x.studentId === sess.studentId);
+            if (p) {
+                p.status = 'Selesai';
+                p.violationCount = Number(sess.violationCount) || 0;
+                await syncCollectionRecord('examParticipants', p.id, p);
+            }
+
+            logActivity(`Sesi ujian siswa ${resultObj.studentName} (${resultObj.examName}) otomatis diselesaikan & dinilai (${reasonLabel}).`);
+            return resultObj;
+        };
+
+        window.autoFinalizeExpiredSessions = async function() {
+            if (isAutoFinalizingSessions) return;
+            isAutoFinalizingSessions = true;
+            try {
+                const nowMs = Date.now();
+                let finalizedAny = false;
+                const activeSessions = (appData.examSessions || []).filter(s => s && s.status === 'IN_PROGRESS');
+
+                for (const sess of activeSessions) {
+                    const ex = appData.exams.find(e => e.id === sess.examId);
+                    const isTimerExpired = Boolean(sess.endTimeMs && nowMs >= Number(sess.endTimeMs));
+                    const isExamClosedOrScheduleExpired = Boolean(ex && (!isExamStrictlyActive(ex) || checkExamScheduleAccess(ex).state === 'EXPIRED'));
+
+                    if (isTimerExpired || isExamClosedOrScheduleExpired) {
+                        const reason = isTimerExpired ? 'Waktu Habis' : 'Ujian Berakhir';
+                        await window.finalizeSingleSessionToResult(sess, reason);
+                        finalizedAny = true;
+                    }
+                }
+
+                if (finalizedAny && appData.currentUser && appData.currentUser.role === 'admin') {
+                    if (['results', 'analysis', 'participants', 'dashboard'].includes(appData.activeAdminMenu)) {
+                        window.renderAdminCurrentSection();
+                    }
+                }
+            } catch (e) {
+                console.warn('Auto-finalize expired sessions warning:', e);
+            } finally {
+                isAutoFinalizingSessions = false;
+            }
+        };
+
+        window.forceSubmitInProgressSessionsModal = function() {
+            const filterExamId = appData.filters.resultExam || 'ALL';
+            const pendingSessions = (appData.examSessions || []).filter(s => s && s.status === 'IN_PROGRESS' && (filterExamId === 'ALL' || s.examId === filterExamId));
+
+            if (pendingSessions.length === 0) {
+                window.showModal('Tidak Ada Sesi Menggantung', 'Seluruh sesi peserta yang telah selesai maupun yang kehabisan waktu sudah masuk ke daftar Hasil & Koreksi.', 'info');
+                return;
+            }
+
+            const rowsHtml = pendingSessions.map((s, idx) => {
+                const remSecs = Math.max(0, Math.floor(((s.endTimeMs || Date.now()) - Date.now()) / 1000));
+                return `
+                    <tr class="border-b border-slate-100">
+                        <td class="px-3 py-2 text-xs">${idx + 1}</td>
+                        <td class="px-3 py-2 text-xs font-bold text-slate-800">${escapeHtml(s.studentName)} <span class="text-slate-400 font-mono">(${escapeHtml(s.nisn)})</span></td>
+                        <td class="px-3 py-2 text-xs">${escapeHtml(s.examName || '-')}</td>
+                        <td class="px-3 py-2 text-xs text-center font-bold text-indigo-700">${s.answeredCount || 0} / ${s.totalQuestions || 0}</td>
+                        <td class="px-3 py-2 text-xs text-center font-mono ${remSecs <= 0 ? 'text-red-600 font-bold' : 'text-amber-700'}">${remSecs <= 0 ? 'Waktu Habis' : formatHMS(remSecs)}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            const html = `
+                <div class="space-y-3 text-xs">
+                    <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900">
+                        <p class="font-bold"><i class="fa-solid fa-bolt mr-1 text-amber-600"></i> Tarik & Selesaikan Sesi Peserta (${pendingSessions.length} Siswa)</p>
+                        <p class="text-[11px] text-amber-800 mt-0.5">Tindakan ini akan langsung menilai dan memasukkan jawaban terakhir yang tersimpan di Cloud dari siswa di bawah ini ke daftar Hasil & Koreksi.</p>
+                    </div>
+                    <div class="max-h-64 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase">
+                                    <th class="px-3 py-2">No</th>
+                                    <th class="px-3 py-2">Nama Siswa</th>
+                                    <th class="px-3 py-2">Paket Ujian</th>
+                                    <th class="px-3 py-2 text-center">Terjawab</th>
+                                    <th class="px-3 py-2 text-center">Sisa Waktu</th>
+                                </tr>
+                            </thead>
+                            <tbody>${rowsHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+
+            window.showModal('Tarik Jawaban Siswa ke Hasil & Koreksi', '', 'info', async (confirmed) => {
+                if (!confirmed) return true;
+                for (const sess of pendingSessions) {
+                    await window.finalizeSingleSessionToResult(sess, 'Ditarik Pengawas');
+                }
+                renderResultsContent(document.getElementById('adminMainContent'));
+                window.showModal('Berhasil Ditarik & Dinilai', `${pendingSessions.length} sesi ujian siswa berhasil dinilai dan dimasukkan ke daftar Hasil & Koreksi.`, 'success');
+                return true;
+            }, { html, wide: true, showCancel: true, okText: `Ya, Nilai & Masukkan ${pendingSessions.length} Siswa` });
         };
 
         function renderExamsContent(container) {
@@ -3236,8 +3524,10 @@
         };
 
         function renderResultsContent(container) {
+            window.autoFinalizeExpiredSessions();
             const filterExamId = appData.filters.resultExam || 'ALL';
             const filteredResults = appData.examResults.filter(r => filterExamId === 'ALL' || r.examId === filterExamId);
+            const pendingInProgressCount = (appData.examSessions || []).filter(s => s && s.status === 'IN_PROGRESS' && (filterExamId === 'ALL' || s.examId === filterExamId)).length;
 
             const examFilterOpts = appData.exams.map(ex => {
                 const subName = getSubjectNameById(ex.subjectId);
@@ -3282,6 +3572,11 @@
                                     ${examFilterOpts}
                                 </select>
                             </div>
+                            ${pendingInProgressCount > 0 ? `
+                                <button type="button" onclick="window.forceSubmitInProgressSessionsModal()" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold shadow-sm cursor-pointer" title="Tarik jawaban siswa yang belum menekan tombol Kirim">
+                                    <i class="fa-solid fa-cloud-arrow-down mr-1"></i> Tarik Sesi Belum Kirim (${pendingInProgressCount})
+                                </button>
+                            ` : ''}
                             <button type="button" onclick="window.exportResultsExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Nilai Excel
                             </button>
@@ -4917,13 +5212,11 @@
             // Jika waktu ujian ternyata sudah habis saat siswa berada di luar aplikasi, langsung jalankan mekanisme penyelesaian otomatis
             if (remainingSeconds <= 0) {
                 isExamWorkspaceActive = true;
+                await window.submitExamFinal(true);
                 window.showModal(
                     'Waktu Ujian Telah Berakhir',
-                    'Batas waktu pengerjaan ujian telah habis saat sesi Anda terputus. Sistem secara otomatis menyimpan dan mengirim seluruh jawaban terakhir Anda.',
-                    'info',
-                    () => {
-                        window.submitExamFinal();
-                    }
+                    'Batas waktu pengerjaan ujian telah habis. Sistem secara otomatis telah menyimpan, menilai, dan mengirim seluruh jawaban terakhir Anda.',
+                    'info'
                 );
                 return;
             }
@@ -4948,11 +5241,11 @@
             if (periodicAutoSaveInterval) clearInterval(periodicAutoSaveInterval);
 
             // Timer berbasis selisih timestamp target (currentExamEndTimeMs) sehingga tidak bisa di-reset oleh refresh/pindah perangkat
-            examTimerInterval = setInterval(() => {
+            examTimerInterval = setInterval(async () => {
                 if (currentActiveExam) {
                     const latestExamInState = appData.exams.find(e => e.id === currentActiveExam.id);
                     if (!latestExamInState || !isExamStrictlyActive(latestExamInState) || !checkExamScheduleAccess(latestExamInState).allowed) {
-                        window.forceCloseStudentExamByAdmin('Ujian telah ditutup oleh administrator sekolah. Jawaban yang sudah Anda isi tetap tersimpan.');
+                        window.forceCloseStudentExamByAdmin('Waktu pelaksanaan ujian telah berakhir atau ujian ditutup oleh administrator sekolah. Jawaban yang sudah Anda isi otomatis dikirim dan dinilai.');
                         return;
                     }
                 }
@@ -4965,9 +5258,8 @@
                 if (remainingSeconds <= 0) {
                     clearInterval(examTimerInterval);
                     window.stopAllExamTimersAndWatchers();
-                    window.showModal('Waktu Habis', 'Waktu pengerjaan ujian telah berakhir. Jawaban Anda otomatis dikirim.', 'info', () => {
-                        window.submitExamFinal();
-                    });
+                    await window.submitExamFinal(true);
+                    window.showModal('Waktu Habis', 'Waktu pengerjaan ujian telah berakhir. Jawaban Anda telah dikirim dan dinilai secara otomatis.', 'info');
                 }
             }, 1000);
 
@@ -5408,13 +5700,13 @@
 
             window.showModal('Konfirmasi Selesai Ujian', '', 'info', (confirmed) => {
                 if (confirmed) {
-                    window.submitExamFinal();
+                    window.submitExamFinal(false);
                 }
                 return true;
             }, { html, showCancel: true, okText: 'Ya, Kirim Jawaban!' });
         };
 
-        window.submitExamFinal = async function() {
+        window.submitExamFinal = async function(isForcedAutoSubmit = false) {
             if (isSubmittingFinalExam) return;
             isSubmittingFinalExam = true;
             window.stopAllExamTimersAndWatchers();
@@ -5425,12 +5717,12 @@
                 return;
             }
 
-            const verification = await verifyExamEligibilityFromServer(currentActiveExam.id, student);
-            if (!verification.allowed) {
-                isSubmittingFinalExam = false;
-                window.renderStudentPortal(false);
-                window.showModal('Ujian Telah Ditutup', verification.message, 'error');
-                return;
+            if (!isForcedAutoSubmit) {
+                const verification = await verifyExamEligibilityFromServer(currentActiveExam.id, student);
+                if (!verification.allowed) {
+                    // Jika jadwal baru saja habis saat siswa menekan tombol kirim, tetap simpan nilainya secara otomatis
+                    isForcedAutoSubmit = true;
+                }
             }
 
             // Validasi token sesi terakhir di server agar perangkat lama yang sudah digantikan tidak menimpa hasil
@@ -5438,119 +5730,25 @@
             const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
             if (cloudSess && cloudSess.status === 'SUBMITTED') {
                 isSubmittingFinalExam = false;
-                window.showModal('Sudah Terkirim', 'Ujian Anda telah dikirim sebelumnya.', 'info');
-                window.renderStudentPortal(false);
+                const existingRes = appData.examResults.find(r => r.studentId === student.studentId && r.examId === currentActiveExam.id);
+                if (existingRes) {
+                    window.renderExamResultReviewPage(existingRes);
+                } else {
+                    window.renderStudentPortal(false);
+                }
                 return;
             }
-            if (cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
+            if (!isForcedAutoSubmit && cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
                 isSubmittingFinalExam = false;
                 window.showModal('Sesi Tidak Valid', 'Sesi ujian ini sedang aktif pada perangkat lain. Pengiriman hanya dapat dilakukan dari perangkat terbaru.', 'error');
                 window.renderStudentPortal(false);
                 return;
             }
 
-            let totalScore = 0;
-            let maxScore = 0;
-            let correct = 0;
-            let wrong = 0;
-            let empty = 0;
-            const essayScores = {};
-
-            currentExamQuestions.forEach(q => {
-                maxScore += q.weight;
-                const ans = currentStudentAnswers[q.id];
-                if (ans === undefined || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0)) {
-                    empty++;
-                    return;
-                }
-                if (q.type === 'pg' || q.type === 'short_answer') {
-                    const cleanAns = String(ans).trim().toLowerCase();
-                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                    if (cleanAns === cleanKey) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'true_false') {
-                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
-                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
-
-                    if (isMultiTF) {
-                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
-                        const totalStmts = keyArr.length || opts.length || 1;
-                        let matchedStmts = 0;
-                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
-                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
-                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
-                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
-                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
-                            if (normStudent && normStudent === normKey) {
-                                matchedStmts++;
-                            }
-                        }
-                        if (matchedStmts === totalStmts) {
-                            totalScore += q.weight;
-                            correct++;
-                        } else if (matchedStmts > 0 && q.partialScoring !== false) {
-                            totalScore += Math.round((matchedStmts / totalStmts) * q.weight);
-                            correct++;
-                        } else {
-                            wrong++;
-                        }
-                    } else {
-                        const cleanAns = String(ans).trim().toLowerCase();
-                        const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
-                        const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                        const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
-                        if (normAns === normKey) {
-                            totalScore += q.weight;
-                            correct++;
-                        } else {
-                            wrong++;
-                        }
-                    }
-                } else if (q.type === 'pg_complex') {
-                    const rawKeys = Array.isArray(q.correctAnswer)
-                        ? q.correctAnswer
-                        : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
-                    const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
-                    const matches = studentArr.filter(k => rawKeys.includes(k)).length;
-                    if (matches === rawKeys.length && studentArr.length === rawKeys.length) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else if (matches > 0 && q.partialScoring !== false) {
-                        const partial = Math.round((matches / (rawKeys.length || 1)) * q.weight);
-                        totalScore += partial;
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'matching') {
-                    const keyMap = q.correctAnswer || {};
-                    const totalPairs = Object.keys(keyMap).length || 1;
-                    let matchPairs = 0;
-                    Object.keys(keyMap).forEach(k => {
-                        if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) {
-                            matchPairs++;
-                        }
-                    });
-                    if (matchPairs === totalPairs) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else if (matchPairs > 0) {
-                        totalScore += Math.round((matchPairs / totalPairs) * q.weight);
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'essay') {
-                    essayScores[q.id] = 0;
-                }
-            });
-
-            const hasEssayQuestion = currentExamQuestions.some(q => q.type === 'essay');
             const clonedAnswers = JSON.parse(JSON.stringify(currentStudentAnswers || {}));
+            const grade = calculateGradingFromQuestionsAndAnswers(currentExamQuestions, clonedAnswers);
+            const stdObj = appData.students.find(s => s.id === student.studentId || s.nisn === student.nisn);
+            const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
 
             appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === currentActiveExam.id));
 
@@ -5562,18 +5760,19 @@
                 studentId: student.studentId,
                 nisn: student.nisn,
                 studentName: student.name,
+                asalSekolah: schoolVal,
                 classId: student.classId,
                 className: student.className || '4',
-                submittedAt: new Date().toLocaleString('id-ID'),
-                totalScoreObtained: totalScore,
-                maxPossibleScore: maxScore,
-                finalScore: Math.round((totalScore / maxScore) * 100) || 0,
-                correctCount: correct,
-                wrongCount: wrong,
-                emptyCount: empty,
+                submittedAt: new Date().toLocaleString('id-ID') + (isForcedAutoSubmit ? ' (Otomatis)' : ''),
+                totalScoreObtained: grade.totalScore,
+                maxPossibleScore: grade.maxScore,
+                finalScore: grade.finalScore,
+                correctCount: grade.correct,
+                wrongCount: grade.wrong,
+                emptyCount: grade.empty,
                 violationCount: currentViolationCount,
-                essayGradingStatus: hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
-                essayScores,
+                essayGradingStatus: grade.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
+                essayScores: grade.essayScores,
                 answersSnapshot: clonedAnswers
             };
 
@@ -5620,7 +5819,7 @@
 
             isSubmittingFinalExam = false;
             isViewingResultReview = true;
-            logActivity(`Siswa ${student.name} menyelesaikan ujian ${currentActiveExam.examName}.`);
+            logActivity(`Siswa ${student.name} menyelesaikan ujian ${currentActiveExam.examName}${isForcedAutoSubmit ? ' (Otomatis Waktu Habis)' : ''}.`);
             window.renderExamResultReviewPage(resultObj);
         };
 
