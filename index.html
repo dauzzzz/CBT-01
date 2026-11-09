@@ -3275,12 +3275,18 @@
                             <p class="text-xs text-slate-500">Daftar nilai akhir siswa, koreksi manual soal esai/uraian, dan cetak rekap per paket ujian / mata pelajaran.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <select onchange="window.filterResultsByExam(this.value)" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
-                                <option value="ALL">-- Semua Paket Ujian (${appData.examResults.length} Hasil) --</option>
-                                ${examFilterOpts}
-                            </select>
+                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                                <i class="fa-solid fa-filter text-indigo-600 text-xs"></i>
+                                <select id="resultExamFilterSelect" onchange="window.filterResultsByExam(this.value)" class="bg-transparent text-xs font-bold text-slate-700 focus:outline-none py-1">
+                                    <option value="ALL">Semua Paket Ujian (${appData.examResults.length} Hasil)</option>
+                                    ${examFilterOpts}
+                                </select>
+                            </div>
                             <button type="button" onclick="window.exportResultsExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Nilai Excel
+                            </button>
+                            <button type="button" onclick="window.printResultsByCurrentFilter()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer" title="Langsung cetak sesuai paket ujian yang dipilih">
+                                <i class="fa-solid fa-file-pdf mr-1"></i> Cetak Rekap Per Paket Ujian
                             </button>
                             <button type="button" onclick="window.printResultsReport()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
                                 <i class="fa-solid fa-print mr-1"></i> Cetak Rekap
@@ -3302,6 +3308,15 @@
         window.filterResultsByExam = function(examId) {
             appData.filters.resultExam = examId || 'ALL';
             renderResultsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.printResultsByCurrentFilter = function() {
+            const currentExamFilter = appData.filters.resultExam || 'ALL';
+            if (currentExamFilter !== 'ALL' && appData.exams.some(e => e.id === currentExamFilter)) {
+                window.executePrintResultsReport('PACKAGE', currentExamFilter);
+            } else {
+                window.printResultsReport();
+            }
         };
 
         window.openEssayGradingModal = function(resultId) {
