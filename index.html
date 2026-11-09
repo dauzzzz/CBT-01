@@ -3355,6 +3355,9 @@
         };
 
         function renderResultsContent(container) {
+            // Konversi otomatis sesi siswa yang kehabisan waktu atau sudah lewat jadwal ke examResults agar langsung tampil di rekap
+            autoFinalizeExpiredSessions();
+
             const filterExamId = appData.filters.resultExam || 'ALL';
             const filteredResults = appData.examResults.filter(r => filterExamId === 'ALL' || r.examId === filterExamId);
 
@@ -3394,6 +3397,9 @@
                             <p class="text-xs text-slate-500">Daftar nilai akhir siswa, koreksi manual soal esai/uraian, dan cetak rekap per paket ujian / mata pelajaran.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" onclick="window.forceFinalizeAllExpiredSessions()" class="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer" title="Tarik paksa seluruh sesi siswa yang kehabisan waktu agar masuk ke rekap nilai">
+                                <i class="fa-solid fa-sync mr-1"></i> Tarik Sesi Belum Kirim
+                            </button>
                             <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
                                 <i class="fa-solid fa-filter text-indigo-600 text-xs"></i>
                                 <select id="resultExamFilterSelect" onchange="window.filterResultsByExam(this.value)" class="bg-transparent text-xs font-bold text-slate-700 focus:outline-none py-1">
@@ -3423,6 +3429,101 @@
                 </div>
             `;
         }
+
+        function autoFinalizeExpiredSessions() {
+            const nowMs = Date.now();
+            let addedCount = 0;
+
+            appData.examSessions.forEach(sess => {
+                if (sess.status === 'IN_PROGRESS') {
+                    const ex = appData.exams.find(e => e.id === sess.examId);
+                    const isTimeUp = sess.endTimeMs && nowMs >= sess.endTimeMs;
+                    const isExamClosedOrExpired = !ex || !isExamStrictlyActive(ex) || checkExamScheduleAccess(ex).state === 'EXPIRED';
+
+                    if (isTimeUp || isExamClosedOrExpired) {
+                        const existingRes = appData.examResults.find(r => r.studentId === sess.studentId && r.examId === sess.examId);
+                        if (!existingRes) {
+                            // Hitung nilai dari jawaban tersimpan (Auto-Save)
+                            const matchedExam = ex || currentActiveExam;
+                            let qList = [];
+                            if (matchedExam && Array.isArray(matchedExam.questionIds)) {
+                                qList = matchedExam.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
+                            }
+                            if (qList.length === 0 && matchedExam && matchedExam.bankId) {
+                                qList = appData.questions.filter(q => q.bankId === matchedExam.bankId);
+                            }
+                            if (qList.length === 0) qList = [...appData.questions];
+
+                            let totalScore = 0;
+                            let maxScore = 0;
+                            let correct = 0;
+                            let wrong = 0;
+                            let empty = 0;
+                            const studentAns = sess.answers || {};
+
+                            qList.forEach(q => {
+                                maxScore += q.weight;
+                                const ans = studentAns[q.id];
+                                if (ans === undefined || ans === '' || (Array.isArray(ans) && ans.length === 0)) {
+                                    empty++;
+                                    return;
+                                }
+                                if (q.type === 'pg' || q.type === 'short_answer') {
+                                    if (String(ans).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase()) {
+                                        totalScore += q.weight;
+                                        correct++;
+                                    } else {
+                                        wrong++;
+                                    }
+                                } else {
+                                    wrong++;
+                                }
+                            });
+
+                            const resultObj = {
+                                resultId: 'RES-' + sess.studentId + '-' + sess.examId,
+                                examId: sess.examId,
+                                examName: sess.examName || (ex ? ex.examName : 'Ujian'),
+                                subjectId: sess.subjectId || (ex ? ex.subjectId : ''),
+                                studentId: sess.studentId,
+                                nisn: sess.nisn,
+                                studentName: sess.studentName,
+                                classId: sess.classId || '',
+                                className: sess.className || '4',
+                                submittedAt: new Date().toLocaleString('id-ID') + ' (Auto-Submit Waktu Habis)',
+                                totalScoreObtained: totalScore,
+                                maxPossibleScore: maxScore || 100,
+                                finalScore: Math.round((totalScore / (maxScore || 100)) * 100) || 0,
+                                correctCount: correct,
+                                wrongCount: wrong,
+                                emptyCount: empty,
+                                violationCount: sess.violationCount || 0,
+                                essayGradingStatus: 'Sudah Dinilai',
+                                essayScores: {},
+                                answersSnapshot: studentAns
+                            };
+
+                            appData.examResults.push(resultObj);
+                            syncCollectionRecord('examResults', resultObj.resultId, resultObj);
+
+                            sess.status = 'SUBMITTED';
+                            syncCollectionRecord('examSessions', sess.id, sess);
+                            addedCount++;
+                        }
+                    }
+                }
+            });
+
+            if (addedCount > 0) {
+                logActivity(`Sistem otomatis menarik dan menyelesaikan ${addedCount} sesi siswa yang kehabisan waktu.`);
+            }
+        }
+
+        window.forceFinalizeAllExpiredSessions = function() {
+            autoFinalizeExpiredSessions();
+            renderResultsContent(document.getElementById('adminMainContent'));
+            window.showModal('Penyelarasan Sesi Selesai', 'Seluruh sesi siswa yang kehabisan waktu telah ditarik dan dimasukkan ke dalam rekapitulasi nilai.', 'success');
+        };
 
         window.filterResultsByExam = function(examId) {
             appData.filters.resultExam = examId || 'ALL';
