@@ -381,7 +381,7 @@
                     const activeMenu = appData.activeAdminMenu;
 
                     // Proteksi jika Admin sedang mengetik di kotak pencarian siswa atau input pengaturan
-                    if ((activeMenu === 'students' || activeMenu === 'settings' || activeMenu === 'spreadsheet') && isUserTypingInFilterInput()) {
+                    if ((activeMenu === 'students' || activeMenu === 'results' || activeMenu === 'analysis' || activeMenu === 'settings' || activeMenu === 'spreadsheet') && isUserTypingInFilterInput()) {
                         return;
                     }
 
@@ -3642,33 +3642,235 @@
             setTimeout(() => { printWin.print(); }, 250);
         };
 
+        function getQuestionsForExamAnalysis(examId) {
+            if (!examId || examId === 'ALL') {
+                return [...appData.questions];
+            }
+            const ex = appData.exams.find(e => e.id === examId);
+            if (!ex) return [];
+            let list = [];
+            if (Array.isArray(ex.questionIds) && ex.questionIds.length > 0) {
+                list = ex.questionIds.map(qid => appData.questions.find(q => q.id === qid)).filter(Boolean);
+            }
+            if (list.length === 0 && ex.bankId) {
+                list = appData.questions.filter(q => q.bankId === ex.bankId);
+            }
+            return list;
+        }
+
+        function computeQuestionItemAnalysis(q, relevantResults) {
+            let correctCount = 0;
+            let wrongCount = 0;
+            let emptyCount = 0;
+            const totalRespondents = Array.isArray(relevantResults) ? relevantResults.length : 0;
+
+            (relevantResults || []).forEach(res => {
+                const ans = res.answersSnapshot ? res.answersSnapshot[q.id] : undefined;
+                const evalRes = evaluateSingleQuestionForReview(q, ans, res);
+                if (evalRes.status === 'EMPTY') {
+                    emptyCount++;
+                } else if (evalRes.status === 'CORRECT') {
+                    correctCount++;
+                } else if (evalRes.status === 'ESSAY') {
+                    const givenScore = (res.essayScores && res.essayScores[q.id]) ? Number(res.essayScores[q.id]) : 0;
+                    if (givenScore >= (Number(q.weight) || 10) * 0.5) correctCount++;
+                    else wrongCount++;
+                } else {
+                    wrongCount++;
+                }
+            });
+
+            let difficultyLabel = q.difficulty || 'Sedang';
+            let difficultyBadgeClass = 'bg-indigo-50 text-indigo-700 border border-indigo-200';
+            let pctCorrect = null;
+
+            if (totalRespondents > 0) {
+                pctCorrect = Math.round((correctCount / totalRespondents) * 100);
+                if (pctCorrect >= 70) {
+                    difficultyLabel = `Mudah (${pctCorrect}%)`;
+                    difficultyBadgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+                } else if (pctCorrect >= 35) {
+                    difficultyLabel = `Sedang (${pctCorrect}%)`;
+                    difficultyBadgeClass = 'bg-amber-50 text-amber-700 border border-amber-200';
+                } else {
+                    difficultyLabel = `Sulit (${pctCorrect}%)`;
+                    difficultyBadgeClass = 'bg-red-50 text-red-700 border border-red-200';
+                }
+            }
+
+            return {
+                correctCount,
+                wrongCount,
+                emptyCount,
+                totalRespondents,
+                pctCorrect,
+                difficultyLabel,
+                difficultyBadgeClass
+            };
+        }
+
         function renderAnalysisContent(container) {
-            const rows = appData.questions.map((q, idx) => `
-                <tr class="border-b border-slate-100">
-                    <td class="px-4 py-3 text-xs font-bold">#${idx + 1}</td>
-                    <td class="px-4 py-3 text-xs">${escapeHtml(q.questionText.slice(0, 65))}...</td>
-                    <td class="px-4 py-3 text-xs font-bold text-indigo-700">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
-                    <td class="px-4 py-3 text-xs font-bold">${q.weight}</td>
-                    <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded font-bold">${escapeHtml(q.difficulty || 'Sedang')}</span></td>
-                </tr>
-            `).join('');
+            const filterExamId = appData.filters.analysisExam || 'ALL';
+            const questionsToAnalyze = getQuestionsForExamAnalysis(filterExamId);
+            const relevantResults = filterExamId === 'ALL'
+                ? appData.examResults
+                : appData.examResults.filter(r => r.examId === filterExamId);
+
+            const examFilterOpts = appData.exams.map(ex => {
+                const subName = getSubjectNameById(ex.subjectId);
+                const qCount = getQuestionsForExamAnalysis(ex.id).length;
+                const rCount = appData.examResults.filter(r => r.examId === ex.id).length;
+                return `<option value="${escapeHtml(ex.id)}" ${filterExamId === ex.id ? 'selected' : ''}>${escapeHtml(ex.examName)} — Mapel: ${escapeHtml(subName)} (${qCount} Soal • ${rCount} Peserta)</option>`;
+            }).join('');
+
+            const rows = questionsToAnalyze.map((q, idx) => {
+                const stats = computeQuestionItemAnalysis(q, relevantResults);
+                const bankObj = appData.questionBanks.find(b => b.id === q.bankId);
+                const bankTitle = bankObj ? bankObj.title : (q.bankId || '-');
+                return `
+                    <tr class="border-b border-slate-100 hover:bg-slate-50">
+                        <td class="px-4 py-3 text-xs font-bold text-slate-700">#${q.orderNum || (idx + 1)}</td>
+                        <td class="px-4 py-3 text-xs">
+                            <p class="font-semibold text-slate-800">${escapeHtml(q.questionText.length > 75 ? q.questionText.slice(0, 75) + '...' : q.questionText)}</p>
+                            <span class="text-[10px] text-slate-400 font-medium">Paket Bank: ${escapeHtml(bankTitle)}</span>
+                        </td>
+                        <td class="px-4 py-3 text-xs font-bold text-indigo-700">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
+                        <td class="px-4 py-3 text-xs font-bold text-center">${q.weight}</td>
+                        <td class="px-4 py-3 text-xs text-center font-bold text-emerald-700">${stats.correctCount}</td>
+                        <td class="px-4 py-3 text-xs text-center font-bold text-red-600">${stats.wrongCount}</td>
+                        <td class="px-4 py-3 text-xs text-center font-bold text-slate-500">${stats.emptyCount}</td>
+                        <td class="px-4 py-3 text-xs"><span class="px-2.5 py-1 rounded-lg text-[11px] font-extrabold ${stats.difficultyBadgeClass}">${escapeHtml(stats.difficultyLabel)}</span></td>
+                    </tr>
+                `;
+            }).join('');
+
             container.innerHTML = `
                 <div class="space-y-4">
-                    <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200">
-                        <h3 class="font-bold text-sm text-slate-800">Analisis Butir Soal & Tingkat Kesulitan</h3>
-                        <p class="text-xs text-slate-500">Ringkasan sebaran tipe soal, bobot, dan indeks tingkat kesulitan.</p>
+                    <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap justify-between items-center gap-3">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-800">Analisis Butir Soal & Tingkat Kesulitan Per Paket Ujian</h3>
+                            <p class="text-xs text-slate-500">Pilih paket ujian untuk melihat sebaran tipe soal, bobot, jumlah dijawab benar/salah, dan indeks tingkat kesulitan.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
+                                <i class="fa-solid fa-filter text-indigo-600 text-xs"></i>
+                                <select id="analysisExamFilterSelect" onchange="window.filterAnalysisByExam(this.value)" class="bg-transparent text-xs font-bold text-slate-700 focus:outline-none py-1">
+                                    <option value="ALL">Semua Paket Ujian (${appData.questions.length} Butir Soal)</option>
+                                    ${examFilterOpts}
+                                </select>
+                            </div>
+                            <button type="button" onclick="window.exportAnalysisExcel()" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
+                                <i class="fa-solid fa-file-excel mr-1"></i> Ekspor Analisis Excel
+                            </button>
+                            <button type="button" onclick="window.printAnalysisReport()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
+                                <i class="fa-solid fa-print mr-1"></i> Cetak Analisis Soal
+                            </button>
+                        </div>
                     </div>
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[580px] text-left border-collapse">
-                                <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">Butir Pertanyaan</th><th class="px-4 py-3">Jenis Soal</th><th class="px-4 py-3">Bobot</th><th class="px-4 py-3">Tingkat Kesulitan</th></tr></thead>
-                                <tbody>${rows || '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada butir soal.</td></tr>'}</tbody>
+                            <table class="w-full min-w-[740px] text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
+                                        <th class="px-4 py-3">No</th>
+                                        <th class="px-4 py-3">Butir Pertanyaan</th>
+                                        <th class="px-4 py-3">Jenis Soal</th>
+                                        <th class="px-4 py-3 text-center">Bobot</th>
+                                        <th class="px-4 py-3 text-center">Benar</th>
+                                        <th class="px-4 py-3 text-center">Salah</th>
+                                        <th class="px-4 py-3 text-center">Kosong</th>
+                                        <th class="px-4 py-3">Tingkat Kesulitan</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada butir soal pada paket ujian yang dipilih.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
                 </div>
             `;
         }
+
+        window.filterAnalysisByExam = function(examId) {
+            appData.filters.analysisExam = examId || 'ALL';
+            renderAnalysisContent(document.getElementById('adminMainContent'));
+        };
+
+        window.exportAnalysisExcel = function() {
+            const filterExamId = appData.filters.analysisExam || 'ALL';
+            const selectedExam = filterExamId !== 'ALL' ? appData.exams.find(e => e.id === filterExamId) : null;
+            const questionsToAnalyze = getQuestionsForExamAnalysis(filterExamId);
+            const relevantResults = selectedExam
+                ? appData.examResults.filter(r => r.examId === selectedExam.id)
+                : appData.examResults;
+
+            if (questionsToAnalyze.length === 0) {
+                window.showModal('Data Soal Kosong', 'Tidak ada butir soal pada paket ujian ini untuk diekspor.', 'error');
+                return;
+            }
+
+            const headers = ['No Soal', 'Paket Ujian / Bank Soal', 'Pertanyaan Soal', 'Jenis Soal', 'Bobot Poin', 'Dijawab Benar', 'Dijawab Salah', 'Tidak Dijawab (Kosong)', 'Total Peserta', 'Tingkat Kesulitan'];
+            const rows = questionsToAnalyze.map((q, idx) => {
+                const stats = computeQuestionItemAnalysis(q, relevantResults);
+                const bankObj = appData.questionBanks.find(b => b.id === q.bankId);
+                const packLabel = selectedExam ? selectedExam.examName : (bankObj ? bankObj.title : '-');
+                return [
+                    q.orderNum || (idx + 1),
+                    packLabel,
+                    q.questionText || '',
+                    getQuestionTypeBadgeLabel(q.type),
+                    q.weight || 10,
+                    stats.correctCount,
+                    stats.wrongCount,
+                    stats.emptyCount,
+                    stats.totalRespondents,
+                    stats.difficultyLabel
+                ];
+            });
+
+            const fileSuffix = selectedExam ? `_${selectedExam.examName.replace(/[^a-zA-Z0-9]/g, '_')}` : '_Semua_Paket';
+            window.downloadExcelFile(`Analisis_Butir_Soal${fileSuffix}.xlsx`, headers, rows);
+        };
+
+        window.printAnalysisReport = function() {
+            const filterExamId = appData.filters.analysisExam || 'ALL';
+            const selectedExam = filterExamId !== 'ALL' ? appData.exams.find(e => e.id === filterExamId) : null;
+            const questionsToAnalyze = getQuestionsForExamAnalysis(filterExamId);
+            const relevantResults = selectedExam
+                ? appData.examResults.filter(r => r.examId === selectedExam.id)
+                : appData.examResults;
+
+            const printWin = window.open('', '_blank', 'width=960,height=720');
+            if (!printWin) {
+                window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak analisis soal.', 'error');
+                return;
+            }
+
+            const examTitle = selectedExam ? selectedExam.examName : 'Semua Paket Ujian';
+            const subjectTitle = selectedExam ? getSubjectNameById(selectedExam.subjectId) : 'Semua Mata Pelajaran';
+            const classTitle = selectedExam ? `Kelas ${getClassNameById(selectedExam.classId)}` : 'Semua Kelas';
+
+            const rowsHtml = questionsToAnalyze.map((q, idx) => {
+                const stats = computeQuestionItemAnalysis(q, relevantResults);
+                return `
+                    <tr>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">#${q.orderNum || (idx + 1)}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(q.questionText)}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">${q.weight}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;color:#047857;font-weight:bold;">${stats.correctCount}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;color:#dc2626;font-weight:bold;">${stats.wrongCount}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;color:#64748b;">${stats.emptyCount}</td>
+                        <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">${escapeHtml(stats.difficultyLabel)}</td>
+                    </tr>
+                `;
+            }).join('') || '<tr><td colspan="8" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data butir soal pada paket ini.</td></tr>';
+
+            const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
+            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Analisis Soal - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:15mm;}body{font-family:sans-serif;padding:10px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}.meta{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • LAPORAN ANALISIS BUTIR SOAL</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><div class="meta"><div><strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}</div><div style="text-align:right;"><strong>Kelas:</strong> ${escapeHtml(classTitle)}<br><strong>Jumlah Soal:</strong> ${questionsToAnalyze.length} Butir (${relevantResults.length} Peserta)</div></div><table><thead><tr><th>No</th><th>Butir Pertanyaan</th><th>Jenis Soal</th><th>Bobot</th><th>Benar</th><th>Salah</th><th>Kosong</th><th>Tingkat Kesulitan</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(() => { printWin.print(); }, 250);
+        };
 
         function renderSpreadsheetContent(container) {
             container.innerHTML = `
