@@ -260,6 +260,7 @@
         let isViolationModalOpen = false;
         let isSubmittingFinalExam = false;
         let autoSaveDebounceTimer = null;
+        let selectedStudentIds = new Set();
 
         function getDeviceLabel() {
             const ua = navigator.userAgent || '';
@@ -1218,10 +1219,23 @@
                 return matchSearch && matchCls;
             });
 
+            // Bersihkan ID siswa yang sudah tidak ada di daftar master
+            const validIds = new Set(appData.students.map(s => s.id));
+            Array.from(selectedStudentIds).forEach(id => {
+                if (!validIds.has(id)) selectedStudentIds.delete(id);
+            });
+
+            const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s.id));
+            const selectedCount = selectedStudentIds.size;
+
             const rows = filteredStudents.map((s, idx) => {
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
+                const isChecked = selectedStudentIds.has(s.id);
                 return `
-                <tr class="hover:bg-slate-50 border-b border-slate-100">
+                <tr class="hover:bg-slate-50 border-b border-slate-100 ${isChecked ? 'bg-indigo-50/50' : ''}">
+                    <td class="px-4 py-3 text-xs text-center">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectStudent('${escapeHtml(s.id)}', this.checked)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                    </td>
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
                     <td class="px-4 py-3 text-xs font-mono font-bold">${escapeHtml(s.nisn)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.nis || '-')}</td>
@@ -1245,9 +1259,15 @@
                     <div class="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Manajemen Data Siswa</h3>
-                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, dan impor/ekspor Excel (.xlsx).</p>
+                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, hapus massal, dan impor/ekspor Excel (.xlsx).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" onclick="window.deleteSelectedStudents()" ${selectedCount > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${selectedCount > 0 ? 'bg-red-600 hover:bg-red-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition">
+                                <i class="fa-solid fa-trash-can mr-1"></i> Hapus Terpilih (${selectedCount})
+                            </button>
+                            <button type="button" onclick="window.deleteAllFilteredStudents()" ${filteredStudents.length > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${filteredStudents.length > 0 ? 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition">
+                                <i class="fa-solid fa-users-slash mr-1"></i> Hapus Semua (${filteredStudents.length})
+                            </button>
                             <button type="button" onclick="window.downloadStudentTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-download mr-1"></i> Unduh Template Excel
                             </button>
@@ -1276,19 +1296,117 @@
 
                     <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[720px] text-left border-collapse">
+                            <table class="w-full min-w-[760px] text-left border-collapse">
                                 <thead>
                                     <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
+                                        <th class="px-4 py-3 text-center w-10">
+                                            <input type="checkbox" ${allFilteredSelected ? 'checked' : ''} onchange="window.toggleSelectAllStudents(this.checked)" title="Pilih Semua Siswa" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                                        </th>
                                         <th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">NIS</th><th class="px-4 py-3">Nama Lengkap</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">L/P</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
                                     </tr>
                                 </thead>
-                                <tbody>${rows || '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada data siswa yang sesuai filter.</td></tr>'}</tbody>
+                                <tbody>${rows || '<tr><td colspan="10" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada data siswa yang sesuai filter.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
                 </div>
             `;
         }
+
+        window.toggleSelectStudent = function(studentId, isChecked) {
+            if (!studentId) return;
+            if (isChecked) {
+                selectedStudentIds.add(studentId);
+            } else {
+                selectedStudentIds.delete(studentId);
+            }
+            renderStudentsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.toggleSelectAllStudents = function(isChecked) {
+            const search = (appData.filters.studentSearch || '').toLowerCase();
+            const filterCls = appData.filters.studentClass || 'ALL';
+            const filteredStudents = appData.students.filter(s => {
+                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
+                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+                return matchSearch && matchCls;
+            });
+
+            filteredStudents.forEach(s => {
+                if (isChecked) selectedStudentIds.add(s.id);
+                else selectedStudentIds.delete(s.id);
+            });
+            renderStudentsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.deleteSelectedStudents = function() {
+            const idsToDelete = Array.from(selectedStudentIds);
+            if (idsToDelete.length === 0) {
+                window.showModal('Pilih Siswa Terlebih Dahulu', 'Silakan centang minimal satu siswa pada tabel untuk dihapus secara bersamaan.', 'info');
+                return;
+            }
+
+            window.showModal(
+                'Hapus Data Siswa Terpilih',
+                `Apakah Anda yakin ingin menghapus ${idsToDelete.length} data siswa yang dicentang secara bersamaan? Tindakan ini tidak dapat dibatalkan.`,
+                'error',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
+                    const idSet = new Set(idsToDelete);
+                    appData.students = appData.students.filter(s => !idSet.has(s.id));
+                    selectedStudentIds.clear();
+
+                    for (const sid of idsToDelete) {
+                        await syncCollectionRecord('students', sid, null, true);
+                    }
+
+                    logActivity(`Administrator menghapus ${idsToDelete.length} data siswa secara bersamaan.`);
+                    renderStudentsContent(document.getElementById('adminMainContent'));
+                    window.showModal('Berhasil Dihapus', `${idsToDelete.length} data siswa berhasil dihapus secara bersamaan.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: `Ya, Hapus ${idsToDelete.length} Siswa` }
+            );
+        };
+
+        window.deleteAllFilteredStudents = function() {
+            const search = (appData.filters.studentSearch || '').toLowerCase();
+            const filterCls = appData.filters.studentClass || 'ALL';
+            const filteredStudents = appData.students.filter(s => {
+                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
+                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+                return matchSearch && matchCls;
+            });
+
+            if (filteredStudents.length === 0) return;
+            const idsToDelete = filteredStudents.map(s => s.id);
+
+            window.showModal(
+                'Konfirmasi Hapus Semua Siswa',
+                `Apakah Anda yakin ingin menghapus seluruh (${idsToDelete.length}) data siswa yang tampil pada daftar ini secara bersamaan?`,
+                'error',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
+                    const idSet = new Set(idsToDelete);
+                    appData.students = appData.students.filter(s => !idSet.has(s.id));
+                    idsToDelete.forEach(id => selectedStudentIds.delete(id));
+
+                    for (const sid of idsToDelete) {
+                        await syncCollectionRecord('students', sid, null, true);
+                    }
+
+                    logActivity(`Administrator menghapus ${idsToDelete.length} data siswa sekaligus.`);
+                    renderStudentsContent(document.getElementById('adminMainContent'));
+                    window.showModal('Berhasil Dihapus', `${idsToDelete.length} data siswa berhasil dihapus dari database.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: `Ya, Hapus Semua (${idsToDelete.length} Siswa)` }
+            );
+        };
 
         window.filterStudentsList = function(searchVal, classVal) {
             if (searchVal !== null) appData.filters.studentSearch = searchVal;
@@ -1524,6 +1642,7 @@
         window.deleteStudentRecord = function(studentId) {
             window.showModal('Hapus Siswa', 'Yakin ingin menghapus siswa ini?', 'error', (confirmed) => {
                 if (confirmed) {
+                    selectedStudentIds.delete(studentId);
                     appData.students = appData.students.filter(x => x.id !== studentId);
                     syncCollectionRecord('students', studentId, null, true);
                     renderStudentsContent(document.getElementById('adminMainContent'));
