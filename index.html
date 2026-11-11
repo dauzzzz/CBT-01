@@ -5143,6 +5143,19 @@
             return true;
         }
 
+        function formatStimulusTextWithBoldLead(rawText) {
+            if (!rawText) return '';
+            const lines = String(rawText).split(/\r?\n/);
+            let firstNonEmptyFormatted = false;
+            return lines.map(line => {
+                if (!firstNonEmptyFormatted && line.trim() !== '') {
+                    firstNonEmptyFormatted = true;
+                    return `<strong class="font-bold text-slate-900">${escapeHtml(line)}</strong>`;
+                }
+                return escapeHtml(line);
+            }).join('\n');
+        }
+
         window.renderExamWorkspace = function() {
             const container = document.getElementById('appContainer');
             const student = appData.currentUser;
@@ -5322,14 +5335,14 @@
                     </header>
 
                     <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-y-auto lg:overflow-hidden bg-slate-50">
-                        <section class="lg:col-span-3 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col lg:h-full lg:overflow-hidden">
+                        <section class="lg:col-span-4 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col lg:h-full lg:overflow-hidden">
                             <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
                                 <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-2">
                                     <i class="fa-solid fa-book-open text-blue-600"></i> PANEL STIMULUS & INFORMASI
                                 </h3>
                             </div>
-                            <div class="p-4 flex-1 overflow-y-auto custom-scrollbar space-y-4">
-                                ${hasStimulusText ? `<div class="p-4 rounded-2xl bg-blue-50/60 border border-blue-100 text-slate-700 text-xs sm:text-sm leading-relaxed whitespace-pre-line">${escapeHtml(q.stimulusText)}</div>` : ''}
+                            <div class="p-4 sm:p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4">
+                                ${hasStimulusText ? `<div class="p-4 sm:p-5 rounded-xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 text-xs sm:text-sm leading-relaxed whitespace-pre-line shadow-2xs">${formatStimulusTextWithBoldLead(q.stimulusText)}</div>` : ''}
                                 ${hasStimulusImg ? `
                                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 space-y-2">
                                         <div class="flex items-center justify-between text-[11px] text-slate-500 font-bold px-1">
@@ -5351,7 +5364,7 @@
                             </div>
                         </section>
 
-                        <section class="lg:col-span-6 bg-slate-50/70 flex flex-col lg:h-full lg:overflow-hidden">
+                        <section class="lg:col-span-5 bg-slate-50/70 flex flex-col lg:h-full lg:overflow-hidden">
                             <div class="px-6 py-3.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
                                 <div class="flex items-center gap-2">
                                     <span class="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold shadow-xs">
