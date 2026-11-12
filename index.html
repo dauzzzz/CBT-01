@@ -1763,6 +1763,176 @@
             };
         }
 
+        function formatMatchingKeyReadable(matchingPairs, correctAnswerObj = null) {
+            if (Array.isArray(matchingPairs) && matchingPairs.length > 0) {
+                return matchingPairs
+                    .map((p, idx) => {
+                        const letter = String.fromCharCode(65 + idx);
+                        return `${letter}. ${p.left} = ${p.right}`;
+                    })
+                    .join('; ');
+            }
+            if (correctAnswerObj && typeof correctAnswerObj === 'object' && !Array.isArray(correctAnswerObj)) {
+                return Object.entries(correctAnswerObj)
+                    .map(([k, v], idx) => {
+                        const letter = String.fromCharCode(65 + (isNaN(Number(k)) ? idx : Number(k)));
+                        return `${letter}. ${v}`;
+                    })
+                    .join('; ');
+            }
+            return String(correctAnswerObj || '');
+        }
+
+        function parseMatchingOptionsAndKey(rawOptsList, rawKeyStr = '') {
+            const opts = [0, 1, 2, 3].map(i => String((rawOptsList && rawOptsList[i]) ?? '').trim());
+            const keyStr = String(rawKeyStr ?? '').trim();
+
+            let parsedJsonKey = null;
+            if (keyStr.startsWith('{') && keyStr.endsWith('}')) {
+                try {
+                    parsedJsonKey = JSON.parse(keyStr);
+                } catch (e) {
+                    parsedJsonKey = null;
+                }
+            }
+
+            const keySegments = keyStr
+                ? keyStr.split(/\s*[;|]\s*/).map(s => s.trim()).filter(Boolean)
+                : [];
+            const commaSegments = (keyStr && keySegments.length <= 1 && !keyStr.includes('='))
+                ? keyStr.split(/\s*,\s*/).map(s => s.trim()).filter(Boolean)
+                : [];
+
+            const splitPairText = (txt) => {
+                const s = String(txt || '').trim();
+                if (!s) return null;
+                const cleaned = s.replace(/^[A-Da-d1-4][\.\)]\s*/, '').trim();
+                const eqIdx = cleaned.indexOf('=');
+                if (eqIdx !== -1) {
+                    return {
+                        left: cleaned.slice(0, eqIdx).trim(),
+                        right: cleaned.slice(eqIdx + 1).trim()
+                    };
+                }
+                const colonIdx = cleaned.indexOf(':');
+                if (colonIdx !== -1 && !cleaned.slice(0, colonIdx).toLowerCase().startsWith('http')) {
+                    return {
+                        left: cleaned.slice(0, colonIdx).trim(),
+                        right: cleaned.slice(colonIdx + 1).trim()
+                    };
+                }
+                const dashMatch = cleaned.match(/^(.+?)\s+-\s+(.+)$/);
+                if (dashMatch) {
+                    return {
+                        left: dashMatch[1].trim(),
+                        right: dashMatch[2].trim()
+                    };
+                }
+                return null;
+            };
+
+            const matchingPairs = [];
+            const formattedOptions = ['', '', '', ''];
+            const answerMap = {};
+
+            for (let i = 0; i < 4; i++) {
+                const cellVal = opts[i];
+                const keySeg = keySegments[i] || '';
+                const commaSeg = commaSegments[i] || '';
+                const jsonVal = parsedJsonKey && parsedJsonKey[String(i)] !== undefined ? String(parsedJsonKey[String(i)]).trim() : '';
+
+                let left = '';
+                let right = '';
+
+                const fromCell = splitPairText(cellVal);
+                const fromKeySeg = splitPairText(keySeg);
+
+                if (fromCell) {
+                    left = fromCell.left;
+                    right = fromCell.right;
+                } else if (cellVal) {
+                    left = cellVal.replace(/^[A-Da-d1-4][\.\)]\s*/, '').trim();
+                    if (jsonVal) {
+                        right = jsonVal;
+                    } else if (fromKeySeg) {
+                        right = fromKeySeg.right || fromKeySeg.left;
+                    } else if (keySeg) {
+                        right = keySeg.replace(/^[A-Da-d1-4][\.\)]\s*/, '').trim();
+                    } else if (commaSeg) {
+                        right = commaSeg.replace(/^[A-Da-d1-4][\.\)]\s*/, '').trim();
+                    } else if (keySegments.length === 1 && i === 0) {
+                        right = keySegments[0].replace(/^[A-Da-d1-4][\.\)]\s*/, '').trim();
+                    }
+                } else if (fromKeySeg) {
+                    left = fromKeySeg.left;
+                    right = fromKeySeg.right;
+                }
+
+                if (!left && !right) continue;
+                if (!left) left = `Pernyataan ${String.fromCharCode(65 + i)}`;
+                if (!right) right = `Pasangan ${String.fromCharCode(65 + i)}`;
+
+                const pairIndex = matchingPairs.length;
+                matchingPairs.push({ left, right });
+                formattedOptions[i] = `${left} = ${right}`;
+                answerMap[String(pairIndex)] = right;
+            }
+
+            return {
+                matchingPairs,
+                options: formattedOptions,
+                correctAnswer: answerMap,
+                readableKey: formatMatchingKeyReadable(matchingPairs, answerMap)
+            };
+        }
+
+        function extractFourMatchingOptionStrings(q) {
+            const result = ['', '', '', ''];
+            if (!q) return result;
+            if (Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
+                for (let i = 0; i < 4; i++) {
+                    if (q.matchingPairs[i]) {
+                        result[i] = `${q.matchingPairs[i].left} = ${q.matchingPairs[i].right}`;
+                    } else if (Array.isArray(q.options) && q.options[i]) {
+                        result[i] = String(q.options[i]);
+                    }
+                }
+                return result;
+            }
+            if (Array.isArray(q.options) && q.options.length > 0) {
+                for (let i = 0; i < 4; i++) {
+                    const rawOpt = String(q.options[i] ?? '').trim();
+                    if (!rawOpt) continue;
+                    if (rawOpt.includes('=')) {
+                        result[i] = rawOpt;
+                    } else if (q.correctAnswer && typeof q.correctAnswer === 'object' && q.correctAnswer[String(i)]) {
+                        result[i] = `${rawOpt} = ${q.correctAnswer[String(i)]}`;
+                    } else {
+                        result[i] = rawOpt;
+                    }
+                }
+            }
+            return result;
+        }
+
+        window.syncMatchingKeyFromOptions = function() {
+            const type = document.getElementById('qFormType')?.value || 'pg';
+            if (type === 'matching') {
+                const rawList = [
+                    document.getElementById('qOptA')?.value || '',
+                    document.getElementById('qOptB')?.value || '',
+                    document.getElementById('qOptC')?.value || '',
+                    document.getElementById('qOptD')?.value || ''
+                ];
+                const parsed = parseMatchingOptionsAndKey(rawList, '');
+                const keyEl = document.getElementById('qFormKey');
+                if (keyEl) {
+                    keyEl.value = parsed.readableKey || '';
+                }
+            }
+            window.updateQuestionLivePreview();
+        };
+
         let isDeletingQuestionBank = false;
 
         function renderQuestionBanksContent(container) {
@@ -2077,10 +2247,10 @@
                 `;
             } else if (type === 'matching') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pasangan 1 (Kiri = Kanan)</label><input type="text" id="qOptA" placeholder="Contoh: Es = Mencair" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pasangan 2 (Kiri = Kanan)</label><input type="text" id="qOptB" placeholder="Contoh: Air = Membeku" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pasangan 3 (Kiri = Kanan)</label><input type="text" id="qOptC" placeholder="Contoh: Uap = Menguap" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pasangan 4 (Opsional)</label><input type="text" id="qOptD" placeholder="Kosongkan jika 3 pasangan" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi A / Pasangan 1 (Kiri = Kanan)</label><input type="text" id="qOptA" placeholder="Contoh: Es dipanaskan = Mencair" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi B / Pasangan 2 (Kiri = Kanan)</label><input type="text" id="qOptB" placeholder="Contoh: Air didinginkan = Membeku" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi C / Pasangan 3 (Kiri = Kanan)</label><input type="text" id="qOptC" placeholder="Contoh: Air direbus = Menguap" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi D / Pasangan 4 (Kiri = Kanan)</label><input type="text" id="qOptD" placeholder="Contoh: Kapur barus = Menyublim" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
                 `;
             } else if (type === 'true_false') {
                 container.innerHTML = `
@@ -2152,7 +2322,12 @@
                 }
             }
 
-            keyText.innerText = key.trim() ? key : '-';
+            if (type === 'matching') {
+                const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
+                keyText.innerText = parsedMatch.readableKey || (key.trim() ? key : '-');
+            } else {
+                keyText.innerText = key.trim() ? key : '-';
+            }
             explText.innerText = expl.trim() ? expl : '-';
 
             if (type === 'pg' || type === 'pg_complex') {
@@ -2164,12 +2339,13 @@
                     </div>
                 `).join('');
             } else if (type === 'matching') {
-                optList.innerHTML = [optA, optB, optC, optD].filter(x => x && x.trim() !== '').map((pair, i) => `
-                    <div class="p-2 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                        <span class="font-semibold">#${i + 1}</span>
-                        <span>${escapeHtml(pair)}</span>
+                const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
+                optList.innerHTML = parsedMatch.matchingPairs.map((pair, i) => `
+                    <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
+                        <span class="font-bold text-indigo-700">${String.fromCharCode(65 + i)}. ${escapeHtml(pair.left)}</span>
+                        <span class="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold">${escapeHtml(pair.right)}</span>
                     </div>
-                `).join('') || `<div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-400">Masukkan pasangan kiri = kanan</div>`;
+                `).join('') || `<div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-400">Masukkan pasangan Opsi A s.d D (contoh: Es dipanaskan = Mencair)</div>`;
             } else if (type === 'true_false') {
                 const parsedTF = parseTrueFalseStatementsAndKey([optA, optB, optC, optD], key);
                 if (parsedTF.isMultiStatement) {
@@ -2246,31 +2422,35 @@
             const qImgEl = document.getElementById('qFormQuestionImg');
             if (qImgEl) qImgEl.value = q.questionImage || '';
 
-            const keyEl = document.getElementById('qFormKey');
-            if (keyEl) {
-                if (q.type === 'matching' && q.matchingPairs) {
-                    keyEl.value = q.matchingPairs.map(p => `${p.left}=${p.right}`).join('; ');
-                } else {
-                    keyEl.value = Array.isArray(q.correctAnswer) ? q.correctAnswer.join(',') : (typeof q.correctAnswer === 'object' ? JSON.stringify(q.correctAnswer) : (q.correctAnswer || ''));
+            window.handleQuestionTypeChange();
+            if (q.type === 'matching') {
+                const fourOpts = extractFourMatchingOptionStrings(q);
+                const ids = ['qOptA', 'qOptB', 'qOptC', 'qOptD'];
+                ids.forEach((id, idx) => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = fourOpts[idx] || '';
+                });
+                const parsedMatch = parseMatchingOptionsAndKey(fourOpts, '');
+                const keyEl = document.getElementById('qFormKey');
+                if (keyEl) {
+                    keyEl.value = parsedMatch.readableKey || formatMatchingKeyReadable(q.matchingPairs, q.correctAnswer);
+                }
+            } else {
+                if (q.options && q.options.length >= 1) {
+                    if (document.getElementById('qOptA')) document.getElementById('qOptA').value = q.options[0] || '';
+                    if (document.getElementById('qOptB')) document.getElementById('qOptB').value = q.options[1] || '';
+                    if (document.getElementById('qOptC')) document.getElementById('qOptC').value = q.options[2] || '';
+                    if (document.getElementById('qOptD')) document.getElementById('qOptD').value = q.options[3] || '';
+                }
+                const keyEl = document.getElementById('qFormKey');
+                if (keyEl) {
+                    keyEl.value = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer.join(', ')
+                        : (typeof q.correctAnswer === 'object' && q.correctAnswer !== null ? JSON.stringify(q.correctAnswer) : (q.correctAnswer || ''));
                 }
             }
             const explEl = document.getElementById('qFormExplanation');
             if (explEl) explEl.value = q.explanation || '';
-
-            window.handleQuestionTypeChange();
-            if (q.type === 'matching' && Array.isArray(q.matchingPairs)) {
-                const ids = ['qOptA', 'qOptB', 'qOptC', 'qOptD'];
-                q.matchingPairs.forEach((p, idx) => {
-                    if (ids[idx] && document.getElementById(ids[idx])) {
-                        document.getElementById(ids[idx]).value = `${p.left} = ${p.right}`;
-                    }
-                });
-            } else if (q.options && q.options.length >= 1) {
-                if (document.getElementById('qOptA')) document.getElementById('qOptA').value = q.options[0] || '';
-                if (document.getElementById('qOptB')) document.getElementById('qOptB').value = q.options[1] || '';
-                if (document.getElementById('qOptC')) document.getElementById('qOptC').value = q.options[2] || '';
-                if (document.getElementById('qOptD')) document.getElementById('qOptD').value = q.options[3] || '';
-            }
             window.updateQuestionLivePreview();
         };
 
@@ -2310,21 +2490,20 @@
                     correctAnswer = (correctAnswerRaw || 'A').trim().toUpperCase();
                 }
             } else if (type === 'matching') {
-                const rawPairs = [
+                const rawPairInputs = [
                     document.getElementById('qOptA')?.value || '',
                     document.getElementById('qOptB')?.value || '',
                     document.getElementById('qOptC')?.value || '',
                     document.getElementById('qOptD')?.value || ''
-                ].filter(x => x.trim() !== '');
-                const ansObj = {};
-                rawPairs.forEach((rp, idx) => {
-                    const parts = rp.split('=');
-                    const left = (parts[0] || `Pernyataan ${idx + 1}`).trim();
-                    const right = (parts[1] || correctAnswerRaw || `Pasangan ${idx + 1}`).trim();
-                    matchingPairs.push({ left, right });
-                    ansObj[String(idx)] = right;
-                });
-                correctAnswer = ansObj;
+                ];
+                const parsedMatch = parseMatchingOptionsAndKey(rawPairInputs, correctAnswerRaw);
+                if (parsedMatch.matchingPairs.length === 0) {
+                    window.showModal('Validasi Soal Menjodohkan', 'Harap isi minimal 1 pasangan pada kolom Opsi A s.d D (contoh: Es dipanaskan = Mencair).', 'error');
+                    return;
+                }
+                matchingPairs = parsedMatch.matchingPairs;
+                options = parsedMatch.options;
+                correctAnswer = parsedMatch.correctAnswer;
             } else if (type === 'true_false') {
                 const rawStmts = [
                     document.getElementById('qOptA')?.value || '',
@@ -2408,7 +2587,8 @@
             const sampleRows = [
                 [1, 'PG', 10, 'Es batu diletakkan di atas meja pada siang hari yang terik.', '', 'Perubahan wujud dari es batu menjadi air disebut ...', '', 'Mencair', 'Membeku', 'Menguap', 'Menyublim', 'A', 'Perubahan wujud padat menjadi cair karena menerima panas disebut mencair.'],
                 [2, 'PG Kompleks', 20, 'Perhatikan sifat-sifat wujud benda di sekitar kita!', '', 'Manakah yang termasuk sifat benda cair? (Pilih lebih dari satu)', '', 'Bentuk berubah sesuai wadah', 'Bentuk selalu tetap', 'Mengalir dari tempat tinggi ke rendah', 'Tidak dapat dilihat', 'A, C', 'Benda cair mengikuti bentuk wadah (A) dan mengalir ke tempat rendah (C).'],
-                [3, 'Benar / Salah', 10, 'Pada pagi hari terlihat titik-titik air di permukaan daun.', '', 'Peristiwa munculnya titik air di daun pada pagi hari disebut mengembun.', '', 'Benar', 'Salah', '', '', 'Benar', 'Uap air di udara berubah menjadi titik air karena suhu dingin pagi hari.']
+                [3, 'Benar / Salah', 10, 'Pada pagi hari terlihat titik-titik air di permukaan daun.', '', 'Peristiwa munculnya titik air di daun pada pagi hari disebut mengembun.', '', 'Benar', 'Salah', '', '', 'Benar', 'Uap air di udara berubah menjadi titik air karena suhu dingin pagi hari.'],
+                [4, 'Menjodohkan', 20, 'Perhatikan perubahan wujud benda di sekitar kita!', '', 'Pasangkan peristiwa perubahan wujud benda berikut dengan nama perubahannya yang tepat!', '', 'Es dipanaskan = Mencair', 'Air didinginkan = Membeku', 'Air direbus = Menguap', 'Kapur barus = Menyublim', 'A. Es dipanaskan = Mencair; B. Air didinginkan = Membeku; C. Air direbus = Menguap; D. Kapur barus = Menyublim', 'Masing-masing peristiwa perubahan wujud benda dipengaruhi oleh pelepasan atau penyerapan kalor.']
             ];
             window.downloadExcelFile('Template_Impor_Bank_Soal_SD.xlsx', headers, sampleRows);
         };
@@ -2476,10 +2656,19 @@
 
             const rows = questionsToExport.map((q, idx) => {
                 const qType = q.type || 'pg';
-                const opts = Array.isArray(q.options) ? q.options : [];
-                const keyStr = Array.isArray(q.correctAnswer)
-                    ? q.correctAnswer.join(', ')
-                    : (typeof q.correctAnswer === 'object' && q.correctAnswer !== null ? JSON.stringify(q.correctAnswer) : String(q.correctAnswer || ''));
+                let opts = Array.isArray(q.options) ? [...q.options] : ['', '', '', ''];
+                let keyStr = '';
+
+                if (qType === 'matching') {
+                    opts = extractFourMatchingOptionStrings(q);
+                    const parsedMatch = parseMatchingOptionsAndKey(opts, '');
+                    keyStr = parsedMatch.readableKey || formatMatchingKeyReadable(q.matchingPairs, q.correctAnswer);
+                } else {
+                    keyStr = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer.join(', ')
+                        : (typeof q.correctAnswer === 'object' && q.correctAnswer !== null ? JSON.stringify(q.correctAnswer) : String(q.correctAnswer || ''));
+                }
+
                 return [
                     q.orderNum || (idx + 1), qType, Number(q.weight) || 10,
                     q.stimulusText || '', q.stimulusImage || '', q.questionText || '', q.questionImage || '',
@@ -2574,17 +2763,15 @@
                             options = parsedTF.options;
                             correctAnswer = parsedTF.correctAnswer;
                         } else if (finalType === 'matching') {
-                            const rawPairs = [optA, optB, optC, optD].filter(Boolean);
-                            const ansMap = {};
-                            rawPairs.forEach((r, idx) => {
-                                const parts = String(r).split('=');
-                                const left = (parts[0] || `Pernyataan ${idx + 1}`).trim();
-                                const right = (parts.slice(1).join('=') || `Pasangan ${idx + 1}`).trim();
-                                matchingPairs.push({ left, right });
-                                ansMap[String(idx)] = right;
-                            });
-                            correctAnswer = ansMap;
+                            const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], keyRaw);
+                            matchingPairs = parsedMatch.matchingPairs;
+                            options = parsedMatch.options;
+                            correctAnswer = parsedMatch.correctAnswer;
                         }
+
+                        const keyDisplayStr = finalType === 'matching'
+                            ? formatMatchingKeyReadable(matchingPairs, correctAnswer)
+                            : (Array.isArray(correctAnswer) ? correctAnswer.join(', ') : (typeof correctAnswer === 'object' ? JSON.stringify(correctAnswer) : String(correctAnswer)));
 
                         parsedQuestions.push({
                             orderNum: parsedQuestions.length + 1,
@@ -2599,7 +2786,7 @@
                             options,
                             matchingPairs,
                             correctAnswer,
-                            keyDisplay: Array.isArray(correctAnswer) ? correctAnswer.join(', ') : (typeof correctAnswer === 'object' ? JSON.stringify(correctAnswer) : String(correctAnswer)),
+                            keyDisplay: keyDisplayStr,
                             explanation
                         });
                     }
@@ -5264,7 +5451,9 @@
                     </div>
                 `;
             } else if (q.type === 'matching') {
-                const pairs = Array.isArray(q.matchingPairs) ? q.matchingPairs : [];
+                const pairs = (Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0)
+                    ? q.matchingPairs
+                    : parseMatchingOptionsAndKey(q.options || [], '').matchingPairs;
                 const rightOptions = pairs.map(p => p.right);
                 const curObj = (typeof currentStudentAnswers[q.id] === 'object' && currentStudentAnswers[q.id] !== null) ? currentStudentAnswers[q.id] : {};
                 answerInputHtml = pairs.map((p, idx) => {
