@@ -1763,6 +1763,14 @@
             };
         }
 
+        function isChoiceOptionEmpty(optVal, idx = -1) {
+            if (optVal === null || optVal === undefined) return true;
+            const s = String(optVal).trim();
+            if (!s || s === '-' || s === '—' || s === '--') return true;
+            if (idx >= 0 && s.toLowerCase() === `opsi ${String.fromCharCode(65 + idx).toLowerCase()}`) return true;
+            return false;
+        }
+
         function formatMatchingKeyReadable(matchingPairs, correctAnswerObj = null) {
             if (Array.isArray(matchingPairs) && matchingPairs.length > 0) {
                 return matchingPairs
@@ -2332,12 +2340,19 @@
 
             if (type === 'pg' || type === 'pg_complex') {
                 const badgeType = type === 'pg_complex' ? 'checkbox' : 'radio';
-                optList.innerHTML = [optA || 'Opsi A', optB || 'Opsi B', optC || 'Opsi C', optD || 'Opsi D'].map((o, idx) => `
-                    <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                        <div class="flex items-center gap-2"><span class="font-bold w-5">${String.fromCharCode(65 + idx)}.</span> <span>${escapeHtml(o)}</span></div>
-                        <span class="text-[10px] text-slate-400 uppercase font-mono">${badgeType}</span>
-                    </div>
-                `).join('');
+                const rawInputs = [optA, optB, optC, optD];
+                const hasAnyFilled = rawInputs.some((val, i) => !isChoiceOptionEmpty(val, i));
+                const renderedOptions = rawInputs.map((o, idx) => {
+                    if (hasAnyFilled && isChoiceOptionEmpty(o, idx)) return '';
+                    const dispText = !isChoiceOptionEmpty(o, idx) ? o.trim() : `Opsi ${String.fromCharCode(65 + idx)}`;
+                    return `
+                        <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2"><span class="font-bold w-5">${String.fromCharCode(65 + idx)}.</span> <span>${escapeHtml(dispText)}</span></div>
+                            <span class="text-[10px] text-slate-400 uppercase font-mono">${badgeType}</span>
+                        </div>
+                    `;
+                }).filter(Boolean).join('');
+                optList.innerHTML = renderedOptions;
             } else if (type === 'matching') {
                 const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
                 optList.innerHTML = parsedMatch.matchingPairs.map((pair, i) => `
@@ -2437,10 +2452,11 @@
                 }
             } else {
                 if (q.options && q.options.length >= 1) {
-                    if (document.getElementById('qOptA')) document.getElementById('qOptA').value = q.options[0] || '';
-                    if (document.getElementById('qOptB')) document.getElementById('qOptB').value = q.options[1] || '';
-                    if (document.getElementById('qOptC')) document.getElementById('qOptC').value = q.options[2] || '';
-                    if (document.getElementById('qOptD')) document.getElementById('qOptD').value = q.options[3] || '';
+                    const cleanOpt = (val, i) => isChoiceOptionEmpty(val, i) ? '' : String(val).trim();
+                    if (document.getElementById('qOptA')) document.getElementById('qOptA').value = cleanOpt(q.options[0], 0);
+                    if (document.getElementById('qOptB')) document.getElementById('qOptB').value = cleanOpt(q.options[1], 1);
+                    if (document.getElementById('qOptC')) document.getElementById('qOptC').value = cleanOpt(q.options[2], 2);
+                    if (document.getElementById('qOptD')) document.getElementById('qOptD').value = cleanOpt(q.options[3], 3);
                 }
                 const keyEl = document.getElementById('qFormKey');
                 if (keyEl) {
@@ -2476,12 +2492,17 @@
             let correctAnswer = correctAnswerRaw || 'A';
 
             if (type === 'pg' || type === 'pg_complex') {
-                options = [
-                    document.getElementById('qOptA')?.value || 'Opsi A',
-                    document.getElementById('qOptB')?.value || 'Opsi B',
-                    document.getElementById('qOptC')?.value || 'Opsi C',
-                    document.getElementById('qOptD')?.value || 'Opsi D'
+                const rawChoiceOpts = [
+                    (document.getElementById('qOptA')?.value || '').trim(),
+                    (document.getElementById('qOptB')?.value || '').trim(),
+                    (document.getElementById('qOptC')?.value || '').trim(),
+                    (document.getElementById('qOptD')?.value || '').trim()
                 ];
+                options = rawChoiceOpts.map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : val);
+                if (options.filter(Boolean).length < 2) {
+                    window.showModal('Validasi Opsi Pilihan', 'Harap isi minimal 2 pilihan jawaban (misal Pilihan A dan B). Pilihan yang tidak digunakan (seperti D) boleh dikosongkan.', 'error');
+                    return;
+                }
                 if (type === 'pg_complex') {
                     correctAnswer = correctAnswerRaw
                         ? correctAnswerRaw.split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean)
@@ -2751,10 +2772,10 @@
                         let correctAnswer = keyRaw;
 
                         if (finalType === 'pg') {
-                            options = [optA || 'Opsi A', optB || 'Opsi B', optC || 'Opsi C', optD || 'Opsi D'];
+                            options = [optA, optB, optC, optD].map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : String(val).trim());
                             correctAnswer = (keyRaw || 'A').trim().toUpperCase();
                         } else if (finalType === 'pg_complex') {
-                            options = [optA || 'Opsi A', optB || 'Opsi B', optC || 'Opsi C', optD || 'Opsi D'];
+                            options = [optA, optB, optC, optD].map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : String(val).trim());
                             correctAnswer = keyRaw
                                 ? keyRaw.split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean)
                                 : ['A'];
@@ -5374,35 +5395,37 @@
             if (q.type === 'pg') {
                 const cur = currentStudentAnswers[q.id] || '';
                 answerInputHtml = (q.options || []).map((opt, i) => {
+                    if (isChoiceOptionEmpty(opt, i)) return '';
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur === letter;
                     return `
                         <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-extrabold ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-sm font-medium text-slate-800">${escapeHtml(opt)}</span>
+                                <span class="text-sm font-medium text-slate-800">${escapeHtml(String(opt).trim())}</span>
                             </div>
                             <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600' : 'border-slate-300'}">
                                 ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
                             </span>
                         </label>
                     `;
-                }).join('');
+                }).filter(Boolean).join('');
             } else if (q.type === 'pg_complex') {
                 const cur = Array.isArray(currentStudentAnswers[q.id]) ? currentStudentAnswers[q.id] : [];
                 answerInputHtml = (q.options || []).map((opt, i) => {
+                    if (isChoiceOptionEmpty(opt, i)) return '';
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur.includes(letter);
                     return `
                         <label class="flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-extrabold ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-sm font-medium text-slate-800">${escapeHtml(opt)}</span>
+                                <span class="text-sm font-medium text-slate-800">${escapeHtml(String(opt).trim())}</span>
                             </div>
                             <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300">
                         </label>
                     `;
-                }).join('');
+                }).filter(Boolean).join('');
             } else if (q.type === 'true_false') {
                 const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
                 const curObj = (typeof currentStudentAnswers[q.id] === 'object' && currentStudentAnswers[q.id] !== null && !Array.isArray(currentStudentAnswers[q.id]))
