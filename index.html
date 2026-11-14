@@ -4024,12 +4024,114 @@
         };
 
         window.printResultsByCurrentFilter = function() {
-            const currentExamFilter = appData.filters.resultExam || 'ALL';
-            if (currentExamFilter !== 'ALL' && appData.exams.some(e => e.id === currentExamFilter)) {
+            const selectEl = document.getElementById('resultExamFilterSelect');
+            const currentExamFilter = (selectEl && selectEl.value) ? selectEl.value : (appData.filters.resultExam || 'ALL');
+            if (currentExamFilter !== 'ALL' && appData.exams.some(e => String(e.id) === String(currentExamFilter))) {
                 window.executePrintResultsReport('PACKAGE', currentExamFilter);
             } else {
                 window.printResultsReport();
             }
+        };
+        window.printResultsBySelectedFilter = window.printResultsByCurrentFilter;
+
+        window.renderAndTriggerPrint = function(fullHtmlDoc, bodyContentOnly, docTitle = 'Cetak Laporan CBT') {
+            window._lastPrintFullHtml = fullHtmlDoc;
+            window._lastPrintBodyHtml = bodyContentOnly;
+            window._lastPrintTitle = docTitle;
+
+            // 1. Pasang ke #printableArea sebagai fallback @media print langsung di halaman utama
+            const printableEl = document.getElementById('printableArea');
+            if (printableEl) {
+                printableEl.innerHTML = bodyContentOnly;
+            }
+
+            // 2. Siapkan hidden iframe khusus cetak agar dialog print selalu memiliki DOM lengkap (anti layar kosong)
+            let printFrame = document.getElementById('cbtPrintFrame');
+            if (!printFrame) {
+                printFrame = document.createElement('iframe');
+                printFrame.id = 'cbtPrintFrame';
+                printFrame.style.position = 'fixed';
+                printFrame.style.right = '0';
+                printFrame.style.bottom = '0';
+                printFrame.style.width = '0';
+                printFrame.style.height = '0';
+                printFrame.style.border = '0';
+                document.body.appendChild(printFrame);
+            }
+
+            const frameDoc = printFrame.contentWindow || printFrame.contentDocument;
+            const targetDoc = frameDoc.document || frameDoc;
+            targetDoc.open();
+            targetDoc.write(fullHtmlDoc);
+            targetDoc.close();
+
+            // 3. Tampilkan Pratinjau Cetak Interaktif di dalam Modal Aplikasi + Tombol Cetak Langsung & Tab Baru
+            const previewHtml = `
+                <div class="space-y-3 text-xs">
+                    <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-2xl flex flex-wrap items-center justify-between gap-2">
+                        <div class="text-indigo-900">
+                            <p class="font-extrabold text-xs sm:text-sm"><i class="fa-solid fa-print text-indigo-600 mr-1.5"></i> Pratinjau Siap Cetak: ${escapeHtml(docTitle)}</p>
+                            <p class="text-[11px] text-indigo-700 mt-0.5">Dialog cetak otomatis dibuka. Anda juga dapat menekan tombol di kanan untuk mencetak ulang atau membuka di tab baru.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" onclick="window.triggerIframePrintNow()" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-xs shadow-sm transition cursor-pointer">
+                                <i class="fa-solid fa-print mr-1"></i> Cetak Sekarang / Simpan PDF
+                            </button>
+                            <button type="button" onclick="window.openPrintInNewTabNow()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer">
+                                <i class="fa-solid fa-up-right-from-square mr-1"></i> Cetak via Tab Baru
+                            </button>
+                        </div>
+                    </div>
+                    <div class="border border-slate-300 rounded-2xl bg-white p-4 sm:p-6 max-h-[62vh] overflow-y-auto custom-scrollbar shadow-inner">
+                        ${bodyContentOnly}
+                    </div>
+                </div>
+            `;
+
+            window.showModal(docTitle, '', 'info', null, {
+                html: previewHtml,
+                wide: true,
+                okText: 'Tutup Pratinjau'
+            });
+
+            setTimeout(() => {
+                window.triggerIframePrintNow();
+            }, 350);
+        };
+
+        window.triggerIframePrintNow = function() {
+            try {
+                const printFrame = document.getElementById('cbtPrintFrame');
+                if (printFrame && printFrame.contentWindow) {
+                    printFrame.contentWindow.focus();
+                    printFrame.contentWindow.print();
+                    return;
+                }
+            } catch (e) {
+                console.warn('Iframe print fallback:', e);
+            }
+            const printableEl = document.getElementById('printableArea');
+            if (printableEl) {
+                printableEl.classList.remove('hidden');
+                window.print();
+                setTimeout(() => printableEl.classList.add('hidden'), 1000);
+            }
+        };
+
+        window.openPrintInNewTabNow = function() {
+            if (!window._lastPrintFullHtml) return;
+            const printWin = window.open('', '_blank');
+            if (!printWin) {
+                window.triggerIframePrintNow();
+                return;
+            }
+            printWin.document.open();
+            printWin.document.write(window._lastPrintFullHtml);
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(() => {
+                try { printWin.print(); } catch (e) {}
+            }, 350);
         };
 
         window.openEssayGradingModal = function(resultId) {
@@ -4186,29 +4288,32 @@
                 const selectedModeEl = document.querySelector('input[name="printResultMode"]:checked');
                 const mode = selectedModeEl ? selectedModeEl.value : 'ALL';
                 const targetExamId = document.getElementById('printTargetExamId')?.value || '';
-                window.executePrintResultsReport(mode, targetExamId);
+                setTimeout(() => {
+                    window.executePrintResultsReport(mode, targetExamId);
+                }, 60);
                 return true;
-            }, { html, showCancel: true, okText: 'Buka Jendela Cetak' });
+            }, { html, showCancel: true, okText: 'Buka Pratinjau & Cetak' });
         };
 
         window.executePrintResultsReport = function(mode = 'ALL', examId = '') {
-            const printWin = window.open('', '_blank', 'width=960,height=720');
-            if (!printWin) {
-                window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak rekap nilai.', 'error');
-                return;
-            }
+            const selectedExam = (mode === 'PACKAGE' && examId)
+                ? appData.exams.find(e => String(e.id) === String(examId))
+                : null;
 
-            const selectedExam = (mode === 'PACKAGE' && examId) ? appData.exams.find(e => e.id === examId) : null;
+            const allValid = getValidExamResults('ALL');
             const resultsToPrint = selectedExam
-                ? getValidExamResults(selectedExam.id)
-                : getValidExamResults('ALL');
+                ? allValid.filter(r => String(r.examId) === String(selectedExam.id) || (r.examName && selectedExam.examName && String(r.examName).trim().toLowerCase() === String(selectedExam.examName).trim().toLowerCase()))
+                : allValid;
+
             const examTitle = selectedExam ? selectedExam.examName : 'Semua Paket Ujian';
+            const subjectTitle = selectedExam ? getSubjectNameById(selectedExam.subjectId) : 'Semua Mata Pelajaran';
             const classTitle = selectedExam ? `Kelas ${getClassNameById(selectedExam.classId)}` : 'Semua Kelas';
+            const printDateStr = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 
             const rowsHtml = resultsToPrint.map((r, i) => {
                 const stdObj = appData.students.find(s => s.id === r.studentId || s.nisn === r.nisn);
-                const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || '-');
-                const exObj = appData.exams.find(e => e.id === r.examId);
+                const schoolVal = stdObj && stdObj.asalSekolah !== undefined ? (stdObj.asalSekolah || '-') : (r.asalSekolah || appData.settings.schoolName || '-');
+                const exObj = appData.exams.find(e => String(e.id) === String(r.examId));
                 const mapelCol = !selectedExam
                     ? `<td style="border:1px solid #cbd5e1;padding:8px;">${escapeHtml(exObj ? `${exObj.examName} (${getSubjectNameById(exObj.subjectId)})` : (r.examName || '-'))}</td>`
                     : '';
@@ -4225,15 +4330,58 @@
                     <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;color:#047857;">${r.finalScore}</td>
                 </tr>
             `;
-            }).join('') || `<tr><td colspan="${selectedExam ? 8 : 9}" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data rekap nilai ujian pada paket ini.</td></tr>`;
+            }).join('') || `<tr><td colspan="${selectedExam ? 8 : 9}" style="border:1px solid #cbd5e1;padding:14px;text-align:center;color:#64748b;">Belum ada data rekap nilai ujian pada paket ini.</td></tr>`;
 
             const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-            const mapelHeaderTh = !selectedExam ? '<th>Paket Ujian / Mapel</th>' : '';
+            const mapelHeaderTh = !selectedExam ? '<th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Paket Ujian / Mapel</th>' : '';
 
-            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Rekap Nilai - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:15mm;}body{font-family:sans-serif;padding:10px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}.meta{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • REKAPITULASI HASIL UJIAN</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><div class="meta"><div><strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}</div><div style="text-align:right;"><strong>Kelas:</strong> ${escapeHtml(classTitle)}<br><strong>Jumlah Peserta:</strong> ${resultsToPrint.length} Siswa</div></div><table><thead><tr><th>No</th><th>NISN</th><th>Nama Peserta</th><th>Asal Sekolah</th><th>Kelas</th>${mapelHeaderTh}<th>Benar</th><th>Salah</th><th>Nilai Akhir</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
-            printWin.document.close();
-            printWin.focus();
-            setTimeout(() => { printWin.print(); }, 250);
+            const bodyContentOnly = `
+                <div style="font-family:'Inter',sans-serif;color:#0f172a;background:#ffffff;">
+                    <div style="display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;text-align:center;">
+                        <img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo" style="width:56px;height:56px;object-fit:contain;">
+                        <div>
+                            <h2 style="margin:0;font-size:18px;font-weight:800;text-transform:uppercase;">${escapeHtml(appData.settings.schoolName)}</h2>
+                            <p style="margin:4px 0 0;font-size:12px;font-weight:700;color:#334155;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • REKAPITULASI HASIL UJIAN</p>
+                            <p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p>
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;line-height:1.6;">
+                        <div>
+                            <strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br>
+                            <strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}
+                        </div>
+                        <div style="text-align:right;">
+                            <strong>Kelas:</strong> ${escapeHtml(classTitle)}<br>
+                            <strong>Jumlah Peserta:</strong> ${resultsToPrint.length} Siswa
+                        </div>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead>
+                            <tr>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;width:36px;">No</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">NISN</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;text-align:left;">Nama Peserta</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;text-align:left;">Asal Sekolah</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Kelas</th>
+                                ${mapelHeaderTh}
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Benar</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Salah</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Nilai Akhir</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                    <div style="display:flex;justify-content:flex-end;margin-top:28px;font-size:12px;">
+                        <div style="text-align:center;min-width:200px;">
+                            <p style="margin:0 0 56px 0;">Dicetak pada: ${escapeHtml(printDateStr)}<br>Koordinator / Pengawas Ujian,</p>
+                            <p style="margin:0;font-weight:bold;text-decoration:underline;">${escapeHtml(appData.currentUser?.name || 'Administrator Utama')}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const fullHtmlDoc = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Cetak Rekap Nilai - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:14mm;}body{font-family:sans-serif;padding:8px;color:#0f172a;background:#fff;}</style></head><body>${bodyContentOnly}</body></html>`;
+            window.renderAndTriggerPrint(fullHtmlDoc, bodyContentOnly, `Rekap Nilai - ${examTitle}`);
         };
 
         function getQuestionsForExamAnalysis(examId) {
@@ -4427,17 +4575,12 @@
 
         window.printAnalysisReport = function() {
             const filterExamId = appData.filters.analysisExam || 'ALL';
-            const selectedExam = filterExamId !== 'ALL' ? appData.exams.find(e => e.id === filterExamId) : null;
+            const selectedExam = filterExamId !== 'ALL' ? appData.exams.find(e => String(e.id) === String(filterExamId)) : null;
             const questionsToAnalyze = getQuestionsForExamAnalysis(filterExamId);
+            const allValid = getValidExamResults('ALL');
             const relevantResults = selectedExam
-                ? appData.examResults.filter(r => r.examId === selectedExam.id)
-                : appData.examResults;
-
-            const printWin = window.open('', '_blank', 'width=960,height=720');
-            if (!printWin) {
-                window.showModal('Gagal Membuka Jendela Cetak', 'Izinkan pop-up pada browser untuk mencetak analisis soal.', 'error');
-                return;
-            }
+                ? allValid.filter(r => String(r.examId) === String(selectedExam.id))
+                : allValid;
 
             const examTitle = selectedExam ? selectedExam.examName : 'Semua Paket Ujian';
             const subjectTitle = selectedExam ? getSubjectNameById(selectedExam.subjectId) : 'Semua Mata Pelajaran';
@@ -4457,13 +4600,49 @@
                         <td style="border:1px solid #cbd5e1;padding:8px;text-align:center;font-weight:bold;">${escapeHtml(stats.difficultyLabel)}</td>
                     </tr>
                 `;
-            }).join('') || '<tr><td colspan="8" style="border:1px solid #cbd5e1;padding:12px;text-align:center;">Belum ada data butir soal pada paket ini.</td></tr>';
+            }).join('') || '<tr><td colspan="8" style="border:1px solid #cbd5e1;padding:14px;text-align:center;color:#64748b;">Belum ada data butir soal pada paket ini.</td></tr>';
 
             const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-            printWin.document.write(`<!DOCTYPE html><html><head><title>Cetak Analisis Soal - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:15mm;}body{font-family:sans-serif;padding:10px;color:#0f172a;}table{width:100%;border-collapse:collapse;font-size:12px;}th{background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;}.kop{display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;}.kop img{width:56px;height:56px;object-fit:contain;}.meta{display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;}</style></head><body><div class="kop"><img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo"><div><h2 style="margin:0;font-size:18px;">${escapeHtml(appData.settings.schoolName)}</h2><p style="margin:4px 0 0;font-size:12px;color:#475569;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • LAPORAN ANALISIS BUTIR SOAL</p><p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p></div></div><div class="meta"><div><strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br><strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}</div><div style="text-align:right;"><strong>Kelas:</strong> ${escapeHtml(classTitle)}<br><strong>Jumlah Soal:</strong> ${questionsToAnalyze.length} Butir (${relevantResults.length} Peserta)</div></div><table><thead><tr><th>No</th><th>Butir Pertanyaan</th><th>Jenis Soal</th><th>Bobot</th><th>Benar</th><th>Salah</th><th>Kosong</th><th>Tingkat Kesulitan</th></tr></thead><tbody>${rowsHtml}</tbody></table></body></html>`);
-            printWin.document.close();
-            printWin.focus();
-            setTimeout(() => { printWin.print(); }, 250);
+            const bodyContentOnly = `
+                <div style="font-family:'Inter',sans-serif;color:#0f172a;background:#ffffff;">
+                    <div style="display:flex;align-items:center;justify-content:center;gap:16px;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:14px;text-align:center;">
+                        <img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo" style="width:56px;height:56px;object-fit:contain;">
+                        <div>
+                            <h2 style="margin:0;font-size:18px;font-weight:800;text-transform:uppercase;">${escapeHtml(appData.settings.schoolName)}</h2>
+                            <p style="margin:4px 0 0;font-size:12px;font-weight:700;color:#334155;">${escapeHtml(appData.settings.appName || 'SISTEM UJIAN DIGITAL')} • LAPORAN ANALISIS BUTIR SOAL</p>
+                            <p style="margin:2px 0 0;font-size:11px;color:#64748b;">Tahun Pelajaran ${escapeHtml(appData.settings.academicYear)} • Semester ${escapeHtml(appData.settings.semester)}</p>
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;line-height:1.6;">
+                        <div>
+                            <strong>Paket Ujian:</strong> ${escapeHtml(examTitle)}<br>
+                            <strong>Mata Pelajaran:</strong> ${escapeHtml(subjectTitle)}
+                        </div>
+                        <div style="text-align:right;">
+                            <strong>Kelas:</strong> ${escapeHtml(classTitle)}<br>
+                            <strong>Jumlah Soal:</strong> ${questionsToAnalyze.length} Butir (${relevantResults.length} Peserta)
+                        </div>
+                    </div>
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                        <thead>
+                            <tr>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;width:42px;">No</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;text-align:left;">Butir Pertanyaan</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Jenis Soal</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Bobot</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Benar</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Salah</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Kosong</th>
+                                <th style="background:#1e293b;color:#fff;padding:8px;border:1px solid #1e293b;">Tingkat Kesulitan</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+            `;
+
+            const fullHtmlDoc = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Cetak Analisis Soal - ${escapeHtml(examTitle)}</title><style>@page{size:A4 portrait;margin:14mm;}body{font-family:sans-serif;padding:8px;color:#0f172a;background:#fff;}</style></head><body>${bodyContentOnly}</body></html>`;
+            window.renderAndTriggerPrint(fullHtmlDoc, bodyContentOnly, `Analisis Butir Soal - ${examTitle}`);
         };
 
         function renderSpreadsheetContent(container) {
