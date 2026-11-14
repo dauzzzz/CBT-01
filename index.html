@@ -50,6 +50,45 @@
             #printableArea { position: absolute; left: 0; top: 0; width: 100%; background: white !important; padding: 20px; }
             .no-print { display: none !important; }
         }
+        /* Critical CSS untuk Loading Screen agar selalu rapi & rata tengah di HP meskipun CDN lambat */
+        #loadingScreen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+            min-height: 100%;
+            width: 100%;
+            box-sizing: border-box;
+            background: radial-gradient(circle at top, #1e1b4b 0%, #1e3a8a 45%, #0f172a 100%);
+            color: #ffffff;
+        }
+        .loading-glass-card {
+            max-width: 380px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 32px 24px;
+            border-radius: 28px;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 0 25px 50px -12px rgba(2, 6, 23, 0.65);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        @keyframes loadingBarSlide {
+            0% { transform: translateX(-100%); }
+            50% { transform: translateX(20%); }
+            100% { transform: translateX(120%); }
+        }
+        .loading-progress-bar {
+            animation: loadingBarSlide 1.8s ease-in-out infinite;
+        }
     </style>
 </head>
 <body class="h-full bg-slate-50 text-slate-800 antialiased overflow-hidden flex flex-col">
@@ -82,11 +121,47 @@
 
     <!-- Container Utama Aplikasi -->
     <div id="appContainer" class="flex-1 flex flex-col h-full overflow-hidden">
-        <!-- Loading Screen Awal -->
-        <div id="loadingScreen" class="flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 via-indigo-900 to-purple-900 text-white">
-            <div class="w-16 h-16 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <h1 class="text-2xl font-bold tracking-wide">CBT SEKOLAH – SISTEM UJIAN DIGITAL</h1>
-            <p class="text-indigo-200 text-sm mt-2">Memuat sistem aman & sinkronisasi cloud...</p>
+        <!-- Loading Screen Awal (Responsif & Modern untuk HP/Desktop) -->
+        <div id="loadingScreen" class="flex-1 flex flex-col items-center justify-center text-center px-6 py-8 bg-gradient-to-br from-slate-950 via-indigo-950 to-blue-950 text-white relative overflow-hidden select-none">
+            <!-- Dekorasi Cahaya Latar -->
+            <div class="absolute -top-24 -left-24 w-72 h-72 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-24 -right-24 w-72 h-72 bg-cyan-500/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <!-- Kartu Glassmorphism Utama -->
+            <div class="loading-glass-card relative z-10">
+                <!-- Ikon & Dual-Ring Spinner Modern -->
+                <div class="relative flex items-center justify-center w-20 h-20 mb-6 mx-auto">
+                    <div class="absolute inset-0 rounded-full bg-indigo-500/25 animate-ping"></div>
+                    <div class="absolute inset-0 rounded-full border-4 border-indigo-300/20"></div>
+                    <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-cyan-400 border-r-indigo-400 animate-spin"></div>
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center shadow-lg border border-white/30">
+                        <i class="fa-solid fa-graduation-cap text-white text-xl"></i>
+                    </div>
+                </div>
+
+                <!-- Badge Status -->
+                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-300/30 text-cyan-300 text-[10px] font-extrabold uppercase tracking-widest mb-3">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Portal Asesmen Resmi
+                </div>
+
+                <!-- Judul & Subjudul Terpusat -->
+                <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight text-white text-center leading-snug">
+                    CBT SEKOLAH
+                </h1>
+                <p class="text-xs sm:text-sm font-bold tracking-wider uppercase text-cyan-300/95 text-center mt-0.5">
+                    SISTEM UJIAN DIGITAL
+                </p>
+
+                <!-- Pesan Sinkronisasi -->
+                <p class="text-indigo-100/85 text-xs sm:text-sm leading-relaxed text-center mt-3 max-w-[260px] mx-auto">
+                    Memuat sistem aman &amp; sinkronisasi cloud...
+                </p>
+
+                <!-- Progress Bar Animasi -->
+                <div class="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden mt-5 p-0.5 border border-white/10 mx-auto">
+                    <div class="w-1/2 h-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-400 rounded-full loading-progress-bar"></div>
+                </div>
+            </div>
         </div>
     </div>
 
