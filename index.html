@@ -3951,27 +3951,7 @@
                             }
                             if (qList.length === 0) return;
 
-                            let totalScore = 0;
-                            let maxScore = 0;
-                            let correct = 0;
-                            let wrong = 0;
-                            let empty = 0;
-
-                            qList.forEach(q => {
-                                maxScore += q.weight;
-                                const ans = studentAns[q.id];
-                                if (!isQuestionAnswered(ans)) {
-                                    empty++;
-                                    return;
-                                }
-                                const evalItem = evaluateSingleQuestionForReview(q, ans, { essayScores: {} });
-                                if (evalItem.status === 'CORRECT') {
-                                    totalScore += q.weight;
-                                    correct++;
-                                } else if (evalItem.status === 'WRONG') {
-                                    wrong++;
-                                }
-                            });
+                            const calc = window.calculateExamSubmissionScore(qList, studentAns, {});
 
                             const resultObj = {
                                 resultId: 'RES-' + sess.studentId + '-' + sess.examId,
@@ -3984,15 +3964,15 @@
                                 classId: sess.classId || '',
                                 className: sess.className || '4',
                                 submittedAt: new Date().toLocaleString('id-ID') + ' (Auto-Submit Waktu Habis)',
-                                totalScoreObtained: totalScore,
-                                maxPossibleScore: maxScore || 100,
-                                finalScore: Math.round((totalScore / (maxScore || 100)) * 100) || 0,
-                                correctCount: correct,
-                                wrongCount: wrong,
-                                emptyCount: empty,
+                                totalScoreObtained: calc.totalScoreObtained,
+                                maxPossibleScore: calc.maxPossibleScore || 100,
+                                finalScore: calc.finalScore,
+                                correctCount: calc.correctCount,
+                                wrongCount: calc.wrongCount,
+                                emptyCount: calc.emptyCount,
                                 violationCount: sess.violationCount || 0,
-                                essayGradingStatus: 'Sudah Dinilai',
-                                essayScores: {},
+                                essayGradingStatus: calc.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
+                                essayScores: calc.essayScores,
                                 answersSnapshot: studentAns
                             };
 
@@ -4135,42 +4115,93 @@
         };
 
         window.openEssayGradingModal = function(resultId) {
-            const res = appData.examResults.find(r => r.resultId === resultId);
+            const res = appData.examResults.find(r => (r.resultId || r.id) === resultId);
             if (!res) return;
-            const essayQuestions = appData.questions.filter(q => q.type === 'essay');
-            const q = essayQuestions[0] || appData.questions[appData.questions.length - 1];
-            const studentAns = (res.answersSnapshot && q) ? (res.answersSnapshot[q.id] || '(Tidak dijawab)') : '(Tidak dijawab)';
-            const currentScore = (res.essayScores && q) ? (res.essayScores[q.id] || 0) : 0;
+            const examQuestions = getQuestionsForExamAnalysis(res.examId);
+            const essayQuestions = examQuestions.filter(q => q.type === 'essay');
+            const targetList = essayQuestions.length > 0
+                ? essayQuestions
+                : (appData.questions.filter(q => q.type === 'essay').slice(0, 1));
+
+            if (targetList.length === 0) {
+                window.showModal('Tidak Ada Soal Uraian', 'Paket ujian ini tidak memiliki butir soal bertipe Uraian / Esai.', 'info');
+                return;
+            }
+
+            const itemsHtml = targetList.map((q, idx) => {
+                const maxW = Math.max(0, Number(q.weight) || 10);
+                const studentAns = (res.answersSnapshot && res.answersSnapshot[q.id] !== undefined)
+                    ? res.answersSnapshot[q.id]
+                    : '(Tidak dijawab)';
+                const existingManual = (res.essayScores && res.essayScores[q.id] !== undefined)
+                    ? Number(res.essayScores[q.id])
+                    : window.evaluateQuestionScore(q, studentAns, undefined).earnedWeight;
+                const clampedCurrent = Math.min(maxW, Math.max(0, Number.isFinite(existingManual) ? existingManual : 0));
+
+                return `
+                    <div class="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="font-extrabold text-indigo-700">Soal Uraian #${q.orderNum || (idx + 1)}</span>
+                            <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold text-[11px]">Bobot Maks: ${maxW} Poin</span>
+                        </div>
+                        <p class="text-slate-700 font-semibold">${escapeHtml(q.questionText || 'Soal Uraian')}</p>
+                        <div class="p-2.5 bg-white rounded-xl border border-slate-200">
+                            <span class="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">Jawaban Siswa:</span>
+                            <p class="font-semibold text-slate-800 whitespace-pre-line">${escapeHtml(String(studentAns || '(Tidak dijawab)'))}</p>
+                        </div>
+                        ${q.correctAnswer ? `<p class="text-[11px] text-amber-800 bg-amber-50 px-2.5 py-1.5 rounded-lg border border-amber-200"><strong>Kata Kunci / Pedoman:</strong> ${escapeHtml(String(q.correctAnswer))}</p>` : ''}
+                        <div>
+                            <label class="block font-bold text-slate-700 mb-1">Input Skor Guru (Rentang 0 s.d ${maxW} Poin)</label>
+                            <input type="number" step="0.01" min="0" max="${maxW}" data-essay-qid="${escapeHtml(q.id)}" data-essay-max="${maxW}" value="${clampedCurrent}" oninput="if(Number(this.value) > ${maxW}) this.value = ${maxW}; if(Number(this.value) < 0) this.value = 0;" class="essay-grade-input w-full px-3 py-2 bg-white border border-slate-300 rounded-xl font-extrabold text-indigo-700">
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             const html = `
                 <div class="space-y-3 text-xs">
-                    <div class="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                        <p class="font-bold text-slate-700">Siswa: ${escapeHtml(res.studentName)} (${escapeHtml(res.className)})</p>
-                        <p class="text-slate-500 mt-1">Pertanyaan Uraian: ${escapeHtml(q ? q.questionText : 'Soal Uraian')}</p>
-                        <p class="mt-2 p-2 bg-white rounded border border-slate-200 font-semibold text-slate-800">Jawaban Siswa: "${escapeHtml(studentAns)}"</p>
+                    <div class="p-3 bg-indigo-50 rounded-xl border border-indigo-200 text-indigo-900 flex items-center justify-between">
+                        <div>
+                            <p class="font-extrabold">${escapeHtml(res.studentName)} (Kelas ${escapeHtml(res.className)})</p>
+                            <p class="text-[11px] text-indigo-700">Paket Ujian: ${escapeHtml(res.examName || '-')}</p>
+                        </div>
+                        <span class="font-mono font-bold text-xs bg-white px-2.5 py-1 rounded-lg border border-indigo-200">Nilai Saat Ini: ${res.finalScore}</span>
                     </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">Skor Uraian (Maksimal ${q ? q.weight : 25} Poin)</label>
-                        <input type="number" id="essayGradeScoreInput" value="${currentScore}" min="0" max="${q ? q.weight : 25}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold">
+                    <div class="space-y-3 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
+                        ${itemsHtml}
                     </div>
                 </div>
             `;
 
             window.showModal('Koreksi & Penilaian Soal Uraian', '', 'info', (confirmed) => {
                 if (!confirmed) return true;
-                const givenScore = Number(document.getElementById('essayGradeScoreInput').value) || 0;
-                if (q) {
-                    const prevScore = (res.essayScores && res.essayScores[q.id]) ? Number(res.essayScores[q.id]) : 0;
-                    if (!res.essayScores) res.essayScores = {};
-                    res.essayScores[q.id] = givenScore;
-                    res.totalScoreObtained = Math.max(0, (res.totalScoreObtained - prevScore) + givenScore);
-                    res.finalScore = Math.min(100, Math.round((res.totalScoreObtained / (res.maxPossibleScore || 100)) * 100));
-                }
+                if (!res.essayScores || typeof res.essayScores !== 'object') res.essayScores = {};
+
+                const inputs = document.querySelectorAll('.essay-grade-input');
+                inputs.forEach(inp => {
+                    const qid = inp.getAttribute('data-essay-qid');
+                    const maxW = Math.max(0, Number(inp.getAttribute('data-essay-max')) || 10);
+                    const rawVal = Number(inp.value);
+                    const clampedVal = safeRoundTwoDecimals(Math.min(maxW, Math.max(0, Number.isFinite(rawVal) ? rawVal : 0)));
+                    if (qid) {
+                        res.essayScores[qid] = clampedVal;
+                    }
+                });
+
+                const allExamQuestions = examQuestions.length > 0 ? examQuestions : appData.questions;
+                const recalc = window.calculateExamSubmissionScore(allExamQuestions, res.answersSnapshot || {}, res.essayScores);
+                res.totalScoreObtained = recalc.totalScoreObtained;
+                res.maxPossibleScore = recalc.maxPossibleScore;
+                res.finalScore = recalc.finalScore;
+                res.correctCount = recalc.correctCount;
+                res.wrongCount = recalc.wrongCount;
+                res.emptyCount = recalc.emptyCount;
                 res.essayGradingStatus = 'Sudah Dinilai';
-                syncCollectionRecord('examResults', res.resultId, res);
+
+                syncCollectionRecord('examResults', res.resultId || res.id, res);
                 renderResultsContent(document.getElementById('adminMainContent'));
                 return true;
-            }, { html, okText: 'Simpan Nilai Uraian' });
+            }, { html, wide: true, showCancel: true, okText: 'Simpan Nilai Uraian' });
         };
 
         window.exportResultsExcel = function() {
@@ -5812,8 +5843,328 @@
             if (ans === undefined || ans === null || ans === '') return false;
             if (Array.isArray(ans)) return ans.length > 0;
             if (typeof ans === 'object') return Object.keys(ans).length > 0;
-            return true;
+            return String(ans).trim() !== '';
         }
+
+        function safeRoundTwoDecimals(val) {
+            const num = Number(val);
+            if (!Number.isFinite(num)) return 0;
+            return Math.round((num + Number.EPSILON) * 100) / 100;
+        }
+
+        function normalizeShortText(val) {
+            if (val === null || val === undefined) return '';
+            const wsRegex = new RegExp('\\s+', 'g');
+            return String(val).trim().toLowerCase().replace(wsRegex, ' ');
+        }
+
+        function normalizeSingleChoiceToken(val) {
+            if (val === null || val === undefined) return '';
+            const raw = String(val).trim().toUpperCase();
+            if (!raw) return '';
+            const optPrefixRegex = new RegExp('^(?:OPSI|PILIHAN)\\s*([A-F])$', 'i');
+            const mOpt = raw.match(optPrefixRegex);
+            if (mOpt) return mOpt[1].toUpperCase();
+            const letterDotRegex = new RegExp('^([A-F])[\\.\\)\\:\\-]\\s*.*$');
+            const mLetter = raw.match(letterDotRegex);
+            if (mLetter) return mLetter[1].toUpperCase();
+            return raw;
+        }
+
+        function normalizeTrueFalseToken(val) {
+            const s = normalizeShortText(val);
+            if (!s) return '';
+            if (s === 'b' || s === 'benar' || s === 'true' || s === 't' || s === '1' || s === 'ya') return 'benar';
+            if (s === 's' || s === 'salah' || s === 'false' || s === 'f' || s === '0' || s === 'tidak') return 'salah';
+            return s;
+        }
+
+        // ============================================================================
+        // MESIN PERHITUNGAN SKOR TERPUSAT (6 TIPE SOAL & NORMALISASI SKALA 100)
+        // ============================================================================
+        window.evaluateQuestionScore = function(q, userAnswer, manualEssayScore = undefined) {
+            const maxWeight = Math.max(0, Number(q && q.weight !== undefined ? q.weight : 10) || 0);
+            const qType = (q && q.type) ? String(q.type).trim() : 'pg';
+
+            if (!isQuestionAnswered(userAnswer)) {
+                return { status: 'EMPTY', earnedWeight: 0, maxWeight, ratio: 0 };
+            }
+
+            // 1. Pilihan Ganda Biasa (pg): Skor penuh (100% x bobot) jika tepat sama dengan kunci, 0 jika salah
+            if (qType === 'pg') {
+                const uToken = normalizeSingleChoiceToken(userAnswer);
+                const kToken = normalizeSingleChoiceToken(q.correctAnswer);
+                let isMatch = (uToken !== '' && uToken === kToken);
+                if (!isMatch && Array.isArray(q.options)) {
+                    const uIdx = uToken.length === 1 ? (uToken.charCodeAt(0) - 65) : -1;
+                    const optText = (uIdx >= 0 && q.options[uIdx] !== undefined) ? normalizeShortText(q.options[uIdx]) : '';
+                    if (optText && optText === normalizeShortText(q.correctAnswer)) {
+                        isMatch = true;
+                    }
+                }
+                return {
+                    status: isMatch ? 'CORRECT' : 'WRONG',
+                    earnedWeight: isMatch ? maxWeight : 0,
+                    maxWeight,
+                    ratio: isMatch ? 1 : 0
+                };
+            }
+
+            // 2. Pilihan Ganda Kompleks (pg_complex):
+            // Rumus: Math.max(0, (Jumlah Benar Dipilih - Jumlah Salah Dipilih) / Total Kunci Benar) * Bobot Soal
+            if (qType === 'pg_complex') {
+                const splitRegex = new RegExp('[,;|/\\s]+');
+                const rawKeys = Array.isArray(q.correctAnswer)
+                    ? q.correctAnswer
+                    : String(q.correctAnswer || '').split(splitRegex).filter(Boolean);
+                const keySet = new Set(rawKeys.map(k => normalizeSingleChoiceToken(k)).filter(Boolean));
+                const totalCorrectKeys = keySet.size;
+                if (totalCorrectKeys === 0) {
+                    return { status: 'WRONG', earnedWeight: 0, maxWeight, ratio: 0 };
+                }
+
+                const rawUserArr = Array.isArray(userAnswer)
+                    ? userAnswer
+                    : String(userAnswer || '').split(splitRegex).filter(Boolean);
+                const userSet = new Set(rawUserArr.map(u => normalizeSingleChoiceToken(u)).filter(Boolean));
+
+                let correctChosen = 0;
+                let wrongChosen = 0;
+                userSet.forEach(choice => {
+                    if (keySet.has(choice)) correctChosen++;
+                    else wrongChosen++;
+                });
+
+                const rawRatio = (correctChosen - wrongChosen) / totalCorrectKeys;
+                const clampedRatio = Math.min(1, Math.max(0, rawRatio));
+                const earnedWeight = safeRoundTwoDecimals(clampedRatio * maxWeight);
+                const status = (clampedRatio === 1 && correctChosen === totalCorrectKeys && wrongChosen === 0)
+                    ? 'CORRECT'
+                    : (clampedRatio > 0 ? 'PARTIAL' : 'WRONG');
+
+                return { status, earnedWeight, maxWeight, ratio: clampedRatio };
+            }
+
+            // 3. Benar / Salah (true_false - Multi-Pernyataan maupun Tunggal):
+            // Rumus Proporsional: (Jumlah Baris Tepat / Total Baris Pernyataan) * Bobot Soal
+            if (qType === 'true_false') {
+                const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
+                const isDefaultTwoBS = opts.length === 2 &&
+                    normalizeTrueFalseToken(opts[0]) === 'benar' &&
+                    normalizeTrueFalseToken(opts[1]) === 'salah';
+                const isMultiStatement = Array.isArray(q.correctAnswer) ||
+                    !isDefaultTwoBS ||
+                    (typeof userAnswer === 'object' && userAnswer !== null && !Array.isArray(userAnswer));
+
+                if (isMultiStatement) {
+                    const tfSplitRegex = new RegExp('[,;|/\\s\\-]+');
+                    const keyList = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer
+                        : String(q.correctAnswer || '').split(tfSplitRegex).filter(Boolean);
+                    const totalRows = Math.max(opts.length, keyList.length, 1);
+                    let correctRows = 0;
+
+                    for (let idx = 0; idx < totalRows; idx++) {
+                        let rawStudentVal = '';
+                        if (typeof userAnswer === 'object' && userAnswer !== null && !Array.isArray(userAnswer)) {
+                            rawStudentVal = userAnswer[String(idx)] !== undefined ? userAnswer[String(idx)] : '';
+                        } else if (Array.isArray(userAnswer)) {
+                            rawStudentVal = userAnswer[idx] !== undefined ? userAnswer[idx] : '';
+                        } else if (idx === 0) {
+                            rawStudentVal = String(userAnswer);
+                        }
+                        const normStudent = normalizeTrueFalseToken(rawStudentVal);
+                        const normKey = normalizeTrueFalseToken(keyList[idx] !== undefined ? keyList[idx] : keyList[0]);
+                        if (normStudent !== '' && normKey !== '' && normStudent === normKey) {
+                            correctRows++;
+                        }
+                    }
+
+                    const ratio = Math.min(1, Math.max(0, correctRows / totalRows));
+                    const earnedWeight = safeRoundTwoDecimals(ratio * maxWeight);
+                    const status = ratio === 1 ? 'CORRECT' : (ratio > 0 ? 'PARTIAL' : 'WRONG');
+                    return { status, earnedWeight, maxWeight, ratio };
+                } else {
+                    const normStudent = normalizeTrueFalseToken(userAnswer);
+                    const normKey = normalizeTrueFalseToken(q.correctAnswer);
+                    const isMatch = (normStudent !== '' && normStudent === normKey);
+                    return {
+                        status: isMatch ? 'CORRECT' : 'WRONG',
+                        earnedWeight: isMatch ? maxWeight : 0,
+                        maxWeight,
+                        ratio: isMatch ? 1 : 0
+                    };
+                }
+            }
+
+            // 4. Menjodohkan (matching):
+            // Rumus Proporsional: (Jumlah Pasangan Tepat / Total Pasangan Kunci) * Bobot Soal
+            if (qType === 'matching') {
+                const expectedMap = {};
+                if (Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
+                    q.matchingPairs.forEach((pair, idx) => {
+                        if (pair && pair.right !== undefined && String(pair.right).trim() !== '') {
+                            expectedMap[String(idx)] = normalizeShortText(pair.right);
+                        }
+                    });
+                }
+                if (Object.keys(expectedMap).length === 0 && q.correctAnswer && typeof q.correctAnswer === 'object' && !Array.isArray(q.correctAnswer)) {
+                    Object.entries(q.correctAnswer).forEach(([k, v]) => {
+                        if (v !== undefined && String(v).trim() !== '') {
+                            expectedMap[String(k)] = normalizeShortText(v);
+                        }
+                    });
+                }
+                if (Object.keys(expectedMap).length === 0) {
+                    const parsedFallback = parseMatchingOptionsAndKey(q.options || [], typeof q.correctAnswer === 'string' ? q.correctAnswer : '');
+                    Object.entries(parsedFallback.correctAnswer || {}).forEach(([k, v]) => {
+                        expectedMap[String(k)] = normalizeShortText(v);
+                    });
+                }
+
+                const pairKeys = Object.keys(expectedMap);
+                const totalPairs = pairKeys.length;
+                if (totalPairs === 0) {
+                    return { status: 'WRONG', earnedWeight: 0, maxWeight, ratio: 0 };
+                }
+
+                const studentMap = (typeof userAnswer === 'object' && userAnswer !== null) ? userAnswer : {};
+                let matchedPairs = 0;
+                pairKeys.forEach(k => {
+                    const sVal = normalizeShortText(studentMap[k]);
+                    const kVal = expectedMap[k];
+                    if (sVal !== '' && sVal === kVal) {
+                        matchedPairs++;
+                    }
+                });
+
+                const ratio = Math.min(1, Math.max(0, matchedPairs / totalPairs));
+                const earnedWeight = safeRoundTwoDecimals(ratio * maxWeight);
+                const status = ratio === 1 ? 'CORRECT' : (ratio > 0 ? 'PARTIAL' : 'WRONG');
+                return { status, earnedWeight, maxWeight, ratio };
+            }
+
+            // 5. Isian Singkat (short_answer):
+            // Normalisasi .trim().toLowerCase().replace(/\s+/g, ' ') & dukungan multi-alternatif kunci ("10, sepuluh")
+            if (qType === 'short_answer') {
+                const normStudent = normalizeShortText(userAnswer);
+                const altSplitRegex = new RegExp('[,;|/]+');
+                const rawKey = q.correctAnswer;
+                let alternatives = [];
+                if (Array.isArray(rawKey)) {
+                    alternatives = rawKey.map(k => normalizeShortText(k)).filter(Boolean);
+                } else {
+                    const fullKeyStr = String(rawKey ?? '');
+                    alternatives = fullKeyStr.split(altSplitRegex).map(k => normalizeShortText(k)).filter(Boolean);
+                    const wholeNorm = normalizeShortText(fullKeyStr);
+                    if (wholeNorm && !alternatives.includes(wholeNorm)) {
+                        alternatives.push(wholeNorm);
+                    }
+                }
+                const isMatch = normStudent !== '' && alternatives.includes(normStudent);
+                return {
+                    status: isMatch ? 'CORRECT' : 'WRONG',
+                    earnedWeight: isMatch ? maxWeight : 0,
+                    maxWeight,
+                    ratio: isMatch ? 1 : 0
+                };
+            }
+
+            // 6. Uraian / Essay (essay):
+            // Mendukung input nilai manual korektor (clamped 0 s.d maxWeight) atau keyword matching proporsional
+            if (qType === 'essay') {
+                if (manualEssayScore !== undefined && manualEssayScore !== null && manualEssayScore !== '') {
+                    const numericManual = Number(manualEssayScore);
+                    if (Number.isFinite(numericManual)) {
+                        const clampedManual = safeRoundTwoDecimals(Math.min(maxWeight, Math.max(0, numericManual)));
+                        const ratio = maxWeight > 0 ? Math.min(1, Math.max(0, clampedManual / maxWeight)) : 0;
+                        return { status: 'ESSAY', earnedWeight: clampedManual, maxWeight, ratio };
+                    }
+                }
+
+                // Fallback keyword matching jika guru mengisi kata kunci pada Kunci Jawaban
+                const rawKeyStr = String(q.correctAnswer ?? '').trim();
+                if (rawKeyStr && rawKeyStr !== '-') {
+                    const kwSplitRegex = new RegExp('[,;|]+');
+                    const keywords = rawKeyStr.split(kwSplitRegex).map(k => normalizeShortText(k)).filter(Boolean);
+                    if (keywords.length > 0) {
+                        const normStudentEssay = normalizeShortText(userAnswer);
+                        let matchedKw = 0;
+                        keywords.forEach(kw => {
+                            if (kw && normStudentEssay.includes(kw)) matchedKw++;
+                        });
+                        const kwRatio = Math.min(1, Math.max(0, matchedKw / keywords.length));
+                        const kwEarned = safeRoundTwoDecimals(kwRatio * maxWeight);
+                        return { status: 'ESSAY', earnedWeight: kwEarned, maxWeight, ratio: kwRatio };
+                    }
+                }
+
+                return { status: 'ESSAY', earnedWeight: 0, maxWeight, ratio: 0 };
+            }
+
+            return { status: 'WRONG', earnedWeight: 0, maxWeight, ratio: 0 };
+        };
+
+        // 7. Validasi & Normalisasi Total Skor Akhir ke Skala 100 (2 Desimal Bebas Floating-Point Error)
+        window.calculateExamSubmissionScore = function(questionsList, studentAnswersMap, existingEssayScores = {}) {
+            const qArray = Array.isArray(questionsList) ? questionsList : [];
+            const ansMap = (studentAnswersMap && typeof studentAnswersMap === 'object') ? studentAnswersMap : {};
+            const manualMap = (existingEssayScores && typeof existingEssayScores === 'object') ? existingEssayScores : {};
+
+            let totalScoreObtained = 0;
+            let maxPossibleScore = 0;
+            let correctCount = 0;
+            let wrongCount = 0;
+            let emptyCount = 0;
+            let hasEssayQuestion = false;
+            const essayScores = {};
+
+            qArray.forEach(q => {
+                if (!q) return;
+                const qWeight = Math.max(0, Number(q.weight !== undefined ? q.weight : 10) || 0);
+                maxPossibleScore = safeRoundTwoDecimals(maxPossibleScore + qWeight);
+
+                const ans = ansMap[q.id];
+                const hasManual = manualMap[q.id] !== undefined && manualMap[q.id] !== null && manualMap[q.id] !== '';
+                const evalRes = window.evaluateQuestionScore(q, ans, hasManual ? manualMap[q.id] : undefined);
+
+                if (q.type === 'essay') {
+                    hasEssayQuestion = true;
+                    essayScores[q.id] = evalRes.earnedWeight;
+                    if (evalRes.status === 'EMPTY') {
+                        emptyCount++;
+                    } else {
+                        totalScoreObtained = safeRoundTwoDecimals(totalScoreObtained + evalRes.earnedWeight);
+                        if (evalRes.earnedWeight > 0) correctCount++;
+                    }
+                    return;
+                }
+
+                if (evalRes.status === 'EMPTY') {
+                    emptyCount++;
+                } else if (evalRes.status === 'CORRECT' || evalRes.status === 'PARTIAL') {
+                    totalScoreObtained = safeRoundTwoDecimals(totalScoreObtained + evalRes.earnedWeight);
+                    correctCount++;
+                } else {
+                    wrongCount++;
+                }
+            });
+
+            const clampedTotalObtained = Math.min(maxPossibleScore, Math.max(0, totalScoreObtained));
+            const rawFinalScore = maxPossibleScore > 0 ? (clampedTotalObtained / maxPossibleScore) * 100 : 0;
+            const finalScore = safeRoundTwoDecimals(Math.min(100, Math.max(0, rawFinalScore)));
+
+            return {
+                totalScoreObtained: safeRoundTwoDecimals(clampedTotalObtained),
+                maxPossibleScore: safeRoundTwoDecimals(maxPossibleScore),
+                finalScore,
+                correctCount,
+                wrongCount,
+                emptyCount,
+                hasEssayQuestion,
+                essayScores
+            };
+        };
 
         function formatStimulusTextWithBoldLead(rawText) {
             if (!rawText) return '';
@@ -6279,108 +6630,8 @@
                 return;
             }
 
-            let totalScore = 0;
-            let maxScore = 0;
-            let correct = 0;
-            let wrong = 0;
-            let empty = 0;
-            const essayScores = {};
-
-            currentExamQuestions.forEach(q => {
-                maxScore += q.weight;
-                const ans = currentStudentAnswers[q.id];
-                if (ans === undefined || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0)) {
-                    empty++;
-                    return;
-                }
-                if (q.type === 'pg' || q.type === 'short_answer') {
-                    const cleanAns = String(ans).trim().toLowerCase();
-                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                    if (cleanAns === cleanKey) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'true_false') {
-                    const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
-                    const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
-
-                    if (isMultiTF) {
-                        const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
-                        const totalStmts = keyArr.length || opts.length || 1;
-                        let matchedStmts = 0;
-                        for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
-                            const studentVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
-                            const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
-                            const normStudent = (studentVal === 'b' || studentVal === 'benar' || studentVal === 'true') ? 'benar' : (studentVal === 's' || studentVal === 'salah' || studentVal === 'false') ? 'salah' : studentVal;
-                            const normKey = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
-                            if (normStudent && normStudent === normKey) {
-                                matchedStmts++;
-                            }
-                        }
-                        if (matchedStmts === totalStmts) {
-                            totalScore += q.weight;
-                            correct++;
-                        } else if (matchedStmts > 0 && q.partialScoring !== false) {
-                            totalScore += Math.round((matchedStmts / totalStmts) * q.weight);
-                            correct++;
-                        } else {
-                            wrong++;
-                        }
-                    } else {
-                        const cleanAns = String(ans).trim().toLowerCase();
-                        const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
-                        const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                        const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
-                        if (normAns === normKey) {
-                            totalScore += q.weight;
-                            correct++;
-                        } else {
-                            wrong++;
-                        }
-                    }
-                } else if (q.type === 'pg_complex') {
-                    const rawKeys = Array.isArray(q.correctAnswer)
-                        ? q.correctAnswer
-                        : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
-                    const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
-                    const matches = studentArr.filter(k => rawKeys.includes(k)).length;
-                    if (matches === rawKeys.length && studentArr.length === rawKeys.length) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else if (matches > 0 && q.partialScoring !== false) {
-                        const partial = Math.round((matches / (rawKeys.length || 1)) * q.weight);
-                        totalScore += partial;
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'matching') {
-                    const keyMap = q.correctAnswer || {};
-                    const totalPairs = Object.keys(keyMap).length || 1;
-                    let matchPairs = 0;
-                    Object.keys(keyMap).forEach(k => {
-                        if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) {
-                            matchPairs++;
-                        }
-                    });
-                    if (matchPairs === totalPairs) {
-                        totalScore += q.weight;
-                        correct++;
-                    } else if (matchPairs > 0) {
-                        totalScore += Math.round((matchPairs / totalPairs) * q.weight);
-                        correct++;
-                    } else {
-                        wrong++;
-                    }
-                } else if (q.type === 'essay') {
-                    essayScores[q.id] = 0;
-                }
-            });
-
-            const hasEssayQuestion = currentExamQuestions.some(q => q.type === 'essay');
             const clonedAnswers = JSON.parse(JSON.stringify(currentStudentAnswers || {}));
+            const calc = window.calculateExamSubmissionScore(currentExamQuestions, clonedAnswers, {});
 
             appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === currentActiveExam.id));
 
@@ -6395,15 +6646,15 @@
                 classId: student.classId,
                 className: student.className || '4',
                 submittedAt: new Date().toLocaleString('id-ID'),
-                totalScoreObtained: totalScore,
-                maxPossibleScore: maxScore,
-                finalScore: Math.round((totalScore / maxScore) * 100) || 0,
-                correctCount: correct,
-                wrongCount: wrong,
-                emptyCount: empty,
+                totalScoreObtained: calc.totalScoreObtained,
+                maxPossibleScore: calc.maxPossibleScore,
+                finalScore: calc.finalScore,
+                correctCount: calc.correctCount,
+                wrongCount: calc.wrongCount,
+                emptyCount: calc.emptyCount,
                 violationCount: currentViolationCount,
-                essayGradingStatus: hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
-                essayScores,
+                essayGradingStatus: calc.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
+                essayScores: calc.essayScores,
                 answersSnapshot: clonedAnswers
             };
 
@@ -6464,7 +6715,10 @@
         };
 
         function evaluateSingleQuestionForReview(q, ans, resObj) {
-            const isEmpty = ans === undefined || ans === null || ans === '' || (Array.isArray(ans) && ans.length === 0) || (typeof ans === 'object' && !Array.isArray(ans) && Object.keys(ans).length === 0);
+            const manualMap = (resObj && resObj.essayScores && typeof resObj.essayScores === 'object') ? resObj.essayScores : {};
+            const manualScore = (q && q.id && manualMap[q.id] !== undefined) ? manualMap[q.id] : undefined;
+            const scoreRes = window.evaluateQuestionScore(q, ans, manualScore);
+
             const formatVal = (v) => {
                 if (v === undefined || v === null || v === '') return '(Tidak dijawab)';
                 if (Array.isArray(v)) return v.join(', ');
@@ -6494,9 +6748,11 @@
                 return String(k ?? '-');
             };
 
-            if (isEmpty) {
+            if (scoreRes.status === 'EMPTY') {
                 return {
                     status: 'EMPTY',
+                    earnedWeight: 0,
+                    maxWeight: scoreRes.maxWeight,
                     badgeText: 'Tidak Dijawab',
                     badgeClass: 'bg-slate-100 text-slate-600 border-slate-300',
                     cardBorder: 'border-slate-200 bg-slate-50/60',
@@ -6505,50 +6761,15 @@
                 };
             }
 
-            let isCorrect = false;
-            if (q.type === 'pg' || q.type === 'short_answer') {
-                isCorrect = String(ans).trim().toLowerCase() === String(q.correctAnswer).trim().toLowerCase();
-            } else if (q.type === 'true_false') {
-                const opts = Array.isArray(q.options) && q.options.length > 0 ? q.options : ['Benar', 'Salah'];
-                const isMultiTF = Array.isArray(q.correctAnswer) || (opts.length > 2) || (opts.length >= 1 && !['benar', 'salah'].includes(String(opts[0]).trim().toLowerCase()));
-                if (isMultiTF) {
-                    const keyArr = Array.isArray(q.correctAnswer) ? q.correctAnswer : [];
-                    const totalStmts = keyArr.length || opts.length || 1;
-                    let matched = 0;
-                    for (let sIdx = 0; sIdx < totalStmts; sIdx++) {
-                        const sVal = (typeof ans === 'object' && ans !== null) ? String(ans[String(sIdx)] || '').trim().toLowerCase() : '';
-                        const kVal = String(keyArr[sIdx] || '').trim().toLowerCase();
-                        const normS = (sVal === 'b' || sVal === 'benar' || sVal === 'true') ? 'benar' : (sVal === 's' || sVal === 'salah' || sVal === 'false') ? 'salah' : sVal;
-                        const normK = (kVal === 'b' || kVal === 'benar' || kVal === 'true') ? 'benar' : (kVal === 's' || kVal === 'salah' || kVal === 'false') ? 'salah' : kVal;
-                        if (normS && normS === normK) matched++;
-                    }
-                    isCorrect = matched > 0;
-                } else {
-                    const cleanAns = String(ans).trim().toLowerCase();
-                    const normAns = (cleanAns === 'b' || cleanAns === 'benar' || cleanAns === 'true') ? 'benar' : (cleanAns === 's' || cleanAns === 'salah' || cleanAns === 'false') ? 'salah' : cleanAns;
-                    const cleanKey = String(q.correctAnswer).trim().toLowerCase();
-                    const normKey = (cleanKey === 'b' || cleanKey === 'benar' || cleanKey === 'true') ? 'benar' : (cleanKey === 's' || cleanKey === 'salah' || cleanKey === 'false') ? 'salah' : cleanKey;
-                    isCorrect = normAns === normKey;
-                }
-            } else if (q.type === 'pg_complex') {
-                const rawKeys = Array.isArray(q.correctAnswer)
-                    ? q.correctAnswer
-                    : String(q.correctAnswer || '').split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
-                const studentArr = Array.isArray(ans) ? ans.map(x => String(x).trim().toUpperCase()) : [String(ans).trim().toUpperCase()];
-                const matches = studentArr.filter(k => rawKeys.includes(k)).length;
-                isCorrect = (matches === rawKeys.length && studentArr.length === rawKeys.length) || (matches > 0 && q.partialScoring !== false);
-            } else if (q.type === 'matching') {
-                const keyMap = q.correctAnswer || {};
-                let matchPairs = 0;
-                Object.keys(keyMap).forEach(k => {
-                    if (ans[k] && String(ans[k]).trim().toLowerCase() === String(keyMap[k]).trim().toLowerCase()) matchPairs++;
-                });
-                isCorrect = matchPairs > 0;
-            } else if (q.type === 'essay') {
-                const givenScore = (resObj.essayScores && resObj.essayScores[q.id]) ? Number(resObj.essayScores[q.id]) : 0;
+            if (q.type === 'essay') {
+                const isGraded = resObj && resObj.essayGradingStatus === 'Sudah Dinilai';
                 return {
                     status: 'ESSAY',
-                    badgeText: resObj.essayGradingStatus === 'Sudah Dinilai' ? `Skor Uraian: ${givenScore}/${q.weight}` : 'Menunggu Koreksi Guru',
+                    earnedWeight: scoreRes.earnedWeight,
+                    maxWeight: scoreRes.maxWeight,
+                    badgeText: isGraded
+                        ? `Skor Uraian: ${scoreRes.earnedWeight}/${scoreRes.maxWeight}`
+                        : (scoreRes.earnedWeight > 0 ? `Skor Kata Kunci: ${scoreRes.earnedWeight}/${scoreRes.maxWeight}` : 'Menunggu Koreksi Guru'),
                     badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
                     cardBorder: 'border-indigo-200 bg-indigo-50/20',
                     studentAnsText: formatVal(ans),
@@ -6556,11 +6777,21 @@
                 };
             }
 
+            const isCorrectOrPartial = scoreRes.status === 'CORRECT' || scoreRes.status === 'PARTIAL';
+            const badgeText = scoreRes.status === 'CORRECT'
+                ? `Benar (+${scoreRes.earnedWeight})`
+                : (scoreRes.status === 'PARTIAL' ? `Parsial (+${scoreRes.earnedWeight}/${scoreRes.maxWeight})` : 'Salah (0)');
+
             return {
-                status: isCorrect ? 'CORRECT' : 'WRONG',
-                badgeText: isCorrect ? 'Benar' : 'Salah',
-                badgeClass: isCorrect ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-red-100 text-red-700 border-red-300',
-                cardBorder: isCorrect ? 'border-emerald-200 bg-emerald-50/20' : 'border-red-200 bg-red-50/20',
+                status: isCorrectOrPartial ? 'CORRECT' : 'WRONG',
+                rawStatus: scoreRes.status,
+                earnedWeight: scoreRes.earnedWeight,
+                maxWeight: scoreRes.maxWeight,
+                badgeText,
+                badgeClass: scoreRes.status === 'CORRECT'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : (scoreRes.status === 'PARTIAL' ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-red-100 text-red-700 border-red-300'),
+                cardBorder: isCorrectOrPartial ? 'border-emerald-200 bg-emerald-50/20' : 'border-red-200 bg-red-50/20',
                 studentAnsText: formatVal(ans),
                 correctKeyText: formatKey()
             };
