@@ -5216,11 +5216,28 @@
         };
 
         function renderParticipantsContent(container) {
-            const activeExamId = (appData.filters.participantExam && appData.filters.participantExam !== 'ALL')
-                ? appData.filters.participantExam
-                : (appData.exams[0] ? appData.exams[0].id : '');
+            const isExamOngoingNow = (ex) => {
+                if (!ex) return false;
+                const activeAndInSchedule = isExamStrictlyActive(ex) && checkExamScheduleAccess(ex).allowed;
+                const hasRunningSession = (appData.examSessions || []).some(ss => ss.examId === ex.id && ss.status === 'IN_PROGRESS');
+                const hasRunningParticipant = (appData.examParticipants || []).some(p => p.examId === ex.id && p.status === 'Sedang Mengerjakan');
+                return activeAndInSchedule || hasRunningSession || hasRunningParticipant;
+            };
 
-            const examOptions = appData.exams.map(e => `<option value="${escapeHtml(e.id)}" ${e.id === activeExamId ? 'selected' : ''}>${escapeHtml(e.examName)} (Kelas ${escapeHtml(getClassNameById(e.classId))})</option>`).join('');
+            const defaultOngoingExam = appData.exams.find(e => isExamOngoingNow(e));
+            const activeExamId = (appData.filters.participantExam && appData.filters.participantExam !== 'ALL' && appData.exams.some(e => e.id === appData.filters.participantExam))
+                ? appData.filters.participantExam
+                : (defaultOngoingExam ? defaultOngoingExam.id : (appData.exams[0] ? appData.exams[0].id : ''));
+
+            const selectedExamObj = appData.exams.find(e => e.id === activeExamId) || null;
+            const isSelectedExamOngoing = isExamOngoingNow(selectedExamObj);
+
+            const examOptions = appData.exams.map(e => {
+                const ongoing = isExamOngoingNow(e);
+                const ongoingLabel = ongoing ? ' — Ujian Sedang Berlangsung' : '';
+                const prefixIcon = ongoing ? '🟢 ' : '';
+                return `<option value="${escapeHtml(e.id)}" ${e.id === activeExamId ? 'selected' : ''}>${prefixIcon}${escapeHtml(e.examName)} (Kelas ${escapeHtml(getClassNameById(e.classId))})${ongoingLabel}</option>`;
+            }).join('');
 
             const rows = appData.students.map((s, idx) => {
                 const res = appData.examResults.find(r => r.studentId === s.id && (!activeExamId || r.examId === activeExamId));
@@ -5272,11 +5289,12 @@
                             <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
                                 <i class="fa-solid fa-rotate"></i> Reset Semua Sesi
                             </button>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <label class="text-xs font-bold text-slate-600">Paket Ujian:</label>
-                                <select onchange="window.filterParticipantExam(this.value)" class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800">
+                                <select onchange="window.filterParticipantExam(this.value)" class="px-3 py-1.5 ${isSelectedExamOngoing ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950' : 'bg-slate-50 border-slate-200 text-slate-800'} border rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500">
                                     ${examOptions || '<option value="">Belum Ada Paket Ujian</option>'}
                                 </select>
+                                ${isSelectedExamOngoing ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[11px] font-extrabold"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span> Ujian Sedang Berlangsung</span>` : ''}
                             </div>
                         </div>
                     </div>
