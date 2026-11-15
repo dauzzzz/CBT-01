@@ -6070,8 +6070,8 @@
                     const remoteData = snap.data();
                     if (remoteData.status === 'SUBMITTED') {
                         window.stopAllExamTimersAndWatchers();
-                        window.showModal('Ujian Telah Dikirim', 'Sesi ujian ini telah diselesaikan dan dikirim dari perangkat Anda yang lain.', 'info', () => {
-                            window.renderStudentPortal(false);
+                        window.logoutApp().then(() => {
+                            window.showModal('Ujian Telah Dikirim & Otomatis Keluar', 'Sesi ujian ini telah diselesaikan dan dikirim. Akun Anda telah dikeluarkan (Logout) secara otomatis.', 'success');
                         });
                         return;
                     }
@@ -6578,9 +6578,7 @@
                 if (remainingSeconds <= 0) {
                     clearInterval(examTimerInterval);
                     window.stopAllExamTimersAndWatchers();
-                    window.showModal('Waktu Habis', 'Waktu pengerjaan ujian telah berakhir. Jawaban Anda otomatis dikirim.', 'info', () => {
-                        window.submitExamFinal();
-                    });
+                    window.submitExamFinal(true);
                 }
             }, 1000);
 
@@ -6983,12 +6981,12 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur === letter;
                     return `
-                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="flex items-center justify-between gap-3.5 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
-                                <span class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-extrabold ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-sm font-medium text-slate-800">${escapeHtml(String(opt).trim())}</span>
+                                <span class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
+                                <span class="text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
                             </div>
-                            <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center ${selected ? 'border-blue-600' : 'border-slate-300'}">
+                            <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'border-blue-600' : 'border-slate-300'}">
                                 ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
                             </span>
                         </label>
@@ -7001,12 +6999,12 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur.includes(letter);
                     return `
-                        <label class="flex items-center justify-between gap-3 p-3.5 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label class="flex items-center justify-between gap-3.5 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
-                                <span class="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-extrabold ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-sm font-medium text-slate-800">${escapeHtml(String(opt).trim())}</span>
+                                <span class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
+                                <span class="text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
                             </div>
-                            <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300">
+                            <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300 shrink-0">
                         </label>
                     `;
                 }).filter(Boolean).join('');
@@ -7024,16 +7022,16 @@
                     const isSalah = chosen === 'Salah';
                     return `
                         <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition">
-                            <td class="p-4 text-xs sm:text-sm font-medium text-slate-800 leading-relaxed">
+                            <td class="p-4 text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed">
                                 <strong class="text-indigo-700 mr-1.5">${letter}.</strong> ${escapeHtml(stmt)}
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
-                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2 px-3 rounded-xl text-xs font-extrabold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
                                     Benar
                                 </button>
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
-                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2 px-3 rounded-xl text-xs font-extrabold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
                                     Salah
                                 </button>
                             </td>
@@ -7067,9 +7065,9 @@
                     const selectedVal = curObj[String(idx)] || '';
                     const optsHtml = rightOptions.map(ro => `<option value="${escapeHtml(ro)}" ${selectedVal === ro ? 'selected' : ''}>${escapeHtml(ro)}</option>`).join('');
                     return `
-                        <div class="p-3.5 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <span class="text-xs font-semibold text-slate-800">${idx + 1}. ${escapeHtml(p.left)}</span>
-                            <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-blue-700">
+                        <div class="p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <span class="text-[15px] sm:text-[16.5px] font-semibold text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
+                            <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-[14.5px] sm:text-[15.5px] font-bold text-blue-700">
                                 <option value="">-- Pilih Pasangan --</option>
                                 ${optsHtml}
                             </select>
@@ -7078,10 +7076,10 @@
                 }).join('');
             } else if (q.type === 'short_answer') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16.5px] font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">`;
             } else if (q.type === 'essay') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
+                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
             }
 
             const isCurrentDoubtful = !!currentDoubtfulMap[q.id];
@@ -7182,7 +7180,7 @@
 
                             <div class="p-6 flex-1 overflow-y-auto custom-scrollbar space-y-5">
                                 <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
-                                    <p class="text-base sm:text-lg font-extrabold text-slate-900 leading-relaxed">
+                                    <p class="text-[17px] sm:text-[19px] font-extrabold text-slate-900 leading-relaxed">
                                         ${escapeHtml(q.questionText)}
                                     </p>
                                     ${hasQuestionImg ? `
@@ -7363,13 +7361,13 @@
 
             window.showModal('Konfirmasi Selesai Ujian', '', 'info', (confirmed) => {
                 if (confirmed) {
-                    window.submitExamFinal();
+                    window.submitExamFinal(false);
                 }
                 return true;
             }, { html, showCancel: true, okText: 'Ya, Kirim Jawaban!' });
         };
 
-        window.submitExamFinal = async function() {
+        window.submitExamFinal = async function(isAutoTimeout = false) {
             if (isSubmittingFinalExam) return;
             isSubmittingFinalExam = true;
             window.stopAllExamTimersAndWatchers();
@@ -7383,7 +7381,7 @@
             const verification = await verifyExamEligibilityFromServer(currentActiveExam.id, student);
             if (!verification.allowed) {
                 isSubmittingFinalExam = false;
-                window.renderStudentPortal(false);
+                await window.logoutApp();
                 window.showModal('Ujian Telah Ditutup', verification.message, 'error');
                 return;
             }
@@ -7393,14 +7391,14 @@
             const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
             if (cloudSess && cloudSess.status === 'SUBMITTED') {
                 isSubmittingFinalExam = false;
-                window.showModal('Sudah Terkirim', 'Ujian Anda telah dikirim sebelumnya.', 'info');
-                window.renderStudentPortal(false);
+                await window.logoutApp();
+                window.showModal('Sudah Terkirim & Otomatis Keluar', 'Ujian Anda telah dikirim sebelumnya dan akun Anda telah dikeluarkan secara otomatis.', 'info');
                 return;
             }
             if (cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
                 isSubmittingFinalExam = false;
+                await window.logoutApp();
                 window.showModal('Sesi Tidak Valid', 'Sesi ujian ini sedang aktif pada perangkat lain. Pengiriman hanya dapat dilakukan dari perangkat terbaru.', 'error');
-                window.renderStudentPortal(false);
                 return;
             }
 
@@ -7408,6 +7406,10 @@
             const calc = window.calculateExamSubmissionScore(currentExamQuestions, clonedAnswers, {});
 
             appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === currentActiveExam.id));
+
+            const submittedTimeLabel = isAutoTimeout
+                ? new Date().toLocaleString('id-ID') + ' (Auto-Submit Waktu Habis)'
+                : new Date().toLocaleString('id-ID');
 
             const resultObj = {
                 resultId: 'RES-' + student.studentId + '-' + currentActiveExam.id,
@@ -7419,7 +7421,7 @@
                 studentName: student.name,
                 classId: student.classId,
                 className: student.className || '4',
-                submittedAt: new Date().toLocaleString('id-ID'),
+                submittedAt: submittedTimeLabel,
                 totalScoreObtained: calc.totalScoreObtained,
                 maxPossibleScore: calc.maxPossibleScore,
                 finalScore: calc.finalScore,
@@ -7473,11 +7475,24 @@
             }
             await syncCollectionRecord('examParticipants', p.id, p);
 
+            const finishedExamName = currentActiveExam.examName;
+            const finishedStudentName = student.name;
             isSubmittingFinalExam = false;
-            isViewingResultReview = true;
-            logActivity(`Siswa ${student.name} menyelesaikan ujian ${currentActiveExam.examName}.`);
-            await window.exitStudentFullscreen();
-            window.renderExamResultReviewPage(resultObj);
+            isExamWorkspaceActive = false;
+            currentActiveExam = null;
+            currentExamQuestions = [];
+            logActivity(`Siswa ${finishedStudentName} menyelesaikan ujian ${finishedExamName} dan otomatis logout.`);
+
+            // Otomatis keluar dari mode Fullscreen dan langsung Logout akun siswa kembali ke layar Login
+            await window.logoutApp();
+
+            window.showModal(
+                isAutoTimeout ? 'Waktu Habis & Otomatis Keluar' : 'Ujian Selesai & Otomatis Keluar',
+                isAutoTimeout
+                    ? `Waktu pengerjaan ujian "${finishedExamName}" telah habis. Seluruh jawaban Anda telah berhasil disimpan secara otomatis dan akun Anda telah dikeluarkan (Logout). Terima kasih!`
+                    : `Jawaban ujian "${finishedExamName}" Anda telah berhasil dikirim dan disimpan ke server. Akun Anda telah dikeluarkan (Logout) secara otomatis. Terima kasih!`,
+                'success'
+            );
         };
 
         window.openSavedExamResultReview = function(resultId) {
