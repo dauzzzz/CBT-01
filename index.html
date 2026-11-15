@@ -22,18 +22,22 @@
                             secondary: '#8b5cf6',
                             accent: '#3b82f6'
                         }
+                    },
+                    fontFamily: {
+                        poppins: ['Poppins', 'sans-serif']
                     }
                 }
             }
         }
     </script>
-    <!-- Font Inter & FontAwesome -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Inter, Poppins & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- SheetJS untuk baca/tulis file Excel (.xlsx) murni -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
+        .font-poppins { font-family: 'Poppins', sans-serif; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -6984,7 +6988,7 @@
             return lines.map(line => {
                 if (!firstNonEmptyFormatted && line.trim() !== '') {
                     firstNonEmptyFormatted = true;
-                    return `<strong class="font-bold text-slate-900 text-base sm:text-[17px]">${escapeHtml(line)}</strong>`;
+                    return `<strong class="font-poppins font-semibold text-slate-900 text-[16px] sm:text-[17.5px]">${escapeHtml(line)}</strong>`;
                 }
                 return escapeHtml(line);
             }).join('\n');
@@ -7006,13 +7010,13 @@
                 if (isAns) answeredTotal++;
                 if (isDoubt) doubtfulTotal++;
 
-                let btnStyle = 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 font-bold';
+                let btnStyle = 'bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 font-poppins font-semibold';
                 if (idx === currentQuestionIndex) {
-                    btnStyle = 'bg-white text-slate-900 font-extrabold border-2 border-blue-600 ring-2 ring-blue-100 shadow-xs';
+                    btnStyle = 'bg-white text-slate-900 font-poppins font-semibold border-2 border-blue-600 ring-2 ring-blue-100 shadow-xs';
                 } else if (isDoubt) {
-                    btnStyle = 'bg-amber-400 text-slate-950 font-extrabold border border-amber-500';
+                    btnStyle = 'bg-amber-400 text-slate-950 font-poppins font-semibold border border-amber-500';
                 } else if (isAns) {
-                    btnStyle = 'bg-blue-600 text-white font-extrabold border border-blue-700';
+                    btnStyle = 'bg-blue-600 text-white font-poppins font-semibold border border-blue-700';
                 }
                 return `<button type="button" onclick="window.jumpToQuestion(${idx})" class="h-9 rounded-xl text-xs flex items-center justify-center transition cursor-pointer ${btnStyle}">${idx + 1}</button>`;
             }).join('');
@@ -7025,10 +7029,10 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur === letter;
                     return `
-                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
-                                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
+                                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
+                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
                             </div>
                             <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'border-blue-600' : 'border-slate-300'}">
                                 ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
@@ -7043,10 +7047,10 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur.includes(letter);
                     return `
-                        <label class="flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
-                                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
+                                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
+                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
                             </div>
                             <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300 shrink-0">
                         </label>
@@ -7065,17 +7069,17 @@
                     const isBenar = chosen === 'Benar';
                     const isSalah = chosen === 'Salah';
                     return `
-                        <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition">
-                            <td class="p-4 text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">
-                                <strong class="text-indigo-700 mr-1.5">${letter}.</strong> ${escapeHtml(stmt)}
+                        <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition font-poppins">
+                            <td class="p-4 font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">
+                                <strong class="font-semibold text-indigo-700 mr-1.5">${letter}.</strong> ${escapeHtml(stmt)}
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
-                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-poppins font-semibold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
                                     Benar
                                 </button>
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
-                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-poppins font-semibold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
                                     Salah
                                 </button>
                             </td>
@@ -7084,10 +7088,10 @@
                 }).join('');
 
                 answerInputHtml = `
-                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+                    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs font-poppins">
                         <table class="w-full text-left border-collapse">
                             <thead>
-                                <tr class="bg-slate-100 border-b border-slate-200 text-[11px] font-extrabold text-slate-600 uppercase tracking-wider">
+                                <tr class="bg-slate-100 border-b border-slate-200 text-[11px] font-poppins font-medium text-slate-600 uppercase tracking-wider">
                                     <th class="p-4">Pernyataan</th>
                                     <th class="p-3 text-center w-24 sm:w-32">Benar</th>
                                     <th class="p-3 text-center w-24 sm:w-32">Salah</th>
@@ -7109,9 +7113,9 @@
                     const selectedVal = curObj[String(idx)] || '';
                     const optsHtml = rightOptions.map(ro => `<option value="${escapeHtml(ro)}" ${selectedVal === ro ? 'selected' : ''}>${escapeHtml(ro)}</option>`).join('');
                     return `
-                        <div class="p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <span class="text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
-                            <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm sm:text-[15.5px] font-bold text-blue-700">
+                        <div class="font-poppins p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
+                            <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm sm:text-[15px] font-poppins font-normal text-blue-700">
                                 <option value="">-- Pilih Pasangan --</option>
                                 ${optsHtml}
                             </select>
@@ -7120,10 +7124,10 @@
                 }).join('');
             } else if (q.type === 'short_answer') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15.5px] sm:text-[17px] font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="font-poppins font-normal w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16px] focus:outline-none focus:ring-2 focus:ring-blue-500">`;
             } else if (q.type === 'essay') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15.5px] sm:text-[17px] font-medium leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
+                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="font-poppins font-normal w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
             }
 
             const isCurrentDoubtful = !!currentDoubtfulMap[q.id];
@@ -7132,21 +7136,21 @@
             const hasQuestionImg = Boolean(q.questionImage && q.questionImage.trim());
 
             container.innerHTML = `
-                <div class="flex-1 flex flex-col h-full bg-slate-100 overflow-hidden select-none">
+                <div class="flex-1 flex flex-col h-full bg-slate-100 overflow-hidden select-none font-poppins">
                     <header class="min-h-16 bg-[#0f172a] text-white px-4 lg:px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 shrink-0 border-b border-slate-800">
                         <div class="flex items-center gap-3">
                             <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo" class="w-10 h-10 rounded-xl bg-white object-contain p-0.5 shadow-md shrink-0">
                             <div>
                                 <div class="flex items-center gap-2">
-                                    <h2 class="text-sm font-extrabold tracking-wide uppercase">${escapeHtml(currentActiveExam.examName)}</h2>
-                                    <span class="hidden sm:inline-block px-2.5 py-0.5 bg-blue-900/80 text-blue-200 border border-blue-700/60 rounded-full text-[10px] font-bold">${escapeHtml(getSubjectNameById(currentActiveExam.subjectId))}</span>
+                                    <h2 class="text-sm font-poppins font-medium tracking-wide uppercase">${escapeHtml(currentActiveExam.examName)}</h2>
+                                    <span class="hidden sm:inline-block px-2.5 py-0.5 bg-blue-900/80 text-blue-200 border border-blue-700/60 rounded-full text-[10px] font-poppins font-medium">${escapeHtml(getSubjectNameById(currentActiveExam.subjectId))}</span>
                                 </div>
-                                <p class="text-[11px] text-slate-400">Platform Ujian dan Evaluasi Pembelajaran • <strong class="text-slate-200">${escapeHtml(appData.settings.schoolName)}</strong></p>
+                                <p class="text-[11px] text-slate-400">Platform Ujian dan Evaluasi Pembelajaran • <strong class="text-slate-200 font-medium">${escapeHtml(appData.settings.schoolName)}</strong></p>
                             </div>
                         </div>
 
                         <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                            <div class="px-3.5 py-1.5 rounded-xl bg-amber-950/90 border border-amber-600/60 text-amber-400 text-xs font-extrabold flex items-center gap-2 shadow-xs" title="Jumlah keluar dari tab/jendela ujian">
+                            <div class="px-3.5 py-1.5 rounded-xl bg-amber-950/90 border border-amber-600/60 text-amber-400 text-xs font-poppins font-semibold flex items-center gap-2 shadow-xs" title="Jumlah keluar dari tab/jendela ujian">
                                 <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
                                 <span id="examViolationCounter">Pelanggaran: ${currentViolationCount}x</span>
                             </div>
@@ -7156,21 +7160,21 @@
                                     <i class="fa-solid fa-user-check"></i>
                                 </div>
                                 <div class="leading-tight">
-                                    <p class="text-xs font-extrabold text-white flex items-center gap-2">
+                                    <p class="text-xs font-poppins font-medium text-white flex items-center gap-2">
                                         <span>${escapeHtml(student.name)}</span>
-                                        <span class="text-indigo-300 font-bold">•</span>
-                                        <span class="text-cyan-300 font-extrabold uppercase tracking-wide">${escapeHtml(appData.settings.schoolName)}</span>
+                                        <span class="text-indigo-300">•</span>
+                                        <span class="text-cyan-300 font-medium uppercase tracking-wide">${escapeHtml(appData.settings.schoolName)}</span>
                                     </p>
                                     <p class="text-[10px] text-slate-300">Kelas ${escapeHtml(student.className || '4')} • NISN: ${escapeHtml(student.nisn)}</p>
                                 </div>
                             </div>
 
-                            <div class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-mono font-extrabold text-sm flex items-center gap-2 shadow-md">
+                            <div class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-mono font-semibold text-sm flex items-center gap-2 shadow-md">
                                 <i class="fa-regular fa-clock"></i>
                                 <span id="examCountdownTimer">${formatHMS(remainingSeconds)}</span>
                             </div>
 
-                            <button type="button" onclick="window.toggleStudentFullscreen()" class="student-fullscreen-toggle-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer" title="Mode Layar Penuh">
+                            <button type="button" onclick="window.toggleStudentFullscreen()" class="student-fullscreen-toggle-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-poppins font-semibold flex items-center gap-1.5 transition cursor-pointer" title="Mode Layar Penuh">
                                 <i class="fa-solid ${window.isDocumentFullscreen() ? 'fa-compress' : 'fa-expand'}"></i>
                                 <span class="hidden sm:inline">${window.isDocumentFullscreen() ? 'Layar Penuh Aktif' : 'Layar Penuh'}</span>
                             </button>
@@ -7180,17 +7184,17 @@
                     <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-y-auto lg:overflow-hidden bg-slate-50">
                         <section class="lg:col-span-5 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col lg:h-full lg:overflow-hidden">
                             <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
-                                <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-600 flex items-center gap-2">
+                                <h3 class="text-xs font-poppins font-medium uppercase tracking-wider text-slate-600 flex items-center gap-2">
                                     <i class="fa-solid fa-book-open text-blue-600"></i> PANEL STIMULUS & INFORMASI
                                 </h3>
                             </div>
                             <div class="p-4 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4">
-                                ${hasStimulusText ? `<div class="p-5 sm:p-6 rounded-xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 text-[15px] sm:text-[16.5px] leading-relaxed whitespace-pre-line shadow-2xs">${formatStimulusTextWithBoldLead(q.stimulusText)}</div>` : ''}
+                                ${hasStimulusText ? `<div class="p-5 sm:p-6 rounded-xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-2xs">${formatStimulusTextWithBoldLead(q.stimulusText)}</div>` : ''}
                                 ${hasStimulusImg ? `
                                     <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2.5">
-                                        <div class="flex items-center justify-between text-xs text-slate-600 font-bold px-1">
+                                        <div class="flex items-center justify-between text-xs text-slate-600 font-poppins font-medium px-1">
                                             <span><i class="fa-regular fa-image text-blue-600 mr-1"></i> Gambar Stimulus</span>
-                                            <button type="button" onclick="window.previewZoomImage('${escapeHtml(q.stimulusImage)}', 'Gambar Stimulus Soal Nomor ${currentQuestionIndex + 1}')" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-extrabold transition cursor-pointer">
+                                            <button type="button" onclick="window.previewZoomImage('${escapeHtml(q.stimulusImage)}', 'Gambar Stimulus Soal Nomor ${currentQuestionIndex + 1}')" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-poppins font-semibold transition cursor-pointer">
                                                 <i class="fa-solid fa-magnifying-glass-plus mr-1"></i> Perbesar Gambar
                                             </button>
                                         </div>
@@ -7200,8 +7204,8 @@
                                 ${(!hasStimulusText && !hasStimulusImg) ? `
                                     <div class="p-6 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
                                         <i class="fa-regular fa-file-lines text-slate-400 text-2xl"></i>
-                                        <p class="text-sm font-bold text-slate-600">Tidak Ada Wacana / Gambar Stimulus</p>
-                                        <p class="text-xs text-slate-400">Perhatikan langsung pertanyaan pada panel tengah untuk menjawab soal.</p>
+                                        <p class="text-sm font-poppins font-medium text-slate-600">Tidak Ada Wacana / Gambar Stimulus</p>
+                                        <p class="text-xs font-poppins font-normal text-slate-400">Perhatikan langsung pertanyaan pada panel tengah untuk menjawab soal.</p>
                                     </div>
                                 ` : ''}
                             </div>
@@ -7210,21 +7214,21 @@
                         <section class="lg:col-span-5 bg-slate-50/70 flex flex-col lg:h-full lg:overflow-hidden">
                             <div class="px-6 py-3.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
                                 <div class="flex items-center gap-2">
-                                    <span class="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white text-xs font-extrabold shadow-xs">
+                                    <span class="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white text-xs sm:text-sm font-poppins font-medium shadow-xs">
                                         Soal Nomor ${currentQuestionIndex + 1}
                                     </span>
-                                    <span class="px-3 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold">
+                                    <span class="px-3 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-xs sm:text-sm font-poppins font-medium">
                                         ${escapeHtml(getQuestionTypeBadgeLabel(q.type))}
                                     </span>
                                 </div>
-                                <div class="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-extrabold flex items-center gap-1.5">
+                                <div class="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs sm:text-sm font-poppins font-medium flex items-center gap-1.5">
                                     <i class="fa-solid fa-star text-amber-400"></i> Bobot: ${q.weight} Poin
                                 </div>
                             </div>
 
                             <div class="p-6 flex-1 overflow-y-auto custom-scrollbar space-y-5">
                                 <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
-                                    <p class="text-[18px] sm:text-[20px] font-extrabold text-slate-900 leading-relaxed">
+                                    <p class="font-poppins font-normal text-[17px] sm:text-[18.5px] text-slate-900 leading-relaxed">
                                         ${escapeHtml(q.questionText)}
                                     </p>
                                     ${hasQuestionImg ? `
@@ -7234,7 +7238,7 @@
                                     ` : ''}
                                 </div>
 
-                                <div class="flex items-center gap-2 text-xs font-bold text-slate-500 px-1">
+                                <div class="flex items-center gap-2 text-xs sm:text-[13px] font-poppins font-medium text-slate-500 px-1">
                                     <i class="fa-solid fa-circle-dot text-blue-600"></i>
                                     <span>${escapeHtml(getQuestionInstructionText(q.type))}</span>
                                 </div>
@@ -7245,13 +7249,13 @@
                             </div>
 
                             <div class="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
-                                <button type="button" onclick="window.prevQuestion()" ${currentQuestionIndex === 0 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"'}>
+                                <button type="button" onclick="window.prevQuestion()" ${currentQuestionIndex === 0 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 cursor-pointer"'}>
                                     <i class="fa-solid fa-arrow-left"></i> Sebelumnya
                                 </button>
-                                <button type="button" onclick="window.toggleDoubtful('${q.id}')" class="px-5 py-2.5 ${isCurrentDoubtful ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300' : 'bg-amber-400 hover:bg-amber-500 text-slate-950'} rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
+                                <button type="button" onclick="window.toggleDoubtful('${q.id}')" class="px-5 py-2.5 ${isCurrentDoubtful ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300' : 'bg-amber-400 hover:bg-amber-500 text-slate-950'} rounded-xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
                                     <i class="fa-solid fa-flag"></i> ${isCurrentDoubtful ? 'Ragu-Ragu (Aktif)' : 'Ragu-Ragu'}
                                 </button>
-                                <button type="button" onclick="window.nextQuestion()" ${currentQuestionIndex === currentExamQuestions.length - 1 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-xl text-xs font-bold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition flex items-center gap-1.5 shadow-sm cursor-pointer"'}>
+                                <button type="button" onclick="window.nextQuestion()" ${currentQuestionIndex === currentExamQuestions.length - 1 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer"'}>
                                     Selanjutnya <i class="fa-solid fa-arrow-right"></i>
                                 </button>
                             </div>
@@ -7260,11 +7264,11 @@
                         <aside class="lg:col-span-2 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between lg:h-full lg:overflow-hidden">
                             <div class="p-3.5 flex-1 overflow-y-auto custom-scrollbar space-y-3">
                                 <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                                    <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                    <h3 class="text-[11px] font-poppins font-medium uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                                         <i class="fa-solid fa-grip text-blue-600"></i> PENJELAJAH SOAL
                                     </h3>
                                 </div>
-                                <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] font-bold text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200/70">
+                                <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] font-poppins font-normal text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200/70">
                                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-600 inline-block"></span> Dijawab</div>
                                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Ragu</div>
                                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-200 border border-slate-300 inline-block"></span> Belum</div>
@@ -7274,11 +7278,11 @@
                                 </div>
                             </div>
                             <div class="p-3.5 bg-slate-50/70 border-t border-slate-200 space-y-2.5 shrink-0">
-                                <div class="flex items-center justify-between text-[11px] font-bold">
-                                    <span class="text-slate-600">Terjawab: <strong id="answeredCounterText" class="text-blue-600">${answeredTotal}</strong>/${currentExamQuestions.length}</span>
-                                    <span class="text-amber-600">Ragu: <strong id="doubtfulCounterText">${doubtfulTotal}</strong></span>
+                                <div class="flex items-center justify-between text-[11px] font-poppins font-medium">
+                                    <span class="text-slate-600">Terjawab: <strong id="answeredCounterText" class="text-blue-600 font-semibold">${answeredTotal}</strong>/${currentExamQuestions.length}</span>
+                                    <span class="text-amber-600">Ragu: <strong id="doubtfulCounterText" class="font-semibold">${doubtfulTotal}</strong></span>
                                 </div>
-                                <button type="button" onclick="window.confirmSubmitExam()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-extrabold text-xs shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                <button type="button" onclick="window.confirmSubmitExam()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-poppins font-semibold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer">
                                     <i class="fa-solid fa-paper-plane"></i> Kirim & Selesai
                                 </button>
                             </div>
