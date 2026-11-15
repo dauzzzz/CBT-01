@@ -1602,9 +1602,12 @@
                     <div class="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Manajemen Data Siswa</h3>
-                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, reset kunci login perangkat, hapus massal, dan impor/ekspor Excel (.xlsx).</p>
+                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, reset kunci login perangkat, hapus massal, cetak kartu ujian, dan impor/ekspor Excel (.xlsx).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" onclick="window.openPrintExamCardsModal()" ${filteredStudents.length > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${filteredStudents.length > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition" title="Cetak Kartu Peserta Ujian Siswa">
+                                <i class="fa-solid fa-id-card mr-1"></i> Cetak Kartu Ujian (${selectedCount > 0 ? selectedCount + ' Terpilih' : filteredStudents.length + ' Siswa'})
+                            </button>
                             <button type="button" onclick="window.unlockAllStudentsLogin()" class="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition cursor-pointer" title="Bebaskan kunci login seluruh akun siswa">
                                 <i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Semua Login
                             </button>
@@ -2040,6 +2043,367 @@
                 },
                 { showCancel: true, okText: 'Ya, Reset Semua Login' }
             );
+        };
+
+        // ============================================================================
+        // FITUR CETAK KARTU UJIAN SISWA (KUSTOMISASI MANUAL KETERANGAN, JADWAL & RUANG)
+        // ============================================================================
+        let examCardConfigCache = {
+            examTitle: 'KARTU PESERTA UJIAN SEKOLAH / SUMATIF AKHIR SEMESTER (SAS)',
+            examSubtitle: 'PELAKSANAAN ASESMEN BERBASIS KOMPUTER (CBT)',
+            academicYear: '',
+            roomName: 'Ruang 01 (Lab Komputer / Ruang Kelas)',
+            sessionInfo: 'Sesi 1 (07.30 - 09.30 WIB)',
+            defaultPinDisplay: '123456',
+            paperSize: 'A4',
+            showScheduleTable: true,
+            scheduleText: '',
+            signCityDate: '',
+            signRole: 'Kepala Sekolah / Ketua Panitia,',
+            signName: '_______________________',
+            signNip: 'NIP. ...............................'
+        };
+
+        function buildDefaultScheduleLinesFromExams() {
+            if (!Array.isArray(appData.exams) || appData.exams.length === 0) {
+                return [
+                    'Senin | 07:30 - 09:00 WIB | Bahasa Indonesia',
+                    'Selasa | 07:30 - 09:00 WIB | Matematika',
+                    'Rabu | 07:30 - 09:00 WIB | IPAS / PPKn'
+                ].join('\n');
+            }
+            return appData.exams.map(ex => {
+                const subName = getSubjectNameById(ex.subjectId) || ex.examName;
+                const sDate = formatIsoToDDMMYYYY(parseDDMMYYYYToIso(ex.startDate) || getTodayIsoWIB());
+                const sTime = normalizeTimeHHMM(ex.startTime, '07:30');
+                const eTime = normalizeTimeHHMM(ex.endTime, '09:30');
+                return `${sDate} | ${sTime} - ${eTime} WIB | ${ex.examName} (${subName})`;
+            }).join('\n');
+        }
+
+        window.applyExamCardTitlePreset = function(presetText) {
+            const el = document.getElementById('cardCfgExamTitle');
+            if (el && presetText) el.value = presetText;
+        };
+
+        window.pullScheduleFromActiveExamsToCard = function() {
+            const el = document.getElementById('cardCfgScheduleText');
+            if (el) {
+                el.value = buildDefaultScheduleLinesFromExams();
+            }
+        };
+
+        window.openPrintExamCardsModal = function(sourceContext = 'students') {
+            const search = (appData.filters.studentSearch || '').toLowerCase();
+            const filterCls = appData.filters.studentClass || 'ALL';
+
+            const filteredStudents = appData.students.filter(s => {
+                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
+                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+                return matchSearch && matchCls;
+            });
+
+            const selectedList = appData.students.filter(s => selectedStudentIds.has(s.id));
+            const defaultTargetMode = selectedList.length > 0 ? 'SELECTED' : 'FILTERED';
+
+            if (!examCardConfigCache.academicYear) {
+                examCardConfigCache.academicYear = `Tahun Pelajaran ${appData.settings.academicYear || '2026/2027'} • Semester ${appData.settings.semester || 'Ganjil'}`;
+            }
+            if (!examCardConfigCache.scheduleText) {
+                examCardConfigCache.scheduleText = buildDefaultScheduleLinesFromExams();
+            }
+            if (!examCardConfigCache.signCityDate) {
+                examCardConfigCache.signCityDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+            }
+
+            const html = `
+                <div class="space-y-4 text-xs">
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-blue-900">
+                        <p class="font-extrabold flex items-center gap-1.5 text-blue-800">
+                            <i class="fa-solid fa-id-card"></i> Pengaturan Cetak Kartu Peserta Ujian Siswa
+                        </p>
+                        <p class="text-[11px] text-blue-700 mt-0.5">
+                            Seluruh keterangan judul ujian, ruang, sesi, dan jadwal di bawah ini dapat diubah manual sesuai kebutuhan sekolah. Data peserta otomatis mengikuti Data Siswa.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                            <input type="radio" name="cardPrintTargetMode" value="FILTERED" ${defaultTargetMode === 'FILTERED' ? 'checked' : ''} class="mt-0.5 text-indigo-600">
+                            <div>
+                                <span class="font-extrabold text-slate-900 block">Cetak Siswa Sesuai Filter (${filteredStudents.length} Siswa)</span>
+                                <span class="text-[10px] text-slate-500">Mencetak seluruh siswa yang tampil saat ini.</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 ${selectedList.length === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}">
+                            <input type="radio" name="cardPrintTargetMode" value="SELECTED" ${defaultTargetMode === 'SELECTED' ? 'checked' : ''} ${selectedList.length === 0 ? 'disabled' : ''} class="mt-0.5 text-indigo-600">
+                            <div>
+                                <span class="font-extrabold text-slate-900 block">Hanya Siswa Terpilih (${selectedList.length} Dicentang)</span>
+                                <span class="text-[10px] text-slate-500">Hanya mencetak siswa yang dicentang pada tabel Data Siswa.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="space-y-3 border-t border-slate-200 pt-3">
+                        <div>
+                            <div class="flex flex-wrap items-center justify-between gap-1 mb-1">
+                                <label class="font-bold text-slate-700">Judul / Keterangan Ujian (Bisa Diubah Manual) *</label>
+                                <div class="flex flex-wrap gap-1">
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA SUMATIF AKHIR SEMESTER (SAS)')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">SAS</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA SUMATIF TENGAH SEMESTER (STS)')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">STS / PTS</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA SUMATIF AKHIR TAHUN (SAT)')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">SAT</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA UJIAN SEKOLAH / TKA SD')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">Ujian Sekolah / TKA</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA TRY OUT ASESMEN DIGITAL')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">Try Out</button>
+                                </div>
+                            </div>
+                            <input type="text" id="cardCfgExamTitle" value="${escapeHtml(examCardConfigCache.examTitle)}" placeholder="Ketik judul kartu ujian..." class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-800">
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Sub-Keterangan / Jenis Pelaksanaan</label>
+                                <input type="text" id="cardCfgExamSubtitle" value="${escapeHtml(examCardConfigCache.examSubtitle)}" placeholder="Contoh: PELAKSANAAN ASESMEN BERBASIS KOMPUTER" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Keterangan Tahun Pelajaran & Semester</label>
+                                <input type="text" id="cardCfgAcademicYear" value="${escapeHtml(examCardConfigCache.academicYear)}" placeholder="Contoh: Tahun Pelajaran 2026/2027 • Semester Ganjil" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Nama Ruang Ujian *</label>
+                                <input type="text" id="cardCfgRoomName" value="${escapeHtml(examCardConfigCache.roomName)}" placeholder="Contoh: Ruang 01 / Lab Komputer" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-indigo-700">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Sesi / Waktu Ujian *</label>
+                                <input type="text" id="cardCfgSessionInfo" value="${escapeHtml(examCardConfigCache.sessionInfo)}" placeholder="Contoh: Sesi 1 (07.30 - 09.30 WIB)" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-semibold text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Keterangan PIN / Password</label>
+                                <input type="text" id="cardCfgPinDisplay" value="${escapeHtml(examCardConfigCache.defaultPinDisplay)}" placeholder="Contoh: 123456" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold text-emerald-700">
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                                <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+                                    <input type="checkbox" id="cardCfgShowSchedule" ${examCardConfigCache.showScheduleTable ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600">
+                                    <span>Tampilkan Tabel Jadwal Ujian di Dalam Kartu</span>
+                                </label>
+                                <button type="button" onclick="window.pullScheduleFromActiveExamsToCard()" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold">
+                                    <i class="fa-solid fa-rotate mr-1"></i> Ambil Otomatis dari Menu Jadwal Ujian
+                                </button>
+                            </div>
+                            <textarea id="cardCfgScheduleText" rows="3" placeholder="Format per baris: Hari/Tanggal | Jam | Mata Pelajaran&#10;Contoh: Senin, 16/11/2026 | 07:30 - 09:00 WIB | Bahasa Indonesia" class="w-full p-2.5 border border-slate-300 rounded-xl font-mono text-[11px] text-slate-700">${escapeHtml(examCardConfigCache.scheduleText)}</textarea>
+                            <p class="text-[10px] text-slate-400 mt-0.5">Pisahkan kolom dengan tanda <code class="font-bold text-slate-600">|</code> (Tanggal/Hari | Jam | Mata Pelajaran) atau tulis bebas.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Ukuran Kertas</label>
+                                <select id="cardCfgPaperSize" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white">
+                                    <option value="A4" ${examCardConfigCache.paperSize === 'A4' ? 'selected' : ''}>Kertas A4</option>
+                                    <option value="F4" ${examCardConfigCache.paperSize === 'F4' ? 'selected' : ''}>Folio / F4</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Tanggal Tanda Tangan</label>
+                                <input type="text" id="cardCfgSignDate" value="${escapeHtml(examCardConfigCache.signCityDate)}" placeholder="Contoh: Turi, 15 November 2026" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Nama Kepala Sekolah / Panitia</label>
+                                <input type="text" id="cardCfgSignName" value="${escapeHtml(examCardConfigCache.signName)}" placeholder="Nama Pejabat" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">NIP / Jabatan Bawah</label>
+                                <input type="text" id="cardCfgSignNip" value="${escapeHtml(examCardConfigCache.signNip)}" placeholder="NIP. ..." class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            window.showModal('Cetak Kartu Peserta Ujian Siswa', '', 'info', (confirmed) => {
+                if (!confirmed) return true;
+
+                const targetModeEl = document.querySelector('input[name="cardPrintTargetMode"]:checked');
+                const targetMode = targetModeEl ? targetModeEl.value : 'FILTERED';
+
+                examCardConfigCache.examTitle = document.getElementById('cardCfgExamTitle')?.value.trim() || 'KARTU PESERTA UJIAN SEKOLAH';
+                examCardConfigCache.examSubtitle = document.getElementById('cardCfgExamSubtitle')?.value.trim() || '';
+                examCardConfigCache.academicYear = document.getElementById('cardCfgAcademicYear')?.value.trim() || '';
+                examCardConfigCache.roomName = document.getElementById('cardCfgRoomName')?.value.trim() || 'Ruang 01';
+                examCardConfigCache.sessionInfo = document.getElementById('cardCfgSessionInfo')?.value.trim() || 'Sesi 1 (07.30 - 09.30 WIB)';
+                examCardConfigCache.defaultPinDisplay = document.getElementById('cardCfgPinDisplay')?.value.trim() || '123456';
+                examCardConfigCache.paperSize = document.getElementById('cardCfgPaperSize')?.value || 'A4';
+                examCardConfigCache.showScheduleTable = Boolean(document.getElementById('cardCfgShowSchedule')?.checked);
+                examCardConfigCache.scheduleText = document.getElementById('cardCfgScheduleText')?.value.trim() || '';
+                examCardConfigCache.signCityDate = document.getElementById('cardCfgSignDate')?.value.trim() || '';
+                examCardConfigCache.signName = document.getElementById('cardCfgSignName')?.value.trim() || '_______________________';
+                examCardConfigCache.signNip = document.getElementById('cardCfgSignNip')?.value.trim() || '';
+
+                const studentsToPrint = targetMode === 'SELECTED' && selectedList.length > 0
+                    ? selectedList
+                    : filteredStudents;
+
+                if (studentsToPrint.length === 0) {
+                    window.showModal('Data Siswa Kosong', 'Tidak ada data siswa yang dipilih untuk dicetak kartunya.', 'error');
+                    return false;
+                }
+
+                setTimeout(() => {
+                    window.executePrintStudentExamCards(studentsToPrint, examCardConfigCache);
+                }, 60);
+                return true;
+            }, { html, wide: true, showCancel: true, okText: 'Buka Pratinjau & Cetak Kartu' });
+        };
+
+        window.executePrintStudentExamCards = function(studentsList, cfg) {
+            const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
+            const defaultSchoolName = appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG';
+
+            const scheduleLines = (cfg.scheduleText || '')
+                .split(/\r?\n/)
+                .map(l => l.trim())
+                .filter(Boolean);
+
+            let scheduleTableHtml = '';
+            if (cfg.showScheduleTable && scheduleLines.length > 0) {
+                const sRows = scheduleLines.map(line => {
+                    const parts = line.split('|').map(p => p.trim());
+                    if (parts.length >= 3) {
+                        return `
+                            <tr>
+                                <td style="border:1px solid #cbd5e1;padding:2.5px 5px;">${escapeHtml(parts[0])}</td>
+                                <td style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:center;">${escapeHtml(parts[1])}</td>
+                                <td style="border:1px solid #cbd5e1;padding:2.5px 5px;font-weight:700;">${escapeHtml(parts.slice(2).join(' | '))}</td>
+                            </tr>
+                        `;
+                    }
+                    return `
+                        <tr>
+                            <td colspan="3" style="border:1px solid #cbd5e1;padding:2.5px 5px;">${escapeHtml(line)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                scheduleTableHtml = `
+                    <div style="margin-top:6px;">
+                        <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;color:#1e293b;margin-bottom:2px;letter-spacing:0.3px;">Jadwal Pelaksanaan Ujian:</div>
+                        <table style="width:100%;border-collapse:collapse;font-size:8.5px;color:#0f172a;">
+                            <thead>
+                                <tr style="background:#f1f5f9;">
+                                    <th style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:left;width:28%;">Hari / Tanggal</th>
+                                    <th style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:center;width:27%;">Waktu</th>
+                                    <th style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:left;">Mata Pelajaran / Paket</th>
+                                </tr>
+                            </thead>
+                            <tbody>${sRows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            const cardsHtml = studentsList.map((s, idx) => {
+                const schoolDisplay = s.asalSekolah !== undefined && String(s.asalSekolah).trim() !== ''
+                    ? s.asalSekolah
+                    : defaultSchoolName;
+                const genderText = (s.gender || 'L') === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)';
+                const participantNumber = `${String(idx + 1).padStart(3, '0')}-${s.nisn || s.id.slice(-4)}`;
+
+                return `
+                    <div class="exam-card-item" style="border:1.5px solid #0f172a;border-radius:10px;padding:10px 12px;background:#ffffff;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;">
+                        <div>
+                            <!-- Kop Kartu -->
+                            <div style="display:flex;align-items:center;gap:8px;border-bottom:2px double #0f172a;padding-bottom:6px;margin-bottom:6px;">
+                                <img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
+                                <div style="flex:1;text-align:center;line-height:1.25;">
+                                    <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;color:#0f172a;">${escapeHtml(schoolDisplay)}</div>
+                                    <div style="font-size:9.5px;font-weight:800;text-transform:uppercase;color:#1e3a8a;margin-top:1px;">${escapeHtml(cfg.examTitle)}</div>
+                                    ${cfg.examSubtitle ? `<div style="font-size:8px;font-weight:700;color:#475569;">${escapeHtml(cfg.examSubtitle)}</div>` : ''}
+                                    ${cfg.academicYear ? `<div style="font-size:8px;color:#64748b;">${escapeHtml(cfg.academicYear)}</div>` : ''}
+                                </div>
+                            </div>
+
+                            <!-- Identitas Peserta & Ruang -->
+                            <table style="width:100%;border-collapse:collapse;font-size:9.5px;line-height:1.45;color:#0f172a;">
+                                <tr>
+                                    <td style="width:28%;font-weight:600;color:#475569;padding:1px 0;">Nama Peserta</td>
+                                    <td style="width:3%;text-align:center;">:</td>
+                                    <td style="font-weight:800;color:#0f172a;padding:1px 0;">${escapeHtml(s.fullName)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">NISN / NIS</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-family:monospace;font-weight:700;padding:1px 0;">${escapeHtml(s.nisn)} / ${escapeHtml(s.nis || '-')}</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">Kelas / L-P</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-weight:700;padding:1px 0;">Kelas ${escapeHtml(s.className)} (${escapeHtml(genderText)})</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">Asal Sekolah</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-weight:700;color:#1e3a8a;padding:1px 0;">${escapeHtml(schoolDisplay)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">Ruang & Sesi</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-weight:800;color:#047857;padding:1px 0;">${escapeHtml(cfg.roomName)} • ${escapeHtml(cfg.sessionInfo)}</td>
+                                </tr>
+                            </table>
+
+                            <!-- Kotak Akses Login CBT -->
+                            <div style="margin-top:6px;padding:5px 8px;background:#f8fafc;border:1px dashed #64748b;border-radius:6px;display:flex;align-items:center;justify-content:space-between;font-size:9px;">
+                                <div>
+                                    <span style="color:#475569;font-weight:700;">Username Login:</span>
+                                    <strong style="font-family:monospace;font-size:10px;color:#0f172a;margin-left:3px;">${escapeHtml(s.username || s.nisn)}</strong>
+                                </div>
+                                <div>
+                                    <span style="color:#475569;font-weight:700;">PIN / Password:</span>
+                                    <strong style="font-family:monospace;font-size:10px;color:#1d4ed8;margin-left:3px;">${escapeHtml(cfg.defaultPinDisplay)}</strong>
+                                </div>
+                            </div>
+
+                            ${scheduleTableHtml}
+                        </div>
+
+                        <!-- Footer Kartu: Pas Foto & Tanda Tangan -->
+                        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:8px;padding-top:5px;border-top:1px solid #e2e8f0;font-size:8.5px;">
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <div style="width:42px;height:52px;border:1px solid #94a3b8;border-radius:4px;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font-size:7.5px;background:#f8fafc;line-height:1.2;">
+                                    Pas Foto<br>2 x 3
+                                </div>
+                                <div style="font-size:7.5px;color:#64748b;line-height:1.3;">
+                                    <strong style="color:#0f172a;display:block;">No. Urut: ${escapeHtml(participantNumber)}</strong>
+                                    Kartu wajib dibawa<br>selama ujian berlangsung.
+                                </div>
+                            </div>
+                            <div style="text-align:center;min-width:125px;line-height:1.25;">
+                                <div style="color:#334155;">${escapeHtml(cfg.signCityDate)}</div>
+                                <div style="color:#334155;margin-bottom:22px;">${escapeHtml(cfg.signRole || 'Kepala Sekolah / Panitia,')}</div>
+                                <div style="font-weight:800;text-decoration:underline;color:#0f172a;">${escapeHtml(cfg.signName)}</div>
+                                ${cfg.signNip ? `<div style="font-size:7.5px;color:#475569;">${escapeHtml(cfg.signNip)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const pageCssSize = cfg.paperSize === 'F4' ? '215mm 330mm' : 'A4 portrait';
+            const bodyContentOnly = `
+                <div style="font-family:'Inter',Arial,sans-serif;color:#0f172a;background:#ffffff;">
+                    <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;width:100%;">
+                        ${cardsHtml}
+                    </div>
+                </div>
+            `;
+
+            const fullHtmlDoc = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Cetak Kartu Ujian (${studentsList.length} Siswa)</title><style>@page{size:${pageCssSize};margin:8mm;}body{font-family:Arial,sans-serif;margin:0;padding:4px;color:#0f172a;background:#ffffff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.exam-card-item{page-break-inside:avoid;break-inside:avoid;}</style></head><body>${bodyContentOnly}</body></html>`;
+            window.renderAndTriggerPrint(fullHtmlDoc, bodyContentOnly, `Kartu Peserta Ujian (${studentsList.length} Siswa)`);
         };
 
         function getQuestionTypeBadgeLabel(type) {
@@ -5286,6 +5650,9 @@
                             <p class="text-xs text-slate-500 mt-0.5">Pantau status pengerjaan real-time masing-masing siswa, jumlah jawaban tersimpan, pelanggaran pindah tab, dan reset sesi.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-3">
+                            <button type="button" onclick="window.openPrintExamCardsModal('participants')" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+                                <i class="fa-solid fa-id-card"></i> Cetak Kartu Ujian
+                            </button>
                             <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
                                 <i class="fa-solid fa-rotate"></i> Reset Semua Sesi
                             </button>
