@@ -7198,13 +7198,13 @@
                 if (isAns) answeredTotal++;
                 if (isDoubt) doubtfulTotal++;
 
-                let btnStyle = 'bg-white text-slate-700 border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/50 shadow-2xs font-poppins font-semibold';
+                let btnStyle = 'bg-slate-200/75 text-slate-800 border border-slate-300/70 hover:border-blue-400 hover:bg-blue-50 font-poppins font-semibold';
                 if (idx === currentQuestionIndex) {
-                    btnStyle = 'bg-white text-blue-700 font-poppins font-semibold border-2 border-blue-600 ring-2 ring-blue-500/20 shadow-sm scale-[1.03]';
+                    btnStyle = 'bg-white text-slate-900 font-poppins font-semibold border-2 border-blue-600 ring-2 ring-blue-500/20 shadow-xs';
                 } else if (isDoubt) {
-                    btnStyle = 'bg-gradient-to-b from-amber-400 to-amber-500 text-slate-950 font-poppins font-semibold border border-amber-500 shadow-xs';
+                    btnStyle = 'bg-amber-400 text-slate-950 font-poppins font-semibold border border-amber-500 shadow-2xs';
                 } else if (isAns) {
-                    btnStyle = 'bg-gradient-to-b from-blue-600 to-indigo-600 text-white font-poppins font-semibold border border-blue-700 shadow-xs';
+                    btnStyle = 'bg-blue-600 text-white font-poppins font-semibold border border-blue-700 shadow-2xs';
                 }
                 return `<button type="button" onclick="window.jumpToQuestion(${idx})" class="h-9 sm:h-9 w-full rounded-xl text-xs flex items-center justify-center transition-all duration-150 cursor-pointer ${btnStyle}">${idx + 1}</button>`;
             }).join('');
@@ -7217,7 +7217,7 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur === letter;
                     return `
-                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs' : 'border-slate-200/90 bg-white hover:border-blue-300 shadow-2xs'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
                                 <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
@@ -7235,7 +7235,7 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur.includes(letter);
                     return `
-                        <label class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs' : 'border-slate-200/90 bg-white hover:border-blue-300 shadow-2xs'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
                                 <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
@@ -7250,7 +7250,6 @@
                     ? currentStudentAnswers[q.id]
                     : {};
 
-                // Render Model Tabel Interaktif (3 Kolom: PERNYATAAN, BENAR, SALAH)
                 const rowsHtml = opts.map((stmt, idx) => {
                     const letter = String.fromCharCode(65 + idx);
                     const chosen = curObj[String(idx)] || '';
@@ -7301,7 +7300,7 @@
                     const selectedVal = curObj[String(idx)] || '';
                     const optsHtml = rightOptions.map(ro => `<option value="${escapeHtml(ro)}" ${selectedVal === ro ? 'selected' : ''}>${escapeHtml(ro)}</option>`).join('');
                     return `
-                        <div class="font-poppins p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div class="font-poppins p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
                             <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
                             <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm sm:text-[15px] font-poppins font-normal text-blue-700">
                                 <option value="">-- Pilih Pasangan --</option>
@@ -7312,10 +7311,10 @@
                 }).join('');
             } else if (q.type === 'short_answer') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="font-poppins font-normal w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16px] focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="font-poppins font-normal w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16px] focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs">`;
             } else if (q.type === 'essay') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="font-poppins font-normal w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
+                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="font-poppins font-normal w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs">${escapeHtml(cur)}</textarea>`;
             }
 
             const isCurrentDoubtful = !!currentDoubtfulMap[q.id];
@@ -7324,57 +7323,101 @@
             const hasQuestionImg = Boolean(q.questionImage && q.questionImage.trim());
 
             container.innerHTML = `
-                <div class="flex-1 flex flex-col h-full bg-slate-100 overflow-hidden select-none font-poppins">
-                    <header class="min-h-16 bg-[#0f172a] text-white px-4 lg:px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 shrink-0 border-b border-slate-800">
+                <div class="flex-1 flex flex-col h-full bg-gradient-to-br from-[#e2ecf8] via-[#edf3fb] to-[#dce7f7] overflow-hidden select-none font-poppins relative">
+                    <!-- Ornamen Gelombang & Ilustrasi Pojok Kiri Bawah (Tampil di Layar Lebar & HP) -->
+                    <div class="fixed bottom-0 left-0 right-0 pointer-events-none z-0 overflow-hidden h-52">
+                        <svg viewBox="0 0 1440 220" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" class="w-full h-full">
+                            <path d="M0 130C220 95 450 185 720 165C990 145 1220 95 1440 130V220H0V130Z" fill="url(#waveLightBlue)" opacity="0.75"/>
+                            <path d="M0 168C190 142 360 198 560 212C320 220 140 220 0 220V168Z" fill="#EAB308" opacity="0.8"/>
+                            <path d="M0 176C180 152 350 202 540 220H0V176Z" fill="url(#waveDeepBlue)"/>
+                            <defs>
+                                <linearGradient id="waveLightBlue" x1="0" y1="95" x2="1440" y2="220" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#CFE0F7"/>
+                                    <stop offset="1" stop="#E5EFFC"/>
+                                </linearGradient>
+                                <linearGradient id="waveDeepBlue" x1="0" y1="160" x2="520" y2="220" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#1E4E8C"/>
+                                    <stop offset="1" stop-color="#2B6CB0"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+
+                    <!-- Header Utama Ruang Ujian -->
+                    <header class="min-h-16 bg-gradient-to-r from-[#0f172a] via-[#13203d] to-[#0f172a] text-white px-4 lg:px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 shrink-0 border-b border-slate-800/80 shadow-md relative z-20">
                         <div class="flex items-center gap-3">
-                            <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo" class="w-10 h-10 rounded-xl bg-white object-contain p-0.5 shadow-md shrink-0">
+                            <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo" class="w-10 h-10 rounded-full bg-white object-contain p-0.5 shadow-md shrink-0 border border-blue-300/40">
                             <div>
-                                <div class="flex items-center gap-2">
-                                    <h2 class="text-sm font-poppins font-medium tracking-wide uppercase">${escapeHtml(currentActiveExam.examName)}</h2>
-                                    <span class="hidden sm:inline-block px-2.5 py-0.5 bg-blue-900/80 text-blue-200 border border-blue-700/60 rounded-full text-[10px] font-poppins font-medium">${escapeHtml(getSubjectNameById(currentActiveExam.subjectId))}</span>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <h2 class="text-sm sm:text-base font-poppins font-medium tracking-wide uppercase text-white">${escapeHtml(currentActiveExam.examName)}</h2>
+                                    <span class="px-3 py-0.5 bg-blue-600/90 text-white border border-blue-400/40 rounded-full text-[11px] font-poppins font-medium shadow-2xs">${escapeHtml(getSubjectNameById(currentActiveExam.subjectId))}</span>
                                 </div>
-                                <p class="text-[11px] text-slate-400">Platform Ujian dan Evaluasi Pembelajaran • <strong class="text-slate-200 font-medium">${escapeHtml(appData.settings.schoolName)}</strong></p>
+                                <p class="text-[11px] text-slate-300">Platform Ujian dan Evaluasi Pembelajaran • <strong class="text-white font-semibold">${escapeHtml(appData.settings.schoolName)}</strong></p>
                             </div>
                         </div>
 
                         <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                            <div class="px-3.5 py-1.5 rounded-xl bg-amber-950/90 border border-amber-600/60 text-amber-400 text-xs font-poppins font-semibold flex items-center gap-2 shadow-xs" title="Jumlah keluar dari tab/jendela ujian">
+                            <div class="px-3.5 py-1.5 rounded-full bg-amber-950/90 border border-amber-500/50 text-amber-400 text-xs font-poppins font-semibold flex items-center gap-2 shadow-xs" title="Jumlah keluar dari tab/jendela ujian">
                                 <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
                                 <span id="examViolationCounter">Pelanggaran: ${currentViolationCount}x</span>
                             </div>
 
-                            <div class="hidden md:flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-slate-800/90 border border-slate-700">
-                                <div class="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs">
+                            <div class="hidden md:flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-800/90 border border-slate-600/80 shadow-inner">
+                                <div class="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400/30 flex items-center justify-center text-xs">
                                     <i class="fa-solid fa-user-check"></i>
                                 </div>
                                 <div class="leading-tight">
-                                    <p class="text-xs font-poppins font-medium text-white flex items-center gap-2">
+                                    <p class="text-xs font-poppins font-medium text-white flex items-center gap-1.5">
                                         <span>${escapeHtml(student.name)}</span>
-                                        <span class="text-indigo-300">•</span>
-                                        <span class="text-cyan-300 font-medium uppercase tracking-wide">${escapeHtml(appData.settings.schoolName)}</span>
+                                        <span class="text-slate-400">•</span>
+                                        <span class="text-cyan-300 font-semibold uppercase tracking-wide">${escapeHtml(appData.settings.schoolName)}</span>
                                     </p>
                                     <p class="text-[10px] text-slate-300">Kelas ${escapeHtml(student.className || '4')} • NISN: ${escapeHtml(student.nisn)}</p>
                                 </div>
                             </div>
 
-                            <div class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-mono font-semibold text-sm flex items-center gap-2 shadow-md">
+                            <div class="px-4 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-full font-mono font-semibold text-sm flex items-center gap-2 shadow-md border border-red-400/40">
                                 <i class="fa-regular fa-clock"></i>
                                 <span id="examCountdownTimer">${formatHMS(remainingSeconds)}</span>
                             </div>
                         </div>
                     </header>
 
-                    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-y-auto lg:overflow-hidden bg-slate-50">
-                        <section class="lg:col-span-5 bg-white border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col lg:h-full lg:overflow-hidden">
-                            <div class="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
-                                <h3 class="text-xs font-poppins font-medium uppercase tracking-wider text-slate-600 flex items-center gap-2">
+                    <!-- Kontainer 3 Panel (Responsif di Laptop & HP) -->
+                    <div class="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 p-2.5 sm:p-4 overflow-y-auto lg:overflow-hidden">
+                        <!-- KOLOM KIRI: PANEL STIMULUS & INFORMASI -->
+                        <section class="lg:col-span-5 bg-white/85 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col lg:h-full lg:overflow-hidden relative overflow-hidden">
+                            <!-- Ornamen Ilustrasi Buku & Daun Pojok Kiri Bawah Panel Stimulus -->
+                            <div class="absolute bottom-0 left-0 right-0 h-32 pointer-events-none z-0 overflow-hidden opacity-90">
+                                <svg viewBox="0 0 500 130" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full" preserveAspectRatio="xMinYMax slice">
+                                    <path d="M0 78C130 55 280 110 500 95V130H0V78Z" fill="#E1ECFA" opacity="0.7"/>
+                                    <path d="M0 98C120 82 240 115 390 130H0V98Z" fill="#D9A74A" opacity="0.75"/>
+                                    <path d="M0 105C115 90 230 118 370 130H0V105Z" fill="#235796" opacity="0.9"/>
+                                    <!-- Dedaunan Kiri -->
+                                    <path d="M36 96C26 74 28 52 40 36C48 52 46 76 36 96Z" fill="#8FB5E3" opacity="0.7"/>
+                                    <path d="M24 98C10 82 8 64 16 48C26 60 28 80 24 98Z" fill="#A7C7EC" opacity="0.75"/>
+                                    <path d="M44 96C48 76 60 60 76 52C72 70 58 86 44 96Z" fill="#9ABCE6" opacity="0.7"/>
+                                    <!-- Buku Terbuka -->
+                                    <path d="M62 82C78 76 96 78 108 86L136 74C124 66 106 64 90 70L62 82Z" fill="#F8FAFC" stroke="#94A3B8" stroke-width="1.2"/>
+                                    <path d="M60 86C76 80 94 82 106 90L138 78" stroke="#64748B" stroke-width="1.5" stroke-linecap="round"/>
+                                </svg>
+                            </div>
+
+                            <div class="px-5 py-3.5 border-b border-slate-200/70 flex items-center justify-between shrink-0 relative z-10 bg-white/60">
+                                <h3 class="text-xs sm:text-[13px] font-poppins font-semibold uppercase tracking-wider text-slate-800 flex items-center gap-2">
                                     <i class="fa-solid fa-book-open text-blue-600"></i> PANEL STIMULUS & INFORMASI
                                 </h3>
                             </div>
-                            <div class="p-4 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4">
-                                ${hasStimulusText ? `<div class="p-5 sm:p-6 rounded-xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-2xs">${formatStimulusTextWithBoldLead(q.stimulusText)}</div>` : ''}
+
+                            <div class="p-4 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4 relative z-10">
+                                ${hasStimulusText ? `
+                                    <div class="relative p-5 sm:p-6 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-xs overflow-hidden">
+                                        <span class="absolute left-0 top-6 bottom-6 w-1 bg-amber-300 rounded-r-full"></span>
+                                        ${formatStimulusTextWithBoldLead(q.stimulusText)}
+                                    </div>
+                                ` : ''}
                                 ${hasStimulusImg ? `
-                                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2.5">
+                                    <div class="rounded-2xl border border-[#FDE68A] bg-[#FFFDF7] p-3.5 space-y-2.5 shadow-xs">
                                         <div class="flex items-center justify-between text-xs text-slate-600 font-poppins font-medium px-1">
                                             <span><i class="fa-regular fa-image text-blue-600 mr-1"></i> Gambar Stimulus</span>
                                             <button type="button" onclick="window.previewZoomImage('${escapeHtml(q.stimulusImage)}', 'Gambar Stimulus Soal Nomor ${currentQuestionIndex + 1}')" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-poppins font-semibold transition cursor-pointer">
@@ -7385,43 +7428,44 @@
                                     </div>
                                 ` : ''}
                                 ${(!hasStimulusText && !hasStimulusImg) ? `
-                                    <div class="p-6 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-1.5">
-                                        <i class="fa-regular fa-file-lines text-slate-400 text-2xl"></i>
-                                        <p class="text-sm font-poppins font-medium text-slate-600">Tidak Ada Wacana / Gambar Stimulus</p>
-                                        <p class="text-xs font-poppins font-normal text-slate-400">Perhatikan langsung pertanyaan pada panel tengah untuk menjawab soal.</p>
+                                    <div class="p-6 rounded-2xl bg-[#FFFDF7] border border-dashed border-[#FDE68A] text-center space-y-1.5">
+                                        <i class="fa-regular fa-file-lines text-amber-400 text-2xl"></i>
+                                        <p class="text-sm font-poppins font-medium text-slate-700">Tidak Ada Wacana / Gambar Stimulus</p>
+                                        <p class="text-xs font-poppins font-normal text-slate-500">Perhatikan langsung pertanyaan pada panel tengah untuk menjawab soal.</p>
                                     </div>
                                 ` : ''}
                             </div>
                         </section>
 
-                        <section class="lg:col-span-5 bg-slate-50/70 flex flex-col lg:h-full lg:overflow-hidden">
-                            <div class="px-6 py-3.5 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                        <!-- KOLOM TENGAH: PERTANYAAN & PILIHAN JAWABAN -->
+                        <section class="lg:col-span-5 bg-white/90 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col lg:h-full lg:overflow-hidden relative">
+                            <div class="px-5 sm:px-6 py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-white/80">
                                 <div class="flex items-center gap-2">
-                                    <span class="px-3.5 py-1.5 rounded-xl bg-blue-600 text-white text-xs sm:text-sm font-poppins font-medium shadow-xs">
+                                    <span class="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs sm:text-sm font-poppins font-medium shadow-xs">
                                         Soal Nomor ${currentQuestionIndex + 1}
                                     </span>
-                                    <span class="px-3 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-xs sm:text-sm font-poppins font-medium">
+                                    <span class="px-3.5 py-1.5 rounded-full bg-blue-50/80 text-blue-700 border border-blue-200 text-xs sm:text-sm font-poppins font-medium">
                                         ${escapeHtml(getQuestionTypeBadgeLabel(q.type))}
                                     </span>
                                 </div>
-                                <div class="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs sm:text-sm font-poppins font-medium flex items-center gap-1.5">
+                                <div class="px-3.5 py-1.5 rounded-full bg-emerald-50/90 border border-emerald-200 text-emerald-700 text-xs sm:text-sm font-poppins font-medium flex items-center gap-1.5">
                                     <i class="fa-solid fa-star text-amber-400"></i> Bobot: ${q.weight} Poin
                                 </div>
                             </div>
 
-                            <div class="p-6 flex-1 overflow-y-auto custom-scrollbar space-y-5">
-                                <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
+                            <div class="p-5 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4">
+                                <div class="bg-[#f8fafd] p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
                                     <p class="font-poppins font-normal text-[17px] sm:text-[18.5px] text-slate-900 leading-relaxed">
                                         ${escapeHtml(q.questionText)}
                                     </p>
                                     ${hasQuestionImg ? `
                                         <div class="pt-1">
-                                            <img src="${escapeHtml(q.questionImage)}" alt="Pertanyaan" onclick="window.previewZoomImage('${escapeHtml(q.questionImage)}', 'Gambar Pertanyaan Nomor ${currentQuestionIndex + 1}')" onerror="this.onerror=null; this.src='https://placehold.co/600x360/f1f5f9/64748b?text=Gambar+Soal+Tidak+Dapat+Dimuat';" class="max-h-72 w-auto rounded-xl border border-slate-200 object-contain cursor-zoom-in">
+                                            <img src="${escapeHtml(q.questionImage)}" alt="Pertanyaan" onclick="window.previewZoomImage('${escapeHtml(q.questionImage)}', 'Gambar Pertanyaan Nomor ${currentQuestionIndex + 1}')" onerror="this.onerror=null; this.src='https://placehold.co/600x360/f1f5f9/64748b?text=Gambar+Soal+Tidak+Dapat+Dimuat';" class="max-h-72 w-auto rounded-xl border border-slate-200 object-contain cursor-zoom-in bg-white p-1">
                                         </div>
                                     ` : ''}
                                 </div>
 
-                                <div class="flex items-center gap-2 text-xs sm:text-[13px] font-poppins font-medium text-slate-500 px-1">
+                                <div class="flex items-center gap-2 text-xs sm:text-[13.5px] font-poppins font-medium text-slate-700 px-1">
                                     <i class="fa-solid fa-circle-dot text-blue-600"></i>
                                     <span>${escapeHtml(getQuestionInstructionText(q.type))}</span>
                                 </div>
@@ -7431,49 +7475,65 @@
                                 </div>
                             </div>
 
-                            <div class="px-6 py-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
-                                <button type="button" onclick="window.prevQuestion()" ${currentQuestionIndex === 0 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 cursor-pointer"'}>
+                            <div class="px-5 sm:px-6 py-3.5 bg-white/90 border-t border-slate-200/80 flex items-center justify-between gap-2.5 shrink-0">
+                                <button type="button" onclick="window.prevQuestion()" ${currentQuestionIndex === 0 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-2xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 cursor-pointer"'}>
                                     <i class="fa-solid fa-arrow-left"></i> Sebelumnya
                                 </button>
-                                <button type="button" onclick="window.toggleDoubtful('${q.id}')" class="px-5 py-2.5 ${isCurrentDoubtful ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300' : 'bg-amber-400 hover:bg-amber-500 text-slate-950'} rounded-xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
+                                <button type="button" onclick="window.toggleDoubtful('${q.id}')" class="px-5 py-2.5 ${isCurrentDoubtful ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300' : 'bg-amber-400 hover:bg-amber-500 text-slate-950'} rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
                                     <i class="fa-solid fa-flag"></i> ${isCurrentDoubtful ? 'Ragu-Ragu (Aktif)' : 'Ragu-Ragu'}
                                 </button>
-                                <button type="button" onclick="window.nextQuestion()" ${currentQuestionIndex === currentExamQuestions.length - 1 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer"'}>
+                                <button type="button" onclick="window.nextQuestion()" ${currentQuestionIndex === currentExamQuestions.length - 1 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-2xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer"'}>
                                     Selanjutnya <i class="fa-solid fa-arrow-right"></i>
                                 </button>
                             </div>
                         </section>
 
-                        <aside class="lg:col-span-2 bg-gradient-to-b from-slate-50 via-blue-50/35 to-indigo-50/30 border-t lg:border-t-0 lg:border-l border-slate-200/90 flex flex-col justify-between lg:h-full lg:overflow-hidden relative">
-                            <div class="p-3 sm:p-3.5 flex-1 overflow-y-auto custom-scrollbar space-y-3 relative z-10">
-                                <div class="flex items-center justify-between bg-white/90 backdrop-blur-xs px-3 py-2.5 rounded-xl border border-slate-200/80 shadow-2xs">
-                                    <h3 class="text-[11px] font-poppins font-medium uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                                        <span class="w-5 h-5 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center text-[10px]">
-                                            <i class="fa-solid fa-grip"></i>
-                                        </span>
-                                        <span>PENJELAJAH SOAL</span>
-                                    </h3>
+                        <!-- KOLOM KANAN: PENJELAJAH SOAL (1 BANJAR 1-5 NOMOR SOAL) -->
+                        <aside class="lg:col-span-2 bg-white/90 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col justify-between lg:h-full lg:overflow-hidden relative overflow-hidden">
+                            <!-- Ilustrasi Siluet Gedung Sekolah di Bagian Bawah Penjelajah Soal -->
+                            <div class="absolute bottom-24 left-0 right-0 pointer-events-none z-0 flex justify-center opacity-80">
+                                <svg viewBox="0 0 220 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-48 h-28">
+                                    <path d="M10 115H210" stroke="#CBD5E1" stroke-width="2"/>
+                                    <!-- Tiang & Bendera -->
+                                    <line x1="110" y1="16" x2="110" y2="52" stroke="#94A3B8" stroke-width="2"/>
+                                    <path d="M110 18C118 16 124 22 132 19V29C124 32 118 26 110 28V18Z" fill="#93C5FD"/>
+                                    <!-- Atap Utama -->
+                                    <polygon points="65,58 110,38 155,58" fill="#CBD5E1"/>
+                                    <polygon points="30,72 68,58 152,58 190,72" fill="#E2E8F0"/>
+                                    <!-- Bangunan -->
+                                    <rect x="38" y="72" width="144" height="43" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.5"/>
+                                    <rect x="75" y="58" width="70" height="57" fill="#E2E8F0" stroke="#CBD5E1" stroke-width="1.5"/>
+                                    <!-- Pilar & Jendela -->
+                                    <rect x="98" y="84" width="24" height="31" rx="3" fill="#CBD5E1"/>
+                                    <rect x="48" y="80" width="16" height="18" rx="2" fill="#CBD5E1"/>
+                                    <rect x="156" y="80" width="16" height="18" rx="2" fill="#CBD5E1"/>
+                                </svg>
+                            </div>
+
+                            <div class="p-3.5 sm:p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3 relative z-10">
+                                <div class="pb-2 border-b border-slate-100 flex items-center gap-2">
+                                    <i class="fa-solid fa-border-all text-blue-600 text-xs"></i>
+                                    <h3 class="text-xs font-poppins font-semibold uppercase tracking-wider text-slate-800">PENJELAJAH SOAL</h3>
                                 </div>
 
-                                <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] font-poppins font-normal text-slate-600 bg-white/85 px-2.5 py-2 rounded-xl border border-slate-200/80 shadow-2xs">
+                                <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] font-poppins font-normal text-slate-600 bg-slate-50/90 px-2.5 py-2 rounded-xl border border-slate-200/70">
                                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-blue-600 inline-block"></span> Dijawab</div>
                                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400 inline-block"></span> Ragu</div>
-                                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-white border border-slate-300 inline-block"></span> Belum</div>
+                                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-200 border border-slate-300 inline-block"></span> Belum</div>
                                 </div>
 
-                                <div class="p-2.5 rounded-2xl bg-slate-100/80 border border-slate-200/80 shadow-inner">
-                                    <div class="grid grid-cols-5 gap-1.5">
-                                        ${gridNav}
-                                    </div>
+                                <!-- Grid Nomor Soal: Tetap 1 Banjar = 5 Nomor Soal (grid-cols-5) di Laptop & HP -->
+                                <div class="grid grid-cols-5 gap-1.5 pt-1">
+                                    ${gridNav}
                                 </div>
                             </div>
 
-                            <div class="p-3.5 bg-white/95 backdrop-blur-xs border-t border-slate-200/90 space-y-2.5 shrink-0 relative z-10 shadow-2xs">
-                                <div class="flex items-center justify-between text-[11px] font-poppins font-medium bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200/70">
-                                    <span class="text-slate-600">Terjawab: <strong id="answeredCounterText" class="text-blue-600 font-semibold">${answeredTotal}</strong>/${currentExamQuestions.length}</span>
+                            <div class="p-3.5 sm:p-4 bg-white/95 border-t border-slate-200/80 space-y-2.5 shrink-0 relative z-10">
+                                <div class="flex items-center justify-between text-[11px] font-poppins font-medium px-1">
+                                    <span class="text-slate-700">Terjawab: <strong id="answeredCounterText" class="text-blue-600 font-semibold">${answeredTotal}</strong>/${currentExamQuestions.length}</span>
                                     <span class="text-amber-600">Ragu: <strong id="doubtfulCounterText" class="font-semibold">${doubtfulTotal}</strong></span>
                                 </div>
-                                <button type="button" onclick="window.confirmSubmitExam()" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-poppins font-semibold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                <button type="button" onclick="window.confirmSubmitExam()" class="w-full py-3 bg-[#108963] hover:bg-[#0d7453] text-white rounded-2xl font-poppins font-semibold text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer">
                                     <i class="fa-solid fa-paper-plane"></i> Kirim & Selesai
                                 </button>
                             </div>
