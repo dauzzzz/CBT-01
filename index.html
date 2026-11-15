@@ -7171,12 +7171,14 @@
 
         function formatStimulusTextWithBoldLead(rawText) {
             if (!rawText) return '';
-            const lines = String(rawText).split(/\r?\n/);
+            const trimmedText = String(rawText).trim();
+            if (!trimmedText) return '';
+            const lines = trimmedText.split(/\r?\n/);
             let firstNonEmptyFormatted = false;
             return lines.map(line => {
                 if (!firstNonEmptyFormatted && line.trim() !== '') {
                     firstNonEmptyFormatted = true;
-                    return `<strong class="font-poppins font-semibold text-slate-900 text-[16px] sm:text-[17.5px]">${escapeHtml(line)}</strong>`;
+                    return `<strong class="font-poppins font-semibold text-slate-900 text-[15px] sm:text-[16.5px]">${escapeHtml(line.trim())}</strong>`;
                 }
                 return escapeHtml(line);
             }).join('\n');
@@ -7463,8 +7465,8 @@
 
                             <div class="p-4 sm:p-6 flex-1 lg:overflow-y-auto custom-scrollbar space-y-4 relative z-10">
                                 ${hasStimulusText ? `
-                                    <div class="relative p-4 sm:p-6 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-xs overflow-hidden">
-                                        <span class="absolute left-0 top-6 bottom-6 w-1 bg-amber-300 rounded-r-full"></span>
+                                    <div class="relative w-fit max-w-full px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-xs overflow-hidden">
+                                        <span class="absolute left-0 top-2.5 bottom-2.5 w-1 bg-amber-300 rounded-r-full"></span>
                                         ${formatStimulusTextWithBoldLead(q.stimulusText)}
                                     </div>
                                 ` : ''}
