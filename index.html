@@ -6197,12 +6197,12 @@
                 let actionAreaHtml = '';
                 if (finishedRes) {
                     actionAreaHtml = `
-                        <div class="w-full space-y-2.5">
-                            <div class="flex items-center justify-between w-full">
-                                <span class="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-xl text-xs font-bold"><i class="fa-solid fa-circle-check mr-1"></i> Ujian Selesai</span>
-                                ${ex.isPublished !== false ? `<span class="text-sm font-extrabold text-indigo-700">Nilai: ${finishedRes.finalScore}</span>` : ''}
+                        <div class="w-full space-y-3">
+                            <div class="flex items-center justify-between w-full bg-emerald-50/90 border border-emerald-200/80 px-3.5 py-2 rounded-2xl">
+                                <span class="text-emerald-700 text-xs font-semibold flex items-center gap-1.5"><i class="fa-solid fa-circle-check text-emerald-600"></i> Ujian Selesai</span>
+                                ${ex.isPublished !== false ? `<span class="text-sm font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-lg border border-emerald-200">Nilai: ${finishedRes.finalScore}</span>` : ''}
                             </div>
-                            <button type="button" onclick="window.openSavedExamResultReview('${escapeHtml(finishedRes.resultId || finishedRes.id)}')" class="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                            <button type="button" onclick="window.openSavedExamResultReview('${escapeHtml(finishedRes.resultId || finishedRes.id)}')" class="w-full py-3 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-2xl text-xs sm:text-sm font-semibold transition shadow-md flex items-center justify-center gap-2 cursor-pointer">
                                 <i class="fa-solid fa-award"></i> Lihat Ringkasan Nilai Akhir
                             </button>
                         </div>
@@ -6211,63 +6211,226 @@
                     const remSecs = Math.max(0, Math.floor(((activeSess.endTimeMs || Date.now()) - Date.now()) / 1000));
                     const remMinutes = Math.ceil(remSecs / 60);
                     actionAreaHtml = `
-                        <div class="w-full space-y-2.5">
-                            <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
-                                <div class="font-extrabold flex items-center justify-between">
-                                    <span><i class="fa-solid fa-clock-rotate-left mr-1 text-amber-600"></i> UJIAN BELUM SELESAI</span>
-                                    <span class="font-mono text-[11px] bg-amber-200/70 px-2 py-0.5 rounded font-extrabold">${remSecs > 0 ? `Sisa ~${remMinutes} Menit` : 'Waktu Habis'}</span>
+                        <div class="w-full space-y-3">
+                            <div class="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-1.5">
+                                <div class="font-semibold flex items-center justify-between">
+                                    <span class="flex items-center gap-1.5"><i class="fa-solid fa-clock-rotate-left text-amber-600"></i> UJIAN BELUM SELESAI</span>
+                                    <span class="font-mono text-[11px] bg-amber-200/80 px-2.5 py-0.5 rounded-lg font-bold">${remSecs > 0 ? `Sisa ~${remMinutes} Menit` : 'Waktu Habis'}</span>
                                 </div>
                                 <p class="text-[11px] text-amber-800">Progres Tersimpan: <strong>${activeSess.answeredCount || 0} / ${activeSess.totalQuestions || (ex.questionIds || []).length} soal dijawab</strong> • Terakhir di Soal <strong>#${(activeSess.lastQuestionIndex || 0) + 1}</strong></p>
                             </div>
-                            <button type="button" onclick="window.promptResumeOrStartExam('${ex.id}')" class="w-full py-2.5 px-4 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold transition shadow-sm flex items-center justify-center gap-1.5">
+                            <button type="button" onclick="window.promptResumeOrStartExam('${ex.id}')" class="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 rounded-2xl text-xs sm:text-sm font-semibold transition shadow-md flex items-center justify-center gap-2 cursor-pointer">
                                 <i class="fa-solid fa-play"></i> LANJUTKAN UJIAN
                             </button>
                         </div>
                     `;
                 } else {
                     actionAreaHtml = `
-                        <button type="button" onclick="window.promptResumeOrStartExam('${ex.id}')" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm">
-                            Mulai Kerjakan Ujian <i class="fa-solid fa-arrow-right ml-1"></i>
+                        <button type="button" onclick="window.promptResumeOrStartExam('${ex.id}')" class="w-full py-3 px-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl text-xs sm:text-sm font-semibold transition shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer">
+                            <span>Mulai Kerjakan Ujian</span> <i class="fa-solid fa-arrow-right"></i>
                         </button>
                     `;
                 }
 
                 return `
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border ${activeSess ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-200'} flex flex-col justify-between space-y-4">
-                        <div>
-                            <div class="flex justify-between items-center">
-                                <span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-bold">${escapeHtml(getSubjectNameById(ex.subjectId))}</span>
-                                <span class="font-mono text-xs font-bold text-slate-500">Token: ${escapeHtml(ex.token)}</span>
+                    <div class="group bg-white/95 backdrop-blur-md p-6 rounded-3xl shadow-md hover:shadow-xl border ${activeSess ? 'border-amber-300 ring-2 ring-amber-100' : 'border-blue-100/90 hover:border-blue-300'} flex flex-col justify-between space-y-5 transition-all duration-200 relative overflow-hidden">
+                        <div class="absolute -right-8 -top-8 w-28 h-28 rounded-full bg-gradient-to-br from-blue-500/10 to-indigo-500/5 pointer-events-none"></div>
+                        <div class="relative z-10 space-y-3">
+                            <div class="flex flex-wrap justify-between items-center gap-2">
+                                <span class="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200/70 rounded-xl text-xs font-medium flex items-center gap-1.5">
+                                    <i class="fa-solid fa-book-open text-[11px] text-blue-600"></i> ${escapeHtml(getSubjectNameById(ex.subjectId))}
+                                </span>
+                                <span class="font-mono text-xs font-semibold bg-slate-100 text-slate-700 px-3 py-1 rounded-xl border border-slate-200/80">
+                                    <i class="fa-solid fa-key text-amber-500 mr-1"></i>Token: ${escapeHtml(ex.token)}
+                                </span>
                             </div>
-                            <h3 class="text-lg font-extrabold text-slate-900 mt-2">${escapeHtml(ex.examName)}</h3>
-                            <p class="text-xs text-slate-500 mt-1">Durasi: <strong>${ex.durationMinutes} Menit</strong> | Jumlah Soal: <strong>${(ex.questionIds || []).length} Soal</strong></p>
+                            <h3 class="text-lg sm:text-xl font-semibold text-slate-900 leading-snug group-hover:text-blue-700 transition-colors">${escapeHtml(ex.examName)}</h3>
+                            <div class="grid grid-cols-2 gap-2.5 pt-1">
+                                <div class="flex items-center gap-2.5 p-2.5 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-600">
+                                    <div class="w-8 h-8 rounded-xl bg-blue-100/80 text-blue-600 flex items-center justify-center shrink-0">
+                                        <i class="fa-regular fa-clock"></i>
+                                    </div>
+                                    <div>
+                                        <span class="block text-[10px] text-slate-400">Durasi Ujian</span>
+                                        <strong class="text-slate-800 font-semibold">${ex.durationMinutes} Menit</strong>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2.5 p-2.5 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-600">
+                                    <div class="w-8 h-8 rounded-xl bg-indigo-100/80 text-indigo-600 flex items-center justify-center shrink-0">
+                                        <i class="fa-solid fa-list-check"></i>
+                                    </div>
+                                    <div>
+                                        <span class="block text-[10px] text-slate-400">Jumlah Soal</span>
+                                        <strong class="text-slate-800 font-semibold">${(ex.questionIds || []).length} Butir</strong>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between relative z-10">
                             ${actionAreaHtml}
                         </div>
                     </div>
                 `;
             }).join('');
 
-            container.innerHTML = `
-                <div class="flex-1 flex flex-col h-full bg-slate-100 overflow-y-auto">
-                    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3.5 flex flex-wrap justify-between items-center gap-3 shrink-0">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo Sekolah" class="w-10 h-10 rounded-xl object-contain bg-slate-50 border border-slate-200 p-0.5 shrink-0">
-                            <div class="min-w-0">
-                                <h1 class="text-sm sm:text-base font-extrabold text-slate-900 truncate">Portal Ujian Siswa • ${escapeHtml(appData.settings.schoolName)}</h1>
-                                <p class="text-[11px] sm:text-xs text-slate-500 truncate">Peserta: <strong>${escapeHtml(student.name)}</strong> (Kelas: ${escapeHtml(student.className || '4')} • NISN: ${escapeHtml(student.nisn)})</p>
+            const emptyStateIllustrationHtml = `
+                <div class="bg-white/90 backdrop-blur-md rounded-3xl border border-blue-100/90 shadow-lg p-7 sm:p-10 text-center max-w-2xl mx-auto my-2 relative overflow-hidden">
+                    <div class="absolute -top-16 -right-16 w-44 h-44 bg-blue-400/10 rounded-full blur-2xl pointer-events-none"></div>
+                    <div class="absolute -bottom-16 -left-16 w-44 h-44 bg-indigo-400/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                    <!-- Ilustrasi Edukasi Sederhana (SVG) -->
+                    <div class="w-40 h-36 sm:w-48 sm:h-40 mx-auto mb-4 flex items-center justify-center relative">
+                        <svg viewBox="0 0 240 190" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full drop-shadow-xs">
+                            <circle cx="120" cy="98" r="68" fill="url(#eduBgGrad)" opacity="0.55"/>
+                            <circle cx="52" cy="48" r="8" fill="#60A5FA" opacity="0.4"/>
+                            <circle cx="194" cy="60" r="11" fill="#818CF8" opacity="0.35"/>
+                            <circle cx="182" cy="145" r="7" fill="#38BDF8" opacity="0.45"/>
+                            <!-- Layar / Tablet Ujian -->
+                            <rect x="54" y="42" width="132" height="94" rx="16" fill="#FFFFFF" stroke="#3B82F6" stroke-width="3"/>
+                            <rect x="64" y="54" width="112" height="14" rx="6" fill="#EFF6FF"/>
+                            <circle cx="73" cy="61" r="3" fill="#3B82F6"/>
+                            <circle cx="83" cy="61" r="3" fill="#93C5FD"/>
+                            <!-- Baris Ilustrasi Soal -->
+                            <rect x="66" y="78" width="66" height="8" rx="4" fill="#CBD5E1"/>
+                            <rect x="66" y="93" width="86" height="7" rx="3.5" fill="#E2E8F0"/>
+                            <rect x="66" y="106" width="54" height="7" rx="3.5" fill="#E2E8F0"/>
+                            <!-- Lencana Centang & Buku -->
+                            <rect x="142" y="82" width="28" height="28" rx="9" fill="url(#eduBadgeGrad)"/>
+                            <path d="M150 96.5L154.5 101L163 91.5" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                            <!-- Buku Terbuka di Bawah -->
+                            <path d="M84 148C84 142 104 139 120 144C136 139 156 142 156 148V162C156 157 136 154 120 159C104 154 84 157 84 162V148Z" fill="#2563EB"/>
+                            <path d="M120 144V159" stroke="#EFF6FF" stroke-width="2.5" stroke-linecap="round"/>
+                            <!-- Topi Wisuda Kecil -->
+                            <path d="M120 22L146 33L120 44L94 33L120 22Z" fill="#1D4ED8"/>
+                            <path d="M106 39V47C106 50 112 53 120 53C128 53 134 50 134 47V39" stroke="#1E40AF" stroke-width="2.5" stroke-linecap="round"/>
+                            <defs>
+                                <linearGradient id="eduBgGrad" x1="52" y1="30" x2="188" y2="166" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#DBEAFE"/>
+                                    <stop offset="1" stop-color="#E0E7FF"/>
+                                </linearGradient>
+                                <linearGradient id="eduBadgeGrad" x1="142" y1="82" x2="170" y2="110" gradientUnits="userSpaceOnUse">
+                                    <stop stop-color="#2563EB"/>
+                                    <stop offset="1" stop-color="#4F46E5"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+
+                    <span class="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-[11px] font-semibold uppercase tracking-wider mb-2">
+                        <i class="fa-regular fa-calendar-check"></i> Informasi Jadwal Ujian
+                    </span>
+                    <h3 class="text-base sm:text-lg font-semibold text-slate-800">Belum Ada Jadwal Ujian Aktif Saat Ini</h3>
+                    <p class="text-xs sm:text-sm font-normal text-slate-500 max-w-md mx-auto mt-1.5 leading-relaxed">
+                        Saat ini belum ada paket ujian yang dijadwalkan untuk <strong class="text-slate-700 font-medium">Kelas ${escapeHtml(student.className || '4')}</strong>. Halaman ini akan otomatis menampilkan daftar ujian begitu pengawas mengaktifkan jadwal.
+                    </p>
+
+                    <div class="mt-6 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+                        <div class="p-3 rounded-2xl bg-slate-50/90 border border-slate-200/60 flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 text-xs">
+                                <i class="fa-solid fa-wifi"></i>
+                            </div>
+                            <div>
+                                <p class="text-[11px] font-semibold text-slate-700">Sinkron Otomatis</p>
+                                <p class="text-[10px] text-slate-500">Soal muncul real-time</p>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 shrink-0">
-                            <div class="live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/80 text-emerald-700 text-[10px] sm:text-[11px] font-bold flex items-center gap-1.5 transition-all">
+                        <div class="p-3 rounded-2xl bg-slate-50/90 border border-slate-200/60 flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 text-xs">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                            </div>
+                            <div>
+                                <p class="text-[11px] font-semibold text-slate-700">Auto-Save Cloud</p>
+                                <p class="text-[10px] text-slate-500">Jawaban tersimpan aman</p>
+                            </div>
+                        </div>
+                        <div class="p-3 rounded-2xl bg-slate-50/90 border border-slate-200/60 flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 text-xs">
+                                <i class="fa-solid fa-user-shield"></i>
+                            </div>
+                            <div>
+                                <p class="text-[11px] font-semibold text-slate-700">Akun Terverifikasi</p>
+                                <p class="text-[10px] text-slate-500">Siap mengikuti ujian</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = `
+                <div class="flex-1 flex flex-col h-full font-poppins bg-gradient-to-br from-blue-50 via-slate-50 to-indigo-50/90 relative overflow-y-auto custom-scrollbar select-none">
+                    <!-- Ornamen Abstrak Transparan Latar Belakang -->
+                    <div class="fixed -top-28 -left-28 w-96 h-96 rounded-full bg-gradient-to-br from-blue-400/15 to-cyan-300/10 blur-3xl pointer-events-none"></div>
+                    <div class="fixed top-1/3 -right-28 w-96 h-96 rounded-full bg-gradient-to-tr from-indigo-400/15 to-blue-300/10 blur-3xl pointer-events-none"></div>
+                    <div class="fixed -bottom-28 left-1/4 w-80 h-80 rounded-full bg-gradient-to-r from-sky-300/15 to-indigo-300/10 blur-3xl pointer-events-none"></div>
+
+                    <!-- Header Portal Siswa Modern -->
+                    <header class="sticky top-0 z-30 bg-white/85 backdrop-blur-xl border-b border-blue-100/80 px-4 sm:px-8 py-3.5 flex flex-wrap justify-between items-center gap-3 shrink-0 shadow-2xs">
+                        <div class="flex items-center gap-3.5 min-w-0">
+                            <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 p-0.5 shadow-sm shrink-0">
+                                <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo Sekolah" class="w-full h-full rounded-[14px] object-contain bg-white p-1">
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/70 text-[10px] font-semibold uppercase tracking-wider">Portal Ujian Siswa</span>
+                                </div>
+                                <h1 class="text-sm sm:text-base font-semibold text-slate-900 truncate mt-0.5">${escapeHtml(appData.settings.schoolName)}</h1>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2.5 shrink-0">
+                            <div class="live-sync-badge px-3 py-1.5 rounded-full bg-emerald-50/90 border border-emerald-200/80 text-emerald-700 text-[11px] font-semibold flex items-center gap-1.5 transition-all shadow-2xs">
                                 <span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span class="hidden sm:inline">Live Sync Aktif</span><span class="sm:hidden">Sync</span>
                             </div>
-                            <button type="button" onclick="window.logoutApp()" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold"><i class="fa-solid fa-power-off mr-1"></i> Keluar</button>
+                            <button type="button" onclick="window.logoutApp()" class="px-4 py-2 bg-red-50 hover:bg-red-600 text-red-600 hover:text-white border border-red-200/80 hover:border-red-600 rounded-2xl text-xs font-semibold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer">
+                                <i class="fa-solid fa-power-off"></i> <span>Keluar</span>
+                            </button>
                         </div>
                     </header>
-                    <main class="p-4 sm:p-6 max-w-4xl mx-auto w-full space-y-6">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">${examCards || '<p class="text-xs text-slate-400">Tidak ada jadwal ujian aktif.</p>'}</div>
+
+                    <!-- Konten Utama -->
+                    <main class="relative z-10 flex-1 p-4 sm:p-8 max-w-5xl mx-auto w-full space-y-6">
+                        <!-- Banner Kartu Informasi Peserta (Biru Gradasi & Ornamen Abstrak Transparan) -->
+                        <div class="rounded-3xl bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 text-white p-5 sm:p-7 shadow-lg relative overflow-hidden">
+                            <div class="absolute -right-10 -top-12 w-52 h-52 rounded-full bg-white/10 pointer-events-none"></div>
+                            <div class="absolute right-20 -bottom-16 w-40 h-40 rounded-full bg-cyan-300/15 pointer-events-none"></div>
+
+                            <div class="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center text-2xl sm:text-3xl shadow-inner shrink-0">
+                                        <i class="fa-solid fa-user-graduate text-cyan-200"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-normal text-blue-100">Selamat Datang, Peserta Ujian</p>
+                                        <h2 class="text-lg sm:text-2xl font-semibold tracking-tight text-white leading-snug">${escapeHtml(student.name)}</h2>
+                                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 text-xs font-medium text-white">
+                                                <i class="fa-solid fa-school text-cyan-200 text-[11px]"></i> Kelas ${escapeHtml(student.className || '4')}
+                                            </span>
+                                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 text-xs font-medium text-white">
+                                                <i class="fa-solid fa-id-card text-cyan-200 text-[11px]"></i> NISN: ${escapeHtml(student.nisn)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="sm:text-right bg-white/10 backdrop-blur-xs border border-white/15 rounded-2xl px-4 py-3 shrink-0">
+                                    <span class="text-[11px] text-blue-100 block">Jadwal Ujian Tersedia</span>
+                                    <span class="text-xl sm:text-2xl font-semibold text-white">${availableExams.length} <span class="text-xs font-normal text-cyan-200">Paket Aktif</span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Daftar Paket Ujian atau Ilustrasi Edukasi Saat Kosong -->
+                        ${availableExams.length > 0
+                            ? `<div class="space-y-3">
+                                <div class="flex items-center justify-between px-1">
+                                    <h3 class="text-sm sm:text-base font-semibold text-slate-800 flex items-center gap-2">
+                                        <i class="fa-solid fa-file-signature text-blue-600"></i> Daftar Ujian Aktif Anda
+                                    </h3>
+                                    <span class="text-xs text-slate-500">Pilih ujian untuk mulai mengerjakan</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">${examCards}</div>
+                               </div>`
+                            : emptyStateIllustrationHtml}
                     </main>
                 </div>
             `;
