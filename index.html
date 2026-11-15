@@ -1416,14 +1416,19 @@
             });
         };
 
-        window.autoLogoutStudentToInitialLogin = async function(modalTitle = 'Ujian Selesai & Jawaban Terkirim', modalMessage = 'Terima kasih! Seluruh jawaban ujian Anda telah berhasil disimpan ke sistem. Akun Anda telah keluar (Logout) secara otomatis.', modalType = 'success') {
+        window.autoLogoutStudentToInitialLogin = async function() {
+            const studentIdToRelease = appData.currentUser && appData.currentUser.role === 'student'
+                ? appData.currentUser.studentId
+                : null;
+
             stopStudentHeartbeat();
             window.stopAllExamTimersAndWatchers();
-            await window.releaseStudentLoginLock();
+            window.closeModal();
 
             isExamWorkspaceActive = false;
             isViewingResultReview = false;
             isSubmittingFinalExam = false;
+            isViolationModalOpen = false;
             currentActiveExam = null;
             currentExamQuestions = [];
             currentStudentAnswers = {};
@@ -1436,10 +1441,8 @@
             window.renderLoginView();
             window.switchLoginTab('student');
 
-            if (modalTitle || modalMessage) {
-                setTimeout(() => {
-                    window.showModal(modalTitle, modalMessage, modalType);
-                }, 80);
+            if (studentIdToRelease) {
+                await window.releaseStudentLoginLock(studentIdToRelease);
             }
         };
 
@@ -7387,7 +7390,7 @@
                         <i class="fa-solid fa-circle-check text-xl text-emerald-600"></i>
                         <div>
                             <p class="font-bold text-sm">Konfirmasi Selesai Ujian</p>
-                            <p class="text-[11px] text-emerald-700">Pastikan seluruh jawaban Anda telah diperiksa sebelum dikirim. Setelah dikirim, ujian tidak dapat dibuka kembali.</p>
+                            <p class="text-[11px] text-emerald-700">Pastikan seluruh jawaban Anda telah diperiksa sebelum dikirim. Setelah dikirim, Anda akan otomatis keluar ke halaman awal login.</p>
                         </div>
                     </div>
                     <div class="space-y-2 p-4 bg-slate-50 rounded-2xl border border-slate-200 font-semibold text-slate-700">
@@ -7401,6 +7404,7 @@
 
             window.showModal('Konfirmasi Selesai Ujian', '', 'info', (confirmed) => {
                 if (confirmed) {
+                    window.closeModal();
                     window.submitExamFinal(false);
                 }
                 return true;
@@ -7411,43 +7415,17 @@
             if (isSubmittingFinalExam) return;
             isSubmittingFinalExam = true;
             window.stopAllExamTimersAndWatchers();
+            window.closeModal();
 
             const student = appData.currentUser;
             if (!student || !currentActiveExam) {
                 isSubmittingFinalExam = false;
+                await window.autoLogoutStudentToInitialLogin();
                 return;
             }
 
             const activeExamSnapshot = currentActiveExam;
-            const verification = await verifyExamEligibilityFromServer(activeExamSnapshot.id, student);
-            if (!verification.allowed && !isTimeoutAutoSubmit) {
-                isSubmittingFinalExam = false;
-                await window.autoLogoutStudentToInitialLogin('Ujian Telah Ditutup', verification.message, 'error');
-                return;
-            }
-
-            // Validasi token sesi terakhir di server agar perangkat lama yang sudah digantikan tidak menimpa hasil
             const sessId = getSessionDocId(activeExamSnapshot.id, student.studentId);
-            const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
-            if (cloudSess && (cloudSess.status === 'SUBMITTED' || cloudSess.status === 'COMPLETED')) {
-                isSubmittingFinalExam = false;
-                await window.autoLogoutStudentToInitialLogin(
-                    'Ujian Sudah Terkirim',
-                    'Jawaban ujian Anda telah dikirim sebelumnya. Akun Anda otomatis keluar (Logout) ke halaman login.',
-                    'info'
-                );
-                return;
-            }
-            if (cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
-                isSubmittingFinalExam = false;
-                await window.autoLogoutStudentToInitialLogin(
-                    'Sesi Berpindah Perangkat',
-                    'Sesi ujian ini sedang aktif pada perangkat lain. Akun pada perangkat ini otomatis keluar (Logout).',
-                    'error'
-                );
-                return;
-            }
-
             const clonedAnswers = JSON.parse(JSON.stringify(currentStudentAnswers || {}));
             const calc = window.calculateExamSubmissionScore(currentExamQuestions, clonedAnswers, {});
 
@@ -7481,9 +7459,7 @@
             };
 
             appData.examResults.push(resultObj);
-            await syncCollectionRecord('examResults', resultObj.resultId, resultObj);
 
-            // Tandai sesi aktif menjadi SUBMITTED agar tidak bisa dilanjutkan kembali dari perangkat mana pun
             const completedSessionPayload = {
                 id: sessId,
                 examId: activeExamSnapshot.id,
@@ -7499,7 +7475,6 @@
             };
             const sIdx = appData.examSessions.findIndex(s => s.id === sessId);
             if (sIdx !== -1) appData.examSessions[sIdx] = { ...appData.examSessions[sIdx], ...completedSessionPayload };
-            await syncCollectionRecord('examSessions', sessId, completedSessionPayload);
 
             let p = appData.examParticipants.find(x => x.examId === activeExamSnapshot.id && x.studentId === student.studentId);
             if (!p) {
@@ -7519,16 +7494,20 @@
                 p.status = 'Selesai';
                 p.violationCount = currentViolationCount;
             }
-            await syncCollectionRecord('examParticipants', p.id, p);
 
             logActivity(`Siswa ${student.name} menyelesaikan ujian ${activeExamSnapshot.examName} dan otomatis logout.`);
 
-            const finishTitle = isTimeoutAutoSubmit ? 'Waktu Habis & Jawaban Otomatis Terkirim' : 'Ujian Selesai & Jawaban Terkirim';
-            const finishMsg = isTimeoutAutoSubmit
-                ? `Waktu pengerjaan ujian "${activeExamSnapshot.examName}" telah habis. Seluruh jawaban Anda telah disimpan secara otomatis dan akun Anda telah keluar (Logout) kembali ke halaman login.`
-                : `Terima kasih ${student.name}! Jawaban Anda untuk ujian "${activeExamSnapshot.examName}" telah berhasil dikirim dan disimpan. Akun Anda telah keluar (Logout) secara otomatis.`;
+            try {
+                await Promise.all([
+                    syncCollectionRecord('examResults', resultObj.resultId, resultObj),
+                    syncCollectionRecord('examSessions', sessId, completedSessionPayload),
+                    syncCollectionRecord('examParticipants', p.id, p)
+                ]);
+            } catch (syncErr) {
+                console.warn('Sinkronisasi hasil ujian selesai:', syncErr);
+            }
 
-            await window.autoLogoutStudentToInitialLogin(finishTitle, finishMsg, 'success');
+            await window.autoLogoutStudentToInitialLogin();
         };
 
         window.openSavedExamResultReview = function(resultId) {
