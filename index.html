@@ -1400,30 +1400,69 @@
             window.detachAntiCheatListeners();
         };
 
+        window.releaseStudentLoginLock = async function(studentIdOverride = null) {
+            const targetStudentId = studentIdOverride || (appData.currentUser && appData.currentUser.role === 'student' ? appData.currentUser.studentId : null);
+            if (!targetStudentId) return;
+            const stdObj = appData.students.find(s => s.id === targetStudentId);
+            if (stdObj) {
+                stdObj.isLoggedIn = false;
+                stdObj.activeSessionId = '';
+                stdObj.lastHeartbeatAt = 0;
+            }
+            await syncCollectionRecord('students', targetStudentId, {
+                isLoggedIn: false,
+                activeSessionId: '',
+                lastHeartbeatAt: 0
+            });
+        };
+
+        window.autoLogoutStudentToInitialLogin = async function(modalTitle = 'Ujian Selesai & Jawaban Terkirim', modalMessage = 'Terima kasih! Seluruh jawaban ujian Anda telah berhasil disimpan ke sistem. Akun Anda telah keluar (Logout) secara otomatis.', modalType = 'success') {
+            stopStudentHeartbeat();
+            window.stopAllExamTimersAndWatchers();
+            await window.releaseStudentLoginLock();
+
+            isExamWorkspaceActive = false;
+            isViewingResultReview = false;
+            isSubmittingFinalExam = false;
+            currentActiveExam = null;
+            currentExamQuestions = [];
+            currentStudentAnswers = {};
+            currentDoubtfulMap = {};
+            currentSessionId = '';
+            currentSessionToken = '';
+            appData.currentUser = null;
+
+            await window.exitStudentFullscreen();
+            window.renderLoginView();
+            window.switchLoginTab('student');
+
+            if (modalTitle || modalMessage) {
+                setTimeout(() => {
+                    window.showModal(modalTitle, modalMessage, modalType);
+                }, 80);
+            }
+        };
+
         window.logoutApp = async function() {
             if (isExamWorkspaceActive && currentActiveExam && !isSubmittingFinalExam) {
                 await window.persistExamSessionToCloud(true);
             }
             if (appData.currentUser && appData.currentUser.role === 'student') {
-                const studentId = appData.currentUser.studentId;
-                const stdObj = appData.students.find(s => s.id === studentId);
-                if (stdObj) {
-                    stdObj.isLoggedIn = false;
-                    stdObj.activeSessionId = '';
-                    stdObj.lastHeartbeatAt = 0;
-                }
-                await syncCollectionRecord('students', studentId, {
-                    isLoggedIn: false,
-                    activeSessionId: '',
-                    lastHeartbeatAt: 0
-                });
+                await window.releaseStudentLoginLock(appData.currentUser.studentId);
             }
             stopStudentHeartbeat();
             window.stopAllExamTimersAndWatchers();
+            isExamWorkspaceActive = false;
             isViewingResultReview = false;
+            isSubmittingFinalExam = false;
+            currentActiveExam = null;
+            currentExamQuestions = [];
+            currentStudentAnswers = {};
+            currentDoubtfulMap = {};
             appData.currentUser = null;
             await window.exitStudentFullscreen();
             window.renderLoginView();
+            window.switchLoginTab('student');
         };
         window.handleLogout = window.logoutApp;
 
@@ -6070,20 +6109,19 @@
                     const remoteData = snap.data();
                     if (remoteData.status === 'SUBMITTED') {
                         window.stopAllExamTimersAndWatchers();
-                        window.logoutApp().then(() => {
-                            window.showModal('Ujian Telah Dikirim & Otomatis Keluar', 'Sesi ujian ini telah diselesaikan dan dikirim. Akun Anda telah dikeluarkan (Logout) secara otomatis.', 'success');
-                        });
+                        window.autoLogoutStudentToInitialLogin(
+                            'Ujian Telah Selesai',
+                            'Sesi ujian ini telah diselesaikan dan dikirim. Akun Anda otomatis keluar (Logout) kembali ke halaman awal login.',
+                            'info'
+                        );
                         return;
                     }
                     if (remoteData.sessionToken && currentSessionToken && remoteData.sessionToken !== currentSessionToken) {
                         window.stopAllExamTimersAndWatchers();
-                        window.showModal(
+                        window.autoLogoutStudentToInitialLogin(
                             'Sesi Berpindah ke Perangkat Lain',
-                            `Ujian Anda baru saja dibuka dan diambil alih pada perangkat lain (${remoteData.deviceInfo || 'Perangkat Baru'}). Halaman pada perangkat ini dinonaktifkan agar tidak menimpa jawaban terbaru Anda.`,
-                            'error',
-                            () => {
-                                window.renderStudentPortal(false);
-                            }
+                            `Ujian Anda baru saja dibuka dan diambil alih pada perangkat lain (${remoteData.deviceInfo || 'Perangkat Baru'}). Akun pada perangkat ini otomatis keluar (Logout).`,
+                            'error'
                         );
                     }
                 }, (err) => {
@@ -6294,8 +6332,11 @@
             // Cek apakah sudah pernah disubmit selesai
             const finishedRes = appData.examResults.find(r => r.studentId === student.studentId && r.examId === examId);
             if (finishedRes) {
-                window.showModal('Ujian Sudah Selesai', 'Anda telah menyelesaikan dan mengirim ujian ini sebelumnya.', 'info');
-                window.renderStudentPortal(false);
+                await window.autoLogoutStudentToInitialLogin(
+                    'Ujian Sudah Selesai',
+                    'Anda telah menyelesaikan dan mengirim jawaban ujian ini sebelumnya. Akun Anda otomatis keluar (Logout) ke halaman login.',
+                    'info'
+                );
                 return;
             }
 
@@ -6309,9 +6350,12 @@
             }
 
             const existingSess = cloudSess || appData.examSessions.find(s => s.id === sessId);
-            if (existingSess && existingSess.status === 'SUBMITTED') {
-                window.showModal('Ujian Telah Dikirim', 'Sesi ujian Anda telah berstatus selesai.', 'info');
-                window.renderStudentPortal(false);
+            if (existingSess && (existingSess.status === 'SUBMITTED' || existingSess.status === 'COMPLETED')) {
+                await window.autoLogoutStudentToInitialLogin(
+                    'Ujian Telah Dikirim',
+                    'Sesi ujian Anda telah berstatus selesai. Akun Anda otomatis keluar (Logout) ke halaman login.',
+                    'info'
+                );
                 return;
             }
 
@@ -6459,8 +6503,11 @@
             // Pastikan ujian belum disubmit
             const alreadyDone = appData.examResults.find(r => r.studentId === student.studentId && r.examId === ex.id);
             if (alreadyDone) {
-                window.showModal('Ujian Telah Diselesaikan', 'Anda tidak dapat mengerjakan ulang ujian yang sudah dikirim.', 'info');
-                window.renderStudentPortal(false);
+                await window.autoLogoutStudentToInitialLogin(
+                    'Ujian Telah Diselesaikan',
+                    'Anda telah menyelesaikan dan mengirim jawaban untuk ujian ini. Sistem secara otomatis mengeluarkan (Logout) akun Anda ke halaman awal login.',
+                    'info'
+                );
                 return;
             }
 
@@ -6527,17 +6574,10 @@
             }
             syncCollectionRecord('examParticipants', p.id, p);
 
-            // Jika waktu ujian ternyata sudah habis saat siswa berada di luar aplikasi, langsung jalankan mekanisme penyelesaian otomatis
+            // Jika waktu ujian ternyata sudah habis saat siswa berada di luar aplikasi, langsung jalankan mekanisme penyelesaian otomatis & logout
             if (remainingSeconds <= 0) {
                 isExamWorkspaceActive = true;
-                window.showModal(
-                    'Waktu Ujian Telah Berakhir',
-                    'Batas waktu pengerjaan ujian telah habis saat sesi Anda terputus. Sistem secara otomatis menyimpan dan mengirim seluruh jawaban terakhir Anda.',
-                    'info',
-                    () => {
-                        window.submitExamFinal();
-                    }
-                );
+                await window.submitExamFinal(true);
                 return;
             }
 
@@ -6981,10 +7021,10 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur === letter;
                     return `
-                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="flex items-center justify-between gap-3.5 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
-                                <span class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
+                                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
+                                <span class="text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
                             </div>
                             <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'border-blue-600' : 'border-slate-300'}">
                                 ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
@@ -6999,10 +7039,10 @@
                     const letter = String.fromCharCode(65 + i);
                     const selected = cur.includes(letter);
                     return `
-                        <label class="flex items-center justify-between gap-3.5 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
+                        <label class="flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/40 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-blue-300'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
-                                <span class="w-8 h-8 rounded-xl flex items-center justify-center text-sm font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
+                                <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-extrabold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
+                                <span class="text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
                             </div>
                             <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300 shrink-0">
                         </label>
@@ -7022,16 +7062,16 @@
                     const isSalah = chosen === 'Salah';
                     return `
                         <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition">
-                            <td class="p-4 text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed">
+                            <td class="p-4 text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">
                                 <strong class="text-indigo-700 mr-1.5">${letter}.</strong> ${escapeHtml(stmt)}
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
-                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
                                     Benar
                                 </button>
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
-                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
+                                <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Salah')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-extrabold border transition cursor-pointer ${isSalah ? 'bg-red-600 text-white border-red-600 shadow-sm ring-2 ring-red-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-red-50 hover:border-red-300'}">
                                     Salah
                                 </button>
                             </td>
@@ -7066,8 +7106,8 @@
                     const optsHtml = rightOptions.map(ro => `<option value="${escapeHtml(ro)}" ${selectedVal === ro ? 'selected' : ''}>${escapeHtml(ro)}</option>`).join('');
                     return `
                         <div class="p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <span class="text-[15px] sm:text-[16.5px] font-semibold text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
-                            <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-[14.5px] sm:text-[15.5px] font-bold text-blue-700">
+                            <span class="text-[15.5px] sm:text-[17px] font-medium text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
+                            <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm sm:text-[15.5px] font-bold text-blue-700">
                                 <option value="">-- Pilih Pasangan --</option>
                                 ${optsHtml}
                             </select>
@@ -7076,10 +7116,10 @@
                 }).join('');
             } else if (q.type === 'short_answer') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16.5px] font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                answerInputHtml = `<input type="text" value="${escapeHtml(cur)}" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban singkat Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15.5px] sm:text-[17px] font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">`;
             } else if (q.type === 'essay') {
                 const cur = currentStudentAnswers[q.id] || '';
-                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15px] sm:text-[16.5px] font-medium text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
+                answerInputHtml = `<textarea rows="5" oninput="window.saveAnswer('${q.id}', this.value)" placeholder="Ketik jawaban uraian lengkap Anda di sini..." class="w-full p-4 bg-white border border-slate-300 rounded-2xl text-[15.5px] sm:text-[17px] font-medium leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500">${escapeHtml(cur)}</textarea>`;
             }
 
             const isCurrentDoubtful = !!currentDoubtfulMap[q.id];
@@ -7180,7 +7220,7 @@
 
                             <div class="p-6 flex-1 overflow-y-auto custom-scrollbar space-y-5">
                                 <div class="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
-                                    <p class="text-[17px] sm:text-[19px] font-extrabold text-slate-900 leading-relaxed">
+                                    <p class="text-[18px] sm:text-[20px] font-extrabold text-slate-900 leading-relaxed">
                                         ${escapeHtml(q.questionText)}
                                     </p>
                                     ${hasQuestionImg ? `
@@ -7367,7 +7407,7 @@
             }, { html, showCancel: true, okText: 'Ya, Kirim Jawaban!' });
         };
 
-        window.submitExamFinal = async function(isAutoTimeout = false) {
+        window.submitExamFinal = async function(isTimeoutAutoSubmit = false) {
             if (isSubmittingFinalExam) return;
             isSubmittingFinalExam = true;
             window.stopAllExamTimersAndWatchers();
@@ -7378,50 +7418,56 @@
                 return;
             }
 
-            const verification = await verifyExamEligibilityFromServer(currentActiveExam.id, student);
-            if (!verification.allowed) {
+            const activeExamSnapshot = currentActiveExam;
+            const verification = await verifyExamEligibilityFromServer(activeExamSnapshot.id, student);
+            if (!verification.allowed && !isTimeoutAutoSubmit) {
                 isSubmittingFinalExam = false;
-                await window.logoutApp();
-                window.showModal('Ujian Telah Ditutup', verification.message, 'error');
+                await window.autoLogoutStudentToInitialLogin('Ujian Telah Ditutup', verification.message, 'error');
                 return;
             }
 
             // Validasi token sesi terakhir di server agar perangkat lama yang sudah digantikan tidak menimpa hasil
-            const sessId = getSessionDocId(currentActiveExam.id, student.studentId);
+            const sessId = getSessionDocId(activeExamSnapshot.id, student.studentId);
             const cloudSess = await fetchSingleFirestoreDoc('examSessions', sessId);
-            if (cloudSess && cloudSess.status === 'SUBMITTED') {
+            if (cloudSess && (cloudSess.status === 'SUBMITTED' || cloudSess.status === 'COMPLETED')) {
                 isSubmittingFinalExam = false;
-                await window.logoutApp();
-                window.showModal('Sudah Terkirim & Otomatis Keluar', 'Ujian Anda telah dikirim sebelumnya dan akun Anda telah dikeluarkan secara otomatis.', 'info');
+                await window.autoLogoutStudentToInitialLogin(
+                    'Ujian Sudah Terkirim',
+                    'Jawaban ujian Anda telah dikirim sebelumnya. Akun Anda otomatis keluar (Logout) ke halaman login.',
+                    'info'
+                );
                 return;
             }
             if (cloudSess && cloudSess.sessionToken && currentSessionToken && cloudSess.sessionToken !== currentSessionToken) {
                 isSubmittingFinalExam = false;
-                await window.logoutApp();
-                window.showModal('Sesi Tidak Valid', 'Sesi ujian ini sedang aktif pada perangkat lain. Pengiriman hanya dapat dilakukan dari perangkat terbaru.', 'error');
+                await window.autoLogoutStudentToInitialLogin(
+                    'Sesi Berpindah Perangkat',
+                    'Sesi ujian ini sedang aktif pada perangkat lain. Akun pada perangkat ini otomatis keluar (Logout).',
+                    'error'
+                );
                 return;
             }
 
             const clonedAnswers = JSON.parse(JSON.stringify(currentStudentAnswers || {}));
             const calc = window.calculateExamSubmissionScore(currentExamQuestions, clonedAnswers, {});
 
-            appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === currentActiveExam.id));
+            appData.examResults = appData.examResults.filter(r => !(r.studentId === student.studentId && r.examId === activeExamSnapshot.id));
 
-            const submittedTimeLabel = isAutoTimeout
+            const submittedTimeStr = isTimeoutAutoSubmit
                 ? new Date().toLocaleString('id-ID') + ' (Auto-Submit Waktu Habis)'
                 : new Date().toLocaleString('id-ID');
 
             const resultObj = {
-                resultId: 'RES-' + student.studentId + '-' + currentActiveExam.id,
-                examId: currentActiveExam.id,
-                examName: currentActiveExam.examName,
-                subjectId: currentActiveExam.subjectId,
+                resultId: 'RES-' + student.studentId + '-' + activeExamSnapshot.id,
+                examId: activeExamSnapshot.id,
+                examName: activeExamSnapshot.examName,
+                subjectId: activeExamSnapshot.subjectId,
                 studentId: student.studentId,
                 nisn: student.nisn,
                 studentName: student.name,
                 classId: student.classId,
                 className: student.className || '4',
-                submittedAt: submittedTimeLabel,
+                submittedAt: submittedTimeStr,
                 totalScoreObtained: calc.totalScoreObtained,
                 maxPossibleScore: calc.maxPossibleScore,
                 finalScore: calc.finalScore,
@@ -7440,7 +7486,7 @@
             // Tandai sesi aktif menjadi SUBMITTED agar tidak bisa dilanjutkan kembali dari perangkat mana pun
             const completedSessionPayload = {
                 id: sessId,
-                examId: currentActiveExam.id,
+                examId: activeExamSnapshot.id,
                 studentId: student.studentId,
                 nisn: student.nisn,
                 studentName: student.name,
@@ -7455,11 +7501,11 @@
             if (sIdx !== -1) appData.examSessions[sIdx] = { ...appData.examSessions[sIdx], ...completedSessionPayload };
             await syncCollectionRecord('examSessions', sessId, completedSessionPayload);
 
-            let p = appData.examParticipants.find(x => x.examId === currentActiveExam.id && x.studentId === student.studentId);
+            let p = appData.examParticipants.find(x => x.examId === activeExamSnapshot.id && x.studentId === student.studentId);
             if (!p) {
                 p = {
-                    id: 'PRT-' + student.studentId + '-' + currentActiveExam.id,
-                    examId: currentActiveExam.id,
+                    id: 'PRT-' + student.studentId + '-' + activeExamSnapshot.id,
+                    examId: activeExamSnapshot.id,
                     studentId: student.studentId,
                     nisn: student.nisn,
                     studentName: student.name,
@@ -7475,24 +7521,14 @@
             }
             await syncCollectionRecord('examParticipants', p.id, p);
 
-            const finishedExamName = currentActiveExam.examName;
-            const finishedStudentName = student.name;
-            isSubmittingFinalExam = false;
-            isExamWorkspaceActive = false;
-            currentActiveExam = null;
-            currentExamQuestions = [];
-            logActivity(`Siswa ${finishedStudentName} menyelesaikan ujian ${finishedExamName} dan otomatis logout.`);
+            logActivity(`Siswa ${student.name} menyelesaikan ujian ${activeExamSnapshot.examName} dan otomatis logout.`);
 
-            // Otomatis keluar dari mode Fullscreen dan langsung Logout akun siswa kembali ke layar Login
-            await window.logoutApp();
+            const finishTitle = isTimeoutAutoSubmit ? 'Waktu Habis & Jawaban Otomatis Terkirim' : 'Ujian Selesai & Jawaban Terkirim';
+            const finishMsg = isTimeoutAutoSubmit
+                ? `Waktu pengerjaan ujian "${activeExamSnapshot.examName}" telah habis. Seluruh jawaban Anda telah disimpan secara otomatis dan akun Anda telah keluar (Logout) kembali ke halaman login.`
+                : `Terima kasih ${student.name}! Jawaban Anda untuk ujian "${activeExamSnapshot.examName}" telah berhasil dikirim dan disimpan. Akun Anda telah keluar (Logout) secara otomatis.`;
 
-            window.showModal(
-                isAutoTimeout ? 'Waktu Habis & Otomatis Keluar' : 'Ujian Selesai & Otomatis Keluar',
-                isAutoTimeout
-                    ? `Waktu pengerjaan ujian "${finishedExamName}" telah habis. Seluruh jawaban Anda telah berhasil disimpan secara otomatis dan akun Anda telah dikeluarkan (Logout). Terima kasih!`
-                    : `Jawaban ujian "${finishedExamName}" Anda telah berhasil dikirim dan disimpan ke server. Akun Anda telah dikeluarkan (Logout) secara otomatis. Terima kasih!`,
-                'success'
-            );
+            await window.autoLogoutStudentToInitialLogin(finishTitle, finishMsg, 'success');
         };
 
         window.openSavedExamResultReview = function(resultId) {
