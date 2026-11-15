@@ -305,7 +305,8 @@
                 resultSearch: '',
                 resultSort: 'desc',
                 analysisExam: 'ALL',
-                participantExam: 'ALL'
+                participantExam: 'ALL',
+                participantSearch: ''
             },
             settings: {
                 schoolName: 'SD NEGERI GEDONGBOYOUNTUNG',
@@ -753,6 +754,9 @@
                     }
 
                     // Render ulang bagian konten menu aktif secara instan tanpa menutup modal yang sedang terbuka
+                    if (activeMenu === 'participants' && isUserTypingInFilterInput()) {
+                        return;
+                    }
                     window.renderAdminCurrentSection();
                 }
             }, 120);
@@ -1290,7 +1294,9 @@
                 return;
             }
 
-            if (student.passwordHash !== hashCredential(pin) && pin !== '123456') {
+            const expectedHash = student.passwordHash || hashCredential('123456');
+            const isPinMatch = (expectedHash === hashCredential(pin)) || (student.pin && String(student.pin).trim() === pin);
+            if (!isPinMatch) {
                 showLoginError('PIN / Password siswa tidak sesuai.');
                 return;
             }
@@ -2100,7 +2106,10 @@
                     <div class="sm:col-span-2"><label class="block font-bold text-slate-700 mb-1">Asal Sekolah *</label><input type="text" id="stdFormSchool" value="${escapeHtml(currentSchoolVal)}" placeholder="Contoh: SD NEGERI GEDONGBOYOUNTUNG" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-indigo-700"></div>
                     <div><label class="block font-bold text-slate-700 mb-1">Jenis Kelamin (L/P)</label><select id="stdFormGender" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold"><option value="L" ${!existing || existing.gender === 'L' ? 'selected' : ''}>Laki-laki (L)</option><option value="P" ${existing && existing.gender === 'P' ? 'selected' : ''}>Perempuan (P)</option></select></div>
                     <div><label class="block font-bold text-slate-700 mb-1">Pilih Kelas (1 - 6) *</label><select id="stdFormClass" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold">${classOpts}</select></div>
-                    <div class="sm:col-span-2"><label class="block font-bold text-slate-700 mb-1">PIN / Password Login</label><input type="password" id="stdFormPin" value="123456" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+                    <div class="sm:col-span-2">
+                        <label class="block font-bold text-slate-700 mb-1">PIN / Password Login ${existing ? '<span class="text-slate-400 font-normal">(Kosongkan jika tidak ingin mengubah password)</span>' : '*'}</label>
+                        <input type="text" id="stdFormPin" value="${existing ? escapeHtml(existing.pin || '') : '123456'}" placeholder="${existing ? 'Ketik PIN baru untuk mengganti (misal: 112233)' : 'Masukkan PIN Login'}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold text-slate-800">
+                    </div>
                 </div>
             `;
 
@@ -2112,7 +2121,7 @@
                 const fullName = document.getElementById('stdFormName').value.trim();
                 const gender = document.getElementById('stdFormGender').value || 'L';
                 const classId = document.getElementById('stdFormClass').value;
-                const pin = document.getElementById('stdFormPin').value.trim() || '123456';
+                const rawPinInput = document.getElementById('stdFormPin').value.trim();
 
                 if (!nisn || !fullName) {
                     window.showModal('Validasi Data', 'NISN dan Nama Lengkap siswa wajib diisi!', 'error');
@@ -2134,9 +2143,13 @@
                     existing.gender = gender;
                     existing.classId = classId;
                     existing.className = className;
-                    existing.passwordHash = hashCredential(pin);
+                    if (rawPinInput !== '') {
+                        existing.pin = rawPinInput;
+                        existing.passwordHash = hashCredential(rawPinInput);
+                    }
                     syncCollectionRecord('students', existing.id, existing);
                 } else {
+                    const finalPin = rawPinInput || '123456';
                     const newStd = {
                         id: 'STD-' + Date.now(),
                         nisn,
@@ -2148,7 +2161,8 @@
                         className,
                         academicYear: appData.settings.academicYear,
                         username: nisn,
-                        passwordHash: hashCredential(pin),
+                        pin: finalPin,
+                        passwordHash: hashCredential(finalPin),
                         status: 'Aktif'
                     };
                     appData.students.push(newStd);
@@ -5774,7 +5788,18 @@
                 return `<option value="${escapeHtml(e.id)}" ${e.id === activeExamId ? 'selected' : ''}>${prefixIcon}${escapeHtml(e.examName)} (Kelas ${escapeHtml(getClassNameById(e.classId))})${ongoingLabel}</option>`;
             }).join('');
 
-            const rows = appData.students.map((s, idx) => {
+            const searchParticipant = (appData.filters.participantSearch || '').trim().toLowerCase();
+            const filteredParticipantStudents = appData.students.filter(s => {
+                if (!searchParticipant) return true;
+                const schoolStr = s.asalSekolah !== undefined ? (s.asalSekolah || '') : (appData.settings.schoolName || '');
+                return (
+                    (s.nisn || '').toLowerCase().includes(searchParticipant) ||
+                    (s.fullName || '').toLowerCase().includes(searchParticipant) ||
+                    schoolStr.toLowerCase().includes(searchParticipant)
+                );
+            });
+
+            const rows = filteredParticipantStudents.map((s, idx) => {
                 const res = appData.examResults.find(r => r.studentId === s.id && (!activeExamId || r.examId === activeExamId));
                 const sess = appData.examSessions.find(ss => ss.studentId === s.id && (!activeExamId || ss.examId === activeExamId) && ss.status === 'IN_PROGRESS');
                 const part = appData.examParticipants.find(p => p.studentId === s.id && (!activeExamId || p.examId === activeExamId));
@@ -5836,11 +5861,23 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                        <div class="relative flex-1 min-w-[240px]">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-2.5 text-slate-400 text-xs"></i>
+                            <input type="text" id="participantSearchInput" value="${escapeHtml(appData.filters.participantSearch || '')}" oninput="window.filterParticipantSearch(this.value)" placeholder="Cari peserta berdasarkan NISN, Nama Siswa, atau Asal Sekolah..." class="w-full pl-9 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            ${appData.filters.participantSearch ? `<button type="button" onclick="window.filterParticipantSearch('')" class="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer" title="Bersihkan Pencarian"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                        </div>
+                        <div class="text-xs font-bold text-slate-500">
+                            Menampilkan <span class="text-indigo-700 font-extrabold">${filteredParticipantStudents.length}</span> dari ${appData.students.length} Peserta
+                        </div>
+                    </div>
+
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
                             <table class="w-full min-w-[740px] text-left border-collapse">
                                 <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Peserta</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status Sesi</th><th class="px-4 py-3">Pelanggaran</th><th class="px-4 py-3">Aksi Pengawas</th></tr></thead>
-                                <tbody>${rows}</tbody>
+                                <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada peserta ujian yang cocok dengan kata kunci pencarian.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
@@ -5851,6 +5888,17 @@
         window.filterParticipantExam = function(examId) {
             appData.filters.participantExam = examId;
             renderParticipantsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.filterParticipantSearch = function(queryStr) {
+            appData.filters.participantSearch = queryStr;
+            renderParticipantsContent(document.getElementById('adminMainContent'));
+            const inputEl = document.getElementById('participantSearchInput');
+            if (inputEl) {
+                inputEl.focus();
+                const len = inputEl.value.length;
+                try { inputEl.setSelectionRange(len, len); } catch (e) {}
+            }
         };
 
         window.resetStudentExamSession = function(studentId, examId = '') {
