@@ -339,6 +339,94 @@
         let selectedResultIds = new Set();
 
         // ============================================================================
+        // FULLSCREEN API HELPERS (OTOMATIS FULLSCREEN SAAT LOGIN & UJIAN SISWA)
+        // ============================================================================
+        window.isDocumentFullscreen = function() {
+            return Boolean(
+                document.fullscreenElement ||
+                document.webkitFullscreenElement ||
+                document.mozFullScreenElement ||
+                document.msFullscreenElement
+            );
+        };
+
+        window.updateFullscreenButtonUI = function() {
+            const isFs = window.isDocumentFullscreen();
+            const btns = document.querySelectorAll('.student-fullscreen-toggle-btn');
+            btns.forEach(btn => {
+                if (isFs) {
+                    btn.innerHTML = '<i class="fa-solid fa-compress"></i> <span class="hidden sm:inline">Layar Penuh Aktif</span>';
+                    btn.title = 'Klik untuk keluar dari mode layar penuh';
+                } else {
+                    btn.innerHTML = '<i class="fa-solid fa-expand"></i> <span class="hidden sm:inline">Layar Penuh</span>';
+                    btn.title = 'Aktifkan tampilan layar penuh (Fullscreen)';
+                }
+            });
+        };
+
+        window.enterStudentFullscreen = async function() {
+            try {
+                if (window.isDocumentFullscreen()) {
+                    window.updateFullscreenButtonUI();
+                    return true;
+                }
+                const docEl = document.documentElement;
+                if (docEl.requestFullscreen) {
+                    await docEl.requestFullscreen();
+                } else if (docEl.webkitRequestFullscreen) {
+                    await docEl.webkitRequestFullscreen();
+                } else if (docEl.mozRequestFullScreen) {
+                    await docEl.mozRequestFullScreen();
+                } else if (docEl.msRequestFullscreen) {
+                    await docEl.msRequestFullscreen();
+                }
+                window.updateFullscreenButtonUI();
+                return true;
+            } catch (err) {
+                // Browser mungkin memblokir jika dipanggil di luar gesture klik langsung
+                window.updateFullscreenButtonUI();
+                return false;
+            }
+        };
+
+        window.exitStudentFullscreen = async function() {
+            try {
+                if (!window.isDocumentFullscreen()) {
+                    window.updateFullscreenButtonUI();
+                    return true;
+                }
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    await document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) {
+                    await document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) {
+                    await document.msExitFullscreen();
+                }
+                window.updateFullscreenButtonUI();
+                return true;
+            } catch (err) {
+                window.updateFullscreenButtonUI();
+                return false;
+            }
+        };
+
+        window.toggleStudentFullscreen = async function() {
+            if (window.isDocumentFullscreen()) {
+                await window.exitStudentFullscreen();
+            } else {
+                await window.enterStudentFullscreen();
+            }
+        };
+
+        ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach(evtName => {
+            document.addEventListener(evtName, () => {
+                window.updateFullscreenButtonUI();
+            });
+        });
+
+        // ============================================================================
         // SINGLE-DEVICE & SINGLE-TAB LOGIN LOCK (ANTI MULTI-LOGIN SISWA)
         // ============================================================================
         const STUDENT_LOCK_TIMEOUT_MS = 90 * 1000; // 90 detik batas aktif heartbeat
@@ -449,6 +537,7 @@
             window.stopAllExamTimersAndWatchers();
             isViewingResultReview = false;
             appData.currentUser = null;
+            await window.exitStudentFullscreen();
             window.renderLoginView();
             window.showModal(
                 'Sesi Login Berakhir',
@@ -1175,6 +1264,9 @@
                 return;
             }
 
+            // Aktifkan mode layar penuh (Fullscreen) segera saat tombol login siswa ditekan
+            window.enterStudentFullscreen();
+
             // Cek status login real-time langsung dari Firestore untuk mencegah login ganda di perangkat/tab lain
             let latestStudentDoc = student;
             if (!IS_PREVIEW && db) {
@@ -1203,6 +1295,7 @@
             );
 
             if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
+                await window.exitStudentFullscreen();
                 const lockedDevInfo = latestStudentDoc.deviceInfo || (activeOtherExamSess ? activeOtherExamSess.deviceInfo : 'Perangkat / Tab Lain');
                 showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
                 window.showModal(
@@ -1329,6 +1422,7 @@
             window.stopAllExamTimersAndWatchers();
             isViewingResultReview = false;
             appData.currentUser = null;
+            await window.exitStudentFullscreen();
             window.renderLoginView();
         };
         window.handleLogout = window.logoutApp;
@@ -4052,6 +4146,7 @@
             window.stopAllExamTimersAndWatchers();
             currentActiveExam = null;
             currentExamQuestions = [];
+            await window.exitStudentFullscreen();
             window.renderStudentPortal(false);
             window.showModal(
                 'Akses Ujian Berakhir / Ditutup',
@@ -6090,6 +6185,10 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
+                            <button type="button" onclick="window.toggleStudentFullscreen()" class="student-fullscreen-toggle-btn px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer" title="Aktifkan/Nonaktifkan Layar Penuh">
+                                <i class="fa-solid ${window.isDocumentFullscreen() ? 'fa-compress' : 'fa-expand'}"></i>
+                                <span class="hidden sm:inline">${window.isDocumentFullscreen() ? 'Layar Penuh Aktif' : 'Layar Penuh'}</span>
+                            </button>
                             <div class="live-sync-badge px-2.5 py-1 rounded-full bg-emerald-50/80 border border-emerald-200/80 text-emerald-700 text-[10px] sm:text-[11px] font-bold flex items-center gap-1.5 transition-all">
                                 <span class="w-2 h-2 rounded-full bg-emerald-500"></span> <span class="hidden sm:inline">Live Sync Aktif</span><span class="sm:hidden">Sync</span>
                             </div>
@@ -6164,6 +6263,7 @@
                 'info',
                 (confirmed) => {
                     if (confirmed) {
+                        window.enterStudentFullscreen();
                         window.startExamSession(examId, activeSess);
                     }
                     return true;
@@ -6180,6 +6280,9 @@
         window.promptResumeOrStartExam = async function(examId) {
             const student = appData.currentUser;
             if (!student) return;
+
+            // Pastikan mode layar penuh (Fullscreen) aktif saat siswa menekan tombol Mulai / Lanjutkan Ujian
+            window.enterStudentFullscreen();
 
             const verification = await verifyExamEligibilityFromServer(examId, student);
             if (!verification.allowed) {
@@ -6342,6 +6445,8 @@
         window.startExamSession = async function(examId, resumeSessionObj = null) {
             const student = appData.currentUser;
             if (!student) return;
+
+            window.enterStudentFullscreen();
 
             const verification = await verifyExamEligibilityFromServer(examId, student);
             if (!verification.allowed) {
@@ -7022,6 +7127,11 @@
                                 <i class="fa-regular fa-clock"></i>
                                 <span id="examCountdownTimer">${formatHMS(remainingSeconds)}</span>
                             </div>
+
+                            <button type="button" onclick="window.toggleStudentFullscreen()" class="student-fullscreen-toggle-btn px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer" title="Mode Layar Penuh">
+                                <i class="fa-solid ${window.isDocumentFullscreen() ? 'fa-compress' : 'fa-expand'}"></i>
+                                <span class="hidden sm:inline">${window.isDocumentFullscreen() ? 'Layar Penuh Aktif' : 'Layar Penuh'}</span>
+                            </button>
                         </div>
                     </header>
 
@@ -7366,6 +7476,7 @@
             isSubmittingFinalExam = false;
             isViewingResultReview = true;
             logActivity(`Siswa ${student.name} menyelesaikan ujian ${currentActiveExam.examName}.`);
+            await window.exitStudentFullscreen();
             window.renderExamResultReviewPage(resultObj);
         };
 
@@ -7464,6 +7575,7 @@
         window.renderExamResultReviewPage = function(resObj) {
             isViewingResultReview = true;
             isExamWorkspaceActive = false;
+            window.exitStudentFullscreen();
 
             const examObj = appData.exams.find(e => e.id === resObj.examId) || currentActiveExam;
             let questionsList = [];
