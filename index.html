@@ -537,8 +537,8 @@
             window.stopAllExamTimersAndWatchers();
             isViewingResultReview = false;
             appData.currentUser = null;
-            await window.exitStudentFullscreen();
             window.renderLoginView();
+            window.switchLoginTab('student');
             window.showModal(
                 'Sesi Login Berakhir',
                 reasonMsg || 'Sesi login Anda telah direset oleh Administrator atau dihentikan karena konflik perangkat.',
@@ -1295,7 +1295,6 @@
             );
 
             if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
-                await window.exitStudentFullscreen();
                 const lockedDevInfo = latestStudentDoc.deviceInfo || (activeOtherExamSess ? activeOtherExamSess.deviceInfo : 'Perangkat / Tab Lain');
                 showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
                 window.showModal(
@@ -1437,7 +1436,7 @@
             currentSessionToken = '';
             appData.currentUser = null;
 
-            await window.exitStudentFullscreen();
+            // Pertahankan tampilan layar penuh (Fullscreen) hingga pengguna menekan tombol ESC
             window.renderLoginView();
             window.switchLoginTab('student');
 
@@ -1447,10 +1446,11 @@
         };
 
         window.logoutApp = async function() {
+            const wasStudent = appData.currentUser && appData.currentUser.role === 'student';
             if (isExamWorkspaceActive && currentActiveExam && !isSubmittingFinalExam) {
                 await window.persistExamSessionToCloud(true);
             }
-            if (appData.currentUser && appData.currentUser.role === 'student') {
+            if (wasStudent) {
                 await window.releaseStudentLoginLock(appData.currentUser.studentId);
             }
             stopStudentHeartbeat();
@@ -1463,7 +1463,9 @@
             currentStudentAnswers = {};
             currentDoubtfulMap = {};
             appData.currentUser = null;
-            await window.exitStudentFullscreen();
+            if (!wasStudent) {
+                await window.exitStudentFullscreen();
+            }
             window.renderLoginView();
             window.switchLoginTab('student');
         };
@@ -4188,7 +4190,6 @@
             window.stopAllExamTimersAndWatchers();
             currentActiveExam = null;
             currentExamQuestions = [];
-            await window.exitStudentFullscreen();
             window.renderStudentPortal(false);
             window.showModal(
                 'Akses Ujian Berakhir / Ditutup',
@@ -7605,7 +7606,6 @@
         window.renderExamResultReviewPage = function(resObj) {
             isViewingResultReview = true;
             isExamWorkspaceActive = false;
-            window.exitStudentFullscreen();
 
             const examObj = appData.exams.find(e => e.id === resObj.examId) || currentActiveExam;
             let questionsList = [];
