@@ -7182,6 +7182,19 @@
             }).join('\n');
         }
 
+        window.toggleMobileQuestionNavDrawer = function(openState) {
+            const drawer = document.getElementById('mobileQuestionNavDrawer');
+            if (!drawer) return;
+            const shouldOpen = openState !== undefined ? Boolean(openState) : drawer.classList.contains('hidden');
+            if (shouldOpen) {
+                drawer.classList.remove('hidden');
+                drawer.classList.add('flex');
+            } else {
+                drawer.classList.add('hidden');
+                drawer.classList.remove('flex');
+            }
+        };
+
         window.renderExamWorkspace = function() {
             const container = document.getElementById('appContainer');
             const student = appData.currentUser;
@@ -7206,7 +7219,7 @@
                 } else if (isAns) {
                     btnStyle = 'bg-blue-600 text-white font-poppins font-semibold border border-blue-700 shadow-2xs';
                 }
-                return `<button type="button" onclick="window.jumpToQuestion(${idx})" class="h-9 sm:h-9 w-full rounded-xl text-xs flex items-center justify-center transition-all duration-150 cursor-pointer ${btnStyle}">${idx + 1}</button>`;
+                return `<button type="button" onclick="window.toggleMobileQuestionNavDrawer(false); window.jumpToQuestion(${idx})" class="h-10 sm:h-9 w-full rounded-xl text-xs flex items-center justify-center transition-all duration-150 cursor-pointer ${btnStyle}">${idx + 1}</button>`;
             }).join('');
 
             let answerInputHtml = '';
@@ -7323,7 +7336,7 @@
             const hasQuestionImg = Boolean(q.questionImage && q.questionImage.trim());
 
             container.innerHTML = `
-                <div class="flex-1 flex flex-col h-full bg-gradient-to-br from-[#e2ecf8] via-[#edf3fb] to-[#dce7f7] overflow-hidden select-none font-poppins relative">
+                <div class="flex-1 flex flex-col h-full min-h-0 bg-gradient-to-br from-[#e2ecf8] via-[#edf3fb] to-[#dce7f7] overflow-hidden select-none font-poppins relative">
                     <!-- Ornamen Gelombang & Ilustrasi Pojok Kiri Bawah (Tampil di Layar Lebar & HP) -->
                     <div class="fixed bottom-0 left-0 right-0 pointer-events-none z-0 overflow-hidden h-52">
                         <svg viewBox="0 0 1440 220" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" class="w-full h-full">
@@ -7344,23 +7357,36 @@
                     </div>
 
                     <!-- Header Utama Ruang Ujian -->
-                    <header class="min-h-16 bg-gradient-to-r from-[#0f172a] via-[#13203d] to-[#0f172a] text-white px-4 lg:px-6 py-2.5 flex flex-wrap justify-between items-center gap-3 shrink-0 border-b border-slate-800/80 shadow-md relative z-20">
-                        <div class="flex items-center gap-3">
-                            <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo" class="w-10 h-10 rounded-full bg-white object-contain p-0.5 shadow-md shrink-0 border border-blue-300/40">
-                            <div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <h2 class="text-sm sm:text-base font-poppins font-medium tracking-wide uppercase text-white">${escapeHtml(currentActiveExam.examName)}</h2>
-                                    <span class="px-3 py-0.5 bg-blue-600/90 text-white border border-blue-400/40 rounded-full text-[11px] font-poppins font-medium shadow-2xs">${escapeHtml(getSubjectNameById(currentActiveExam.subjectId))}</span>
+                    <header class="bg-gradient-to-r from-[#0f172a] via-[#13203d] to-[#0f172a] text-white px-3.5 sm:px-5 lg:px-6 py-2.5 flex flex-wrap justify-between items-center gap-2.5 shrink-0 border-b border-slate-800/80 shadow-md relative z-20">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <img src="${escapeHtml(appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo" class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white object-contain p-0.5 shadow-md shrink-0 border border-blue-300/40">
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                    <h2 class="text-xs sm:text-base font-poppins font-medium tracking-wide uppercase text-white truncate">${escapeHtml(currentActiveExam.examName)}</h2>
+                                    <span class="px-2.5 py-0.5 bg-blue-600/90 text-white border border-blue-400/40 rounded-full text-[10px] sm:text-[11px] font-poppins font-medium shadow-2xs">${escapeHtml(getSubjectNameById(currentActiveExam.subjectId))}</span>
                                 </div>
-                                <p class="text-[11px] text-slate-300">Platform Ujian dan Evaluasi Pembelajaran • <strong class="text-white font-semibold">${escapeHtml(appData.settings.schoolName)}</strong></p>
+                                <p class="text-[10px] sm:text-[11px] text-slate-300 truncate">Platform Ujian dan Evaluasi Pembelajaran • <strong class="text-white font-semibold">${escapeHtml(appData.settings.schoolName)}</strong></p>
                             </div>
                         </div>
 
-                        <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
-                            <div class="px-3.5 py-1.5 rounded-full bg-amber-950/90 border border-amber-500/50 text-amber-400 text-xs font-poppins font-semibold flex items-center gap-2 shadow-xs" title="Jumlah keluar dari tab/jendela ujian">
-                                <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
-                                <span id="examViolationCounter">Pelanggaran: ${currentViolationCount}x</span>
+                        <div class="flex flex-wrap items-center justify-between sm:justify-end gap-2 w-full sm:w-auto">
+                            <div class="flex items-center gap-2">
+                                <div class="px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-amber-950/90 border border-amber-500/50 text-amber-400 text-[11px] sm:text-xs font-poppins font-semibold flex items-center gap-1.5 shadow-xs" title="Jumlah keluar dari tab/jendela ujian">
+                                    <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+                                    <span id="examViolationCounter">Pelanggaran: ${currentViolationCount}x</span>
+                                </div>
+
+                                <div class="px-3.5 py-1 sm:px-4 sm:py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-full font-mono font-semibold text-xs sm:text-sm flex items-center gap-1.5 shadow-md border border-red-400/40">
+                                    <i class="fa-regular fa-clock"></i>
+                                    <span id="examCountdownTimer">${formatHMS(remainingSeconds)}</span>
+                                </div>
                             </div>
+
+                            <!-- Tombol Cepat Buka Navigasi Nomor Soal di HP -->
+                            <button type="button" onclick="window.toggleMobileQuestionNavDrawer(true)" class="lg:hidden px-3 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50 text-[11px] font-poppins font-semibold flex items-center gap-1.5 shadow-md cursor-pointer">
+                                <i class="fa-solid fa-border-all"></i>
+                                <span>No. Soal (${answeredTotal}/${currentExamQuestions.length})</span>
+                            </button>
 
                             <div class="hidden md:flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-slate-800/90 border border-slate-600/80 shadow-inner">
                                 <div class="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-400/30 flex items-center justify-center text-xs">
@@ -7375,20 +7401,46 @@
                                     <p class="text-[10px] text-slate-300">Kelas ${escapeHtml(student.className || '4')} • NISN: ${escapeHtml(student.nisn)}</p>
                                 </div>
                             </div>
-
-                            <div class="px-4 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-full font-mono font-semibold text-sm flex items-center gap-2 shadow-md border border-red-400/40">
-                                <i class="fa-regular fa-clock"></i>
-                                <span id="examCountdownTimer">${formatHMS(remainingSeconds)}</span>
-                            </div>
                         </div>
                     </header>
 
-                    <!-- Kontainer 3 Panel (Responsif di Laptop & HP) -->
-                    <div class="relative z-10 flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 p-2.5 sm:p-4 overflow-y-auto lg:overflow-hidden">
-                        <!-- KOLOM KIRI: PANEL STIMULUS & INFORMASI -->
-                        <section class="lg:col-span-5 bg-white/85 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col lg:h-full lg:overflow-hidden relative overflow-hidden">
+                    <!-- Drawer Pop-up Navigasi Nomor Soal untuk HP (Ketika Tombol "No. Soal" Ditekan) -->
+                    <div id="mobileQuestionNavDrawer" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-xs p-3 lg:hidden">
+                        <div class="bg-white rounded-3xl w-full max-w-md p-4 sm:p-5 shadow-2xl border border-slate-200 space-y-3.5 max-h-[82vh] flex flex-col">
+                            <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 shrink-0">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-border-all text-blue-600 text-sm"></i>
+                                    <h3 class="text-xs sm:text-sm font-poppins font-semibold uppercase tracking-wider text-slate-800">PENJELAJAH NOMOR SOAL</h3>
+                                </div>
+                                <button type="button" onclick="window.toggleMobileQuestionNavDrawer(false)" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-base cursor-pointer">&times;</button>
+                            </div>
+                            <div class="flex items-center justify-between gap-2 text-[11px] font-poppins font-normal text-slate-600 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200/70 shrink-0">
+                                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span> Dijawab (${answeredTotal})</div>
+                                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Ragu (${doubtfulTotal})</div>
+                                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-200 border border-slate-300 inline-block"></span> Belum (${currentExamQuestions.length - answeredTotal})</div>
+                            </div>
+                            <div class="overflow-y-auto custom-scrollbar flex-1 py-1">
+                                <div class="grid grid-cols-5 gap-2">
+                                    ${gridNav}
+                                </div>
+                            </div>
+                            <div class="pt-2 border-t border-slate-100 flex items-center gap-2 shrink-0">
+                                <button type="button" onclick="window.toggleMobileQuestionNavDrawer(false)" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-poppins font-semibold text-xs cursor-pointer">
+                                    Tutup
+                                </button>
+                                <button type="button" onclick="window.toggleMobileQuestionNavDrawer(false); window.confirmSubmitExam()" class="flex-1 py-2.5 bg-[#108963] hover:bg-[#0d7453] text-white rounded-2xl font-poppins font-semibold text-xs shadow-md flex items-center justify-center gap-1.5 cursor-pointer">
+                                    <i class="fa-solid fa-paper-plane"></i> Kirim & Selesai
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Kontainer 3 Panel (Responsif di Laptop & HP, Scrollable Mulus di HP) -->
+                    <div class="relative z-10 flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-12 gap-3 sm:gap-4 p-3 sm:p-4 overflow-y-auto lg:overflow-hidden custom-scrollbar">
+                        <!-- KOLOM KIRI: PANEL STIMULUS & INFORMASI (Di HP tampil kompak jika kosong agar langsung ke soal) -->
+                        <section class="lg:col-span-5 bg-white/85 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col shrink-0 lg:shrink lg:h-full lg:min-h-0 lg:overflow-hidden relative overflow-hidden ${(!hasStimulusText && !hasStimulusImg) ? 'hidden lg:flex' : 'flex'}">
                             <!-- Ornamen Ilustrasi Buku & Daun Pojok Kiri Bawah Panel Stimulus -->
-                            <div class="absolute bottom-0 left-0 right-0 h-32 pointer-events-none z-0 overflow-hidden opacity-90">
+                            <div class="hidden lg:block absolute bottom-0 left-0 right-0 h-32 pointer-events-none z-0 overflow-hidden opacity-90">
                                 <svg viewBox="0 0 500 130" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full" preserveAspectRatio="xMinYMax slice">
                                     <path d="M0 78C130 55 280 110 500 95V130H0V78Z" fill="#E1ECFA" opacity="0.7"/>
                                     <path d="M0 98C120 82 240 115 390 130H0V98Z" fill="#D9A74A" opacity="0.75"/>
@@ -7403,15 +7455,15 @@
                                 </svg>
                             </div>
 
-                            <div class="px-5 py-3.5 border-b border-slate-200/70 flex items-center justify-between shrink-0 relative z-10 bg-white/60">
+                            <div class="px-4 sm:px-5 py-3 sm:py-3.5 border-b border-slate-200/70 flex items-center justify-between shrink-0 relative z-10 bg-white/60">
                                 <h3 class="text-xs sm:text-[13px] font-poppins font-semibold uppercase tracking-wider text-slate-800 flex items-center gap-2">
                                     <i class="fa-solid fa-book-open text-blue-600"></i> PANEL STIMULUS & INFORMASI
                                 </h3>
                             </div>
 
-                            <div class="p-4 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4 relative z-10">
+                            <div class="p-4 sm:p-6 flex-1 lg:overflow-y-auto custom-scrollbar space-y-4 relative z-10">
                                 ${hasStimulusText ? `
-                                    <div class="relative p-5 sm:p-6 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-xs overflow-hidden">
+                                    <div class="relative p-4 sm:p-6 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-xs overflow-hidden">
                                         <span class="absolute left-0 top-6 bottom-6 w-1 bg-amber-300 rounded-r-full"></span>
                                         ${formatStimulusTextWithBoldLead(q.stimulusText)}
                                     </div>
@@ -7424,7 +7476,7 @@
                                                 <i class="fa-solid fa-magnifying-glass-plus mr-1"></i> Perbesar Gambar
                                             </button>
                                         </div>
-                                        <img src="${escapeHtml(q.stimulusImage)}" alt="Stimulus" onclick="window.previewZoomImage('${escapeHtml(q.stimulusImage)}', 'Gambar Stimulus Soal Nomor ${currentQuestionIndex + 1}')" onerror="this.onerror=null; this.src='https://placehold.co/600x360/f1f5f9/64748b?text=Gambar+Stimulus+Tidak+Dapat+Dimuat';" class="w-full max-h-[420px] object-contain rounded-xl bg-white mx-auto cursor-zoom-in border border-slate-100 p-1">
+                                        <img src="${escapeHtml(q.stimulusImage)}" alt="Stimulus" onclick="window.previewZoomImage('${escapeHtml(q.stimulusImage)}', 'Gambar Stimulus Soal Nomor ${currentQuestionIndex + 1}')" onerror="this.onerror=null; this.src='https://placehold.co/600x360/f1f5f9/64748b?text=Gambar+Stimulus+Tidak+Dapat+Dimuat';" class="w-full max-h-[360px] sm:max-h-[420px] object-contain rounded-xl bg-white mx-auto cursor-zoom-in border border-slate-100 p-1">
                                     </div>
                                 ` : ''}
                                 ${(!hasStimulusText && !hasStimulusImg) ? `
@@ -7438,24 +7490,24 @@
                         </section>
 
                         <!-- KOLOM TENGAH: PERTANYAAN & PILIHAN JAWABAN -->
-                        <section class="lg:col-span-5 bg-white/90 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col lg:h-full lg:overflow-hidden relative">
-                            <div class="px-5 sm:px-6 py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-white/80">
-                                <div class="flex items-center gap-2">
-                                    <span class="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs sm:text-sm font-poppins font-medium shadow-xs">
+                        <section class="lg:col-span-5 bg-white/95 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col shrink-0 lg:shrink lg:h-full lg:min-h-0 lg:overflow-hidden relative">
+                            <div class="px-4 sm:px-6 py-3 sm:py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 shrink-0 bg-white/90 rounded-t-3xl">
+                                <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                    <span class="px-3.5 py-1 sm:px-4 sm:py-1.5 rounded-full bg-blue-600 text-white text-xs sm:text-sm font-poppins font-medium shadow-xs">
                                         Soal Nomor ${currentQuestionIndex + 1}
                                     </span>
-                                    <span class="px-3.5 py-1.5 rounded-full bg-blue-50/80 text-blue-700 border border-blue-200 text-xs sm:text-sm font-poppins font-medium">
+                                    <span class="px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-blue-50/80 text-blue-700 border border-blue-200 text-xs sm:text-sm font-poppins font-medium">
                                         ${escapeHtml(getQuestionTypeBadgeLabel(q.type))}
                                     </span>
                                 </div>
-                                <div class="px-3.5 py-1.5 rounded-full bg-emerald-50/90 border border-emerald-200 text-emerald-700 text-xs sm:text-sm font-poppins font-medium flex items-center gap-1.5">
+                                <div class="px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-full bg-emerald-50/90 border border-emerald-200 text-emerald-700 text-xs sm:text-sm font-poppins font-medium flex items-center gap-1.5">
                                     <i class="fa-solid fa-star text-amber-400"></i> Bobot: ${q.weight} Poin
                                 </div>
                             </div>
 
-                            <div class="p-5 sm:p-6 flex-1 overflow-y-auto custom-scrollbar space-y-4">
-                                <div class="bg-[#f8fafd] p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
-                                    <p class="font-poppins font-normal text-[17px] sm:text-[18.5px] text-slate-900 leading-relaxed">
+                            <div class="p-4 sm:p-6 flex-1 lg:overflow-y-auto custom-scrollbar space-y-4">
+                                <div class="bg-[#f8fafd] p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
+                                    <p class="font-poppins font-normal text-[16.5px] sm:text-[18.5px] text-slate-900 leading-relaxed">
                                         ${escapeHtml(q.questionText)}
                                     </p>
                                     ${hasQuestionImg ? `
@@ -7470,50 +7522,49 @@
                                     <span>${escapeHtml(getQuestionInstructionText(q.type))}</span>
                                 </div>
 
-                                <div class="space-y-3">
+                                <div class="space-y-2.5 sm:space-y-3">
                                     ${answerInputHtml}
                                 </div>
                             </div>
 
-                            <div class="px-5 sm:px-6 py-3.5 bg-white/90 border-t border-slate-200/80 flex items-center justify-between gap-2.5 shrink-0">
-                                <button type="button" onclick="window.prevQuestion()" ${currentQuestionIndex === 0 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-2xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 cursor-pointer"'}>
+                            <div class="px-4 sm:px-6 py-3 sm:py-3.5 bg-white/95 border-t border-slate-200/80 flex items-center justify-between gap-2 shrink-0 rounded-b-3xl">
+                                <button type="button" onclick="window.prevQuestion()" ${currentQuestionIndex === 0 ? 'disabled class="px-3.5 sm:px-4 py-2.5 bg-slate-100 text-slate-400 rounded-2xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-3.5 sm:px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 cursor-pointer"'}>
                                     <i class="fa-solid fa-arrow-left"></i> Sebelumnya
                                 </button>
-                                <button type="button" onclick="window.toggleDoubtful('${q.id}')" class="px-5 py-2.5 ${isCurrentDoubtful ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300' : 'bg-amber-400 hover:bg-amber-500 text-slate-950'} rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
+                                <button type="button" onclick="window.toggleDoubtful('${q.id}')" class="px-3.5 sm:px-5 py-2.5 ${isCurrentDoubtful ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-300' : 'bg-amber-400 hover:bg-amber-500 text-slate-950'} rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer">
                                     <i class="fa-solid fa-flag"></i> ${isCurrentDoubtful ? 'Ragu-Ragu (Aktif)' : 'Ragu-Ragu'}
                                 </button>
-                                <button type="button" onclick="window.nextQuestion()" ${currentQuestionIndex === currentExamQuestions.length - 1 ? 'disabled class="px-4 py-2.5 bg-slate-100 text-slate-400 rounded-2xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer"'}>
+                                <button type="button" onclick="window.nextQuestion()" ${currentQuestionIndex === currentExamQuestions.length - 1 ? 'disabled class="px-3.5 sm:px-4 py-2.5 bg-slate-100 text-slate-400 rounded-2xl text-xs sm:text-sm font-poppins font-semibold cursor-not-allowed flex items-center gap-1.5"' : 'class="px-4 sm:px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs sm:text-sm font-poppins font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer"'}>
                                     Selanjutnya <i class="fa-solid fa-arrow-right"></i>
                                 </button>
                             </div>
                         </section>
 
-                        <!-- KOLOM KANAN: PENJELAJAH SOAL (1 BANJAR 1-5 NOMOR SOAL) -->
-                        <aside class="lg:col-span-2 bg-white/90 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col justify-between lg:h-full lg:overflow-hidden relative overflow-hidden">
+                        <!-- KOLOM KANAN / BAWAH HP: PENJELAJAH SOAL (1 BANJAR 1-5 NOMOR SOAL) -->
+                        <aside class="lg:col-span-2 bg-white/95 backdrop-blur-md rounded-3xl border border-white shadow-sm flex flex-col justify-between shrink-0 lg:shrink lg:h-full lg:min-h-0 lg:overflow-hidden relative overflow-hidden mb-2 lg:mb-0">
                             <!-- Ilustrasi Siluet Gedung Sekolah di Bagian Bawah Penjelajah Soal -->
-                            <div class="absolute bottom-24 left-0 right-0 pointer-events-none z-0 flex justify-center opacity-80">
+                            <div class="hidden lg:flex absolute bottom-24 left-0 right-0 pointer-events-none z-0 justify-center opacity-80">
                                 <svg viewBox="0 0 220 120" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-48 h-28">
                                     <path d="M10 115H210" stroke="#CBD5E1" stroke-width="2"/>
-                                    <!-- Tiang & Bendera -->
                                     <line x1="110" y1="16" x2="110" y2="52" stroke="#94A3B8" stroke-width="2"/>
                                     <path d="M110 18C118 16 124 22 132 19V29C124 32 118 26 110 28V18Z" fill="#93C5FD"/>
-                                    <!-- Atap Utama -->
                                     <polygon points="65,58 110,38 155,58" fill="#CBD5E1"/>
                                     <polygon points="30,72 68,58 152,58 190,72" fill="#E2E8F0"/>
-                                    <!-- Bangunan -->
                                     <rect x="38" y="72" width="144" height="43" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.5"/>
                                     <rect x="75" y="58" width="70" height="57" fill="#E2E8F0" stroke="#CBD5E1" stroke-width="1.5"/>
-                                    <!-- Pilar & Jendela -->
                                     <rect x="98" y="84" width="24" height="31" rx="3" fill="#CBD5E1"/>
                                     <rect x="48" y="80" width="16" height="18" rx="2" fill="#CBD5E1"/>
                                     <rect x="156" y="80" width="16" height="18" rx="2" fill="#CBD5E1"/>
                                 </svg>
                             </div>
 
-                            <div class="p-3.5 sm:p-4 flex-1 overflow-y-auto custom-scrollbar space-y-3 relative z-10">
-                                <div class="pb-2 border-b border-slate-100 flex items-center gap-2">
-                                    <i class="fa-solid fa-border-all text-blue-600 text-xs"></i>
-                                    <h3 class="text-xs font-poppins font-semibold uppercase tracking-wider text-slate-800">PENJELAJAH SOAL</h3>
+                            <div class="p-4 flex-1 lg:overflow-y-auto custom-scrollbar space-y-3 relative z-10">
+                                <div class="pb-2 border-b border-slate-100 flex items-center justify-between gap-2">
+                                    <div class="flex items-center gap-2">
+                                        <i class="fa-solid fa-border-all text-blue-600 text-xs"></i>
+                                        <h3 class="text-xs font-poppins font-semibold uppercase tracking-wider text-slate-800">PENJELAJAH SOAL</h3>
+                                    </div>
+                                    <span class="lg:hidden text-[11px] font-poppins font-medium text-blue-600">Pilih Nomor Soal</span>
                                 </div>
 
                                 <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] font-poppins font-normal text-slate-600 bg-slate-50/90 px-2.5 py-2 rounded-xl border border-slate-200/70">
