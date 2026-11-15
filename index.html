@@ -7171,17 +7171,22 @@
 
         function formatStimulusTextWithBoldLead(rawText) {
             if (!rawText) return '';
-            const trimmedText = String(rawText).trim();
+            const trimmedText = String(rawText).replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
             if (!trimmedText) return '';
-            const lines = trimmedText.split(/\r?\n/);
+            const lines = trimmedText.split(/\r?\n/).map(l => l.trim()).filter((l, idx, arr) => {
+                // Hapus baris kosong beruntun di awal/akhir
+                if (idx === 0 && l === '') return false;
+                if (idx === arr.length - 1 && l === '') return false;
+                return true;
+            });
             let firstNonEmptyFormatted = false;
             return lines.map(line => {
-                if (!firstNonEmptyFormatted && line.trim() !== '') {
+                if (!firstNonEmptyFormatted && line !== '') {
                     firstNonEmptyFormatted = true;
-                    return `<strong class="font-poppins font-semibold text-slate-900 text-[15px] sm:text-[16.5px]">${escapeHtml(line.trim())}</strong>`;
+                    return `<strong class="font-poppins font-semibold text-slate-900 text-[15px] sm:text-[16px] leading-snug">${escapeHtml(line)}</strong>`;
                 }
                 return escapeHtml(line);
-            }).join('\n');
+            }).join('<br>');
         }
 
         window.toggleMobileQuestionNavDrawer = function(openState) {
@@ -7465,9 +7470,9 @@
 
                             <div class="p-4 sm:p-6 flex-1 lg:overflow-y-auto custom-scrollbar space-y-4 relative z-10">
                                 ${hasStimulusText ? `
-                                    <div class="relative w-fit max-w-full px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[15px] sm:text-[16px] leading-relaxed whitespace-pre-line shadow-xs overflow-hidden">
-                                        <span class="absolute left-0 top-2.5 bottom-2.5 w-1 bg-amber-300 rounded-r-full"></span>
-                                        ${formatStimulusTextWithBoldLead(q.stimulusText)}
+                                    <div class="inline-flex items-stretch gap-3 w-fit max-w-full px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-2xl bg-[#FFFDF7] border border-[#FDE68A] text-slate-800 font-poppins font-normal text-[14.5px] sm:text-[15.5px] leading-relaxed shadow-xs">
+                                        <span class="w-1 bg-amber-300 rounded-full shrink-0"></span>
+                                        <div class="min-w-0 break-words">${formatStimulusTextWithBoldLead(q.stimulusText)}</div>
                                     </div>
                                 ` : ''}
                                 ${hasStimulusImg ? `
