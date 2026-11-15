@@ -338,6 +338,125 @@
         let selectedStudentIds = new Set();
         let selectedResultIds = new Set();
 
+        // ============================================================================
+        // SINGLE-DEVICE & SINGLE-TAB LOGIN LOCK (ANTI MULTI-LOGIN SISWA)
+        // ============================================================================
+        const STUDENT_LOCK_TIMEOUT_MS = 90 * 1000; // 90 detik batas aktif heartbeat
+        let studentHeartbeatInterval = null;
+        let studentBroadcastChannel = null;
+
+        function getOrCreateDeviceSessionId() {
+            try {
+                let sid = sessionStorage.getItem('cbt_device_session_id');
+                if (!sid) {
+                    sid = 'DEV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                    sessionStorage.setItem('cbt_device_session_id', sid);
+                }
+                return sid;
+            } catch (e) {
+                if (!window._fallbackDeviceSessionId) {
+                    window._fallbackDeviceSessionId = 'DEV-' + Date.now() + '-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                }
+                return window._fallbackDeviceSessionId;
+            }
+        }
+
+        const currentDeviceSessionId = getOrCreateDeviceSessionId();
+
+        function isStudentRecordLockedByOther(studentDoc, mySessionId = currentDeviceSessionId) {
+            if (!studentDoc) return false;
+            if (!studentDoc.isLoggedIn || !studentDoc.activeSessionId) return false;
+            if (studentDoc.activeSessionId === mySessionId) return false;
+            const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
+            const ageMs = Date.now() - lastHb;
+            return lastHb > 0 && ageMs < STUDENT_LOCK_TIMEOUT_MS;
+        }
+
+        function isStudentCurrentlyLoggedIn(studentDoc) {
+            if (!studentDoc || !studentDoc.isLoggedIn || !studentDoc.activeSessionId) return false;
+            const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
+            return lastHb > 0 && (Date.now() - lastHb) < STUDENT_LOCK_TIMEOUT_MS;
+        }
+
+        function startStudentHeartbeat() {
+            stopStudentHeartbeat();
+            if (!appData.currentUser || appData.currentUser.role !== 'student') return;
+
+            try {
+                if (typeof BroadcastChannel !== 'undefined') {
+                    studentBroadcastChannel = new BroadcastChannel('cbt_student_session_channel');
+                    studentBroadcastChannel.onmessage = (evt) => {
+                        const msg = evt.data || {};
+                        if (
+                            msg.type === 'STUDENT_SESSION_CLAIM' &&
+                            appData.currentUser &&
+                            appData.currentUser.role === 'student' &&
+                            msg.studentId === appData.currentUser.studentId &&
+                            msg.sessionId !== currentDeviceSessionId
+                        ) {
+                            handleForcedStudentLogout('Akun Anda terdeteksi dibuka pada tab browser lain. Sesi pada tab ini dihentikan secara otomatis.');
+                        }
+                    };
+                }
+            } catch (e) {}
+
+            studentHeartbeatInterval = setInterval(async () => {
+                if (!appData.currentUser || appData.currentUser.role !== 'student') {
+                    stopStudentHeartbeat();
+                    return;
+                }
+                const studentId = appData.currentUser.studentId;
+                const stdObj = appData.students.find(s => s.id === studentId);
+                if (stdObj) {
+                    if (
+                        (stdObj.activeSessionId && stdObj.activeSessionId !== currentDeviceSessionId) ||
+                        stdObj.isLoggedIn === false
+                    ) {
+                        handleForcedStudentLogout('Sesi login Anda telah direset oleh Pengawas/Administrator atau diakhiri dari perangkat lain.');
+                        return;
+                    }
+                    stdObj.isLoggedIn = true;
+                    stdObj.activeSessionId = currentDeviceSessionId;
+                    stdObj.lastHeartbeatAt = Date.now();
+                    stdObj.deviceInfo = (navigator.userAgent || getDeviceLabel()).slice(0, 120);
+                    await syncCollectionRecord('students', stdObj.id, {
+                        isLoggedIn: true,
+                        activeSessionId: currentDeviceSessionId,
+                        lastHeartbeatAt: stdObj.lastHeartbeatAt,
+                        deviceInfo: stdObj.deviceInfo
+                    });
+                }
+            }, 25000);
+        }
+
+        function stopStudentHeartbeat() {
+            if (studentHeartbeatInterval) {
+                clearInterval(studentHeartbeatInterval);
+                studentHeartbeatInterval = null;
+            }
+            if (studentBroadcastChannel) {
+                try { studentBroadcastChannel.close(); } catch (e) {}
+                studentBroadcastChannel = null;
+            }
+        }
+
+        async function handleForcedStudentLogout(reasonMsg) {
+            if (!appData.currentUser || appData.currentUser.role !== 'student') return;
+            if (isExamWorkspaceActive && currentActiveExam && !isSubmittingFinalExam) {
+                await window.persistExamSessionToCloud(true);
+            }
+            stopStudentHeartbeat();
+            window.stopAllExamTimersAndWatchers();
+            isViewingResultReview = false;
+            appData.currentUser = null;
+            window.renderLoginView();
+            window.showModal(
+                'Sesi Login Berakhir',
+                reasonMsg || 'Sesi login Anda telah direset oleh Administrator atau dihentikan karena konflik perangkat.',
+                'error'
+            );
+        }
+
         function isResultValidAndActive(r) {
             if (!r) return false;
             // Pastikan paket ujian masih terdaftar di Manajemen Ujian
@@ -659,6 +778,22 @@
                     }
 
                     appData[colName] = docsList;
+
+                    // Proteksi Real-Time: Jika akun siswa yang sedang login direset oleh Admin atau diambil alih, langsung keluarkan
+                    if (colName === 'students' && appData.currentUser && appData.currentUser.role === 'student') {
+                        const myLatestDoc = docsList.find(s => s.id === appData.currentUser.studentId);
+                        if (!myLatestDoc || myLatestDoc.status !== 'Aktif') {
+                            handleForcedStudentLogout('Akun siswa Anda telah dinonaktifkan atau dihapus oleh Administrator.');
+                            return;
+                        }
+                        if (
+                            myLatestDoc.isLoggedIn === false ||
+                            (myLatestDoc.activeSessionId && myLatestDoc.activeSessionId !== currentDeviceSessionId)
+                        ) {
+                            handleForcedStudentLogout('Sesi login akun Anda telah direset oleh Pengawas / Administrator atau dihentikan oleh sistem.');
+                            return;
+                        }
+                    }
 
                     // Jika Admin menutup ujian saat siswa sedang mengerjakan soal, langsung hentikan ruang ujian siswa dan simpan progresnya
                     if (colName === 'exams' && appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
@@ -1040,6 +1175,60 @@
                 return;
             }
 
+            // Cek status login real-time langsung dari Firestore untuk mencegah login ganda di perangkat/tab lain
+            let latestStudentDoc = student;
+            if (!IS_PREVIEW && db) {
+                try {
+                    const cloudStudent = await fetchSingleFirestoreDoc('students', student.id);
+                    if (cloudStudent) {
+                        latestStudentDoc = cloudStudent;
+                        const sIdx = appData.students.findIndex(s => s.id === student.id);
+                        if (sIdx !== -1) appData.students[sIdx] = { ...appData.students[sIdx], ...cloudStudent };
+                    }
+                    const sessSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examSessions'));
+                    appData.examSessions = sessSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                } catch (err) {
+                    console.warn('Gagal memeriksa kunci sesi siswa:', err);
+                }
+            }
+
+            // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain dalam 90 detik terakhir
+            const activeOtherExamSess = (appData.examSessions || []).find(ss =>
+                ss.studentId === student.id &&
+                ss.status === 'IN_PROGRESS' &&
+                ss.deviceSessionId &&
+                ss.deviceSessionId !== currentDeviceSessionId &&
+                ss.updatedAtMs &&
+                (Date.now() - Number(ss.updatedAtMs)) < STUDENT_LOCK_TIMEOUT_MS
+            );
+
+            if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
+                const lockedDevInfo = latestStudentDoc.deviceInfo || (activeOtherExamSess ? activeOtherExamSess.deviceInfo : 'Perangkat / Tab Lain');
+                showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
+                window.showModal(
+                    'Akun Sedang Aktif di Perangkat Lain!',
+                    `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login di perangkat atau tab browser lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau hubungi Pengawas / Administrator untuk melakukan Reset Login.`,
+                    'error'
+                );
+                return;
+            }
+
+            const nowMs = Date.now();
+            const devInfoStr = (navigator.userAgent || getDeviceLabel()).slice(0, 120);
+            student.isLoggedIn = true;
+            student.activeSessionId = currentDeviceSessionId;
+            student.loginAt = new Date(nowMs).toISOString();
+            student.lastHeartbeatAt = nowMs;
+            student.deviceInfo = devInfoStr;
+
+            await syncCollectionRecord('students', student.id, {
+                isLoggedIn: true,
+                activeSessionId: currentDeviceSessionId,
+                loginAt: student.loginAt,
+                lastHeartbeatAt: nowMs,
+                deviceInfo: devInfoStr
+            });
+
             appData.currentUser = {
                 role: 'student',
                 studentId: student.id,
@@ -1047,8 +1236,11 @@
                 name: student.fullName,
                 classId: student.classId,
                 className: student.className,
-                enteredToken: token
+                enteredToken: token,
+                sessionId: currentDeviceSessionId
             };
+
+            startStudentHeartbeat();
 
             // Muat ulang exams, examSessions & examResults terbaru dari Firestore saat login agar status aktif ujian & progres lintas perangkat 100% akurat
             if (!IS_PREVIEW && db) {
@@ -1119,11 +1311,27 @@
             if (isExamWorkspaceActive && currentActiveExam && !isSubmittingFinalExam) {
                 await window.persistExamSessionToCloud(true);
             }
+            if (appData.currentUser && appData.currentUser.role === 'student') {
+                const studentId = appData.currentUser.studentId;
+                const stdObj = appData.students.find(s => s.id === studentId);
+                if (stdObj) {
+                    stdObj.isLoggedIn = false;
+                    stdObj.activeSessionId = '';
+                    stdObj.lastHeartbeatAt = 0;
+                }
+                await syncCollectionRecord('students', studentId, {
+                    isLoggedIn: false,
+                    activeSessionId: '',
+                    lastHeartbeatAt: 0
+                });
+            }
+            stopStudentHeartbeat();
             window.stopAllExamTimersAndWatchers();
             isViewingResultReview = false;
             appData.currentUser = null;
             window.renderLoginView();
         };
+        window.handleLogout = window.logoutApp;
 
         function getClassNameById(classId) {
             const c = appData.classes.find(x => x.id === classId);
@@ -1359,6 +1567,7 @@
             const rows = filteredStudents.map((s, idx) => {
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
                 const isChecked = selectedStudentIds.has(s.id);
+                const onlineNow = isStudentCurrentlyLoggedIn(s);
                 return `
                 <tr class="hover:bg-slate-50 border-b border-slate-100 ${isChecked ? 'bg-indigo-50/50' : ''}">
                     <td class="px-4 py-3 text-xs text-center">
@@ -1371,8 +1580,14 @@
                     <td class="px-4 py-3 text-xs font-semibold ${schoolDisplay === '-' ? 'text-slate-400 italic' : 'text-indigo-700'}">${escapeHtml(schoolDisplay)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.gender || 'L')}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.className)}</td>
-                    <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(s.status || 'Aktif')}</span></td>
-                    <td class="px-4 py-3 text-xs space-x-1">
+                    <td class="px-4 py-3 text-xs">
+                        <div class="flex flex-wrap items-center gap-1">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(s.status || 'Aktif')}</span>
+                            ${onlineNow ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1" title="Sedang login di perangkat: ${escapeHtml(s.deviceInfo || '-')}"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Sedang Login</span>` : ''}
+                        </div>
+                    </td>
+                    <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
+                        ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold" title="Reset Kunci Login Siswa"><i class="fa-solid fa-unlock-keyhole"></i></button>` : ''}
                         <button type="button" onclick="window.openStudentFormModal('${s.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
                         <button type="button" onclick="window.deleteStudentRecord('${s.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
                     </td>
@@ -1387,9 +1602,12 @@
                     <div class="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap justify-between items-center gap-3">
                         <div>
                             <h3 class="font-bold text-sm text-slate-800">Manajemen Data Siswa</h3>
-                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, hapus massal, dan impor/ekspor Excel (.xlsx).</p>
+                            <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, reset kunci login perangkat, hapus massal, dan impor/ekspor Excel (.xlsx).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" onclick="window.unlockAllStudentsLogin()" class="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition cursor-pointer" title="Bebaskan kunci login seluruh akun siswa">
+                                <i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Semua Login
+                            </button>
                             <button type="button" onclick="window.deleteSelectedStudents()" ${selectedCount > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${selectedCount > 0 ? 'bg-red-600 hover:bg-red-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-trash-can mr-1"></i> Hapus Terpilih (${selectedCount})
                             </button>
@@ -1776,6 +1994,52 @@
                     renderStudentsContent(document.getElementById('adminMainContent'));
                 }
             }, { okText: 'Hapus' });
+        };
+
+        window.unlockStudentLogin = async function(studentId) {
+            const std = appData.students.find(s => s.id === studentId);
+            if (!std) return;
+            std.isLoggedIn = false;
+            std.activeSessionId = '';
+            std.lastHeartbeatAt = 0;
+            await syncCollectionRecord('students', std.id, {
+                isLoggedIn: false,
+                activeSessionId: '',
+                lastHeartbeatAt: 0
+            });
+            logActivity(`Administrator mereset kunci login perangkat untuk siswa ${std.fullName} (${std.nisn}).`);
+            window.renderAdminCurrentSection();
+            window.showModal('Reset Login Berhasil', `Kunci login akun ${std.fullName} telah dibebaskan. Siswa kini dapat login kembali di perangkat baru.`, 'success');
+        };
+
+        window.unlockAllStudentsLogin = function() {
+            window.showModal(
+                'Reset Semua Login Siswa',
+                'Apakah Anda yakin ingin membuka kunci login perangkat untuk seluruh akun siswa?',
+                'info',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    let count = 0;
+                    for (const s of appData.students) {
+                        if (s.isLoggedIn || s.activeSessionId) {
+                            s.isLoggedIn = false;
+                            s.activeSessionId = '';
+                            s.lastHeartbeatAt = 0;
+                            await syncCollectionRecord('students', s.id, {
+                                isLoggedIn: false,
+                                activeSessionId: '',
+                                lastHeartbeatAt: 0
+                            });
+                            count++;
+                        }
+                    }
+                    logActivity(`Administrator mereset kunci login untuk ${count} akun siswa.`);
+                    window.renderAdminCurrentSection();
+                    window.showModal('Berhasil Direset', `Kunci login untuk ${count} akun siswa telah dibebaskan.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: 'Ya, Reset Semua Login' }
+            );
         };
 
         function getQuestionTypeBadgeLabel(type) {
@@ -4966,7 +5230,9 @@
                 const violations = res && typeof res.violationCount === 'number'
                     ? res.violationCount
                     : (sess && typeof sess.violationCount === 'number' ? sess.violationCount : (part && typeof part.violationCount === 'number' ? part.violationCount : 0));
+                const onlineNow = isStudentCurrentlyLoggedIn(s);
                 const progressInfo = sess ? `<span class="block text-[10px] text-indigo-600 font-semibold mt-0.5">Progres: ${sess.answeredCount || 0} terjawab • Soal #${(sess.lastQuestionIndex || 0) + 1}</span>` : '';
+                const loginBadge = onlineNow ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 ml-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Login Aktif</span>` : '';
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
                 return `
                     <tr class="border-b border-slate-100 hover:bg-slate-50">
@@ -4977,6 +5243,7 @@
                         <td class="px-4 py-3 text-xs">${escapeHtml(s.className)}</td>
                         <td class="px-4 py-3 text-xs">
                             <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold ${status === 'Selesai' ? 'bg-emerald-50 text-emerald-700' : status === 'Sedang Mengerjakan' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}">${escapeHtml(status)}</span>
+                            ${loginBadge}
                             ${progressInfo}
                         </td>
                         <td class="px-4 py-3 text-xs">
@@ -4984,8 +5251,9 @@
                                 <i class="fa-solid fa-triangle-exclamation mr-1"></i> ${violations}x
                             </span>
                         </td>
-                        <td class="px-4 py-3 text-xs">
-                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-xs"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : '<span class="text-slate-400 text-[11px]">Siap Ujian</span>'}
+                        <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
+                            ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg font-bold text-xs" title="Bebaskan kunci login perangkat siswa ini"><i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Login</button>` : ''}
+                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-xs"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : (!onlineNow ? '<span class="text-slate-400 text-[11px]">Siap Ujian</span>' : '')}
                         </td>
                     </tr>
                 `;
@@ -5083,6 +5351,16 @@
                     }
 
                     const stdObj = appData.students.find(s => s.id === studentId);
+                    if (stdObj) {
+                        stdObj.isLoggedIn = false;
+                        stdObj.activeSessionId = '';
+                        stdObj.lastHeartbeatAt = 0;
+                        await syncCollectionRecord('students', stdObj.id, {
+                            isLoggedIn: false,
+                            activeSessionId: '',
+                            lastHeartbeatAt: 0
+                        });
+                    }
                     logActivity(`Sesi ujian siswa ${stdObj ? stdObj.fullName : studentId} telah direset oleh Administrator.`);
                     window.renderAdminCurrentSection();
                     updateLiveSyncIndicator('updated', 'Sesi Direset');
@@ -5255,6 +5533,7 @@
                 violationLogs: currentViolationLogs,
                 status: 'IN_PROGRESS',
                 sessionToken: currentSessionToken,
+                deviceSessionId: currentDeviceSessionId,
                 deviceInfo: getDeviceLabel(),
                 updatedAtMs: nowMs,
                 updatedAtFormatted: new Date(nowMs).toLocaleString('id-ID')
