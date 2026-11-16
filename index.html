@@ -462,7 +462,7 @@
         // ============================================================================
         // SINGLE-DEVICE & SINGLE-TAB LOGIN LOCK (ANTI MULTI-LOGIN SISWA)
         // ============================================================================
-        const STUDENT_LOCK_TIMEOUT_MS = 90 * 1000; // 90 detik batas aktif heartbeat
+        const STUDENT_LOCK_TIMEOUT_MS = 15 * 60 * 1000; // 15 menit batas aktif kunci perangkat
         let studentHeartbeatInterval = null;
         let studentBroadcastChannel = null;
 
@@ -490,13 +490,21 @@
             if (studentDoc.activeSessionId === mySessionId) return false;
             const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
             const ageMs = Date.now() - lastHb;
-            return lastHb > 0 && ageMs < STUDENT_LOCK_TIMEOUT_MS;
+            return lastHb === 0 || ageMs < STUDENT_LOCK_TIMEOUT_MS;
         }
 
         function isStudentCurrentlyLoggedIn(studentDoc) {
-            if (!studentDoc || !studentDoc.isLoggedIn || !studentDoc.activeSessionId) return false;
-            const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
-            return lastHb > 0 && (Date.now() - lastHb) < STUDENT_LOCK_TIMEOUT_MS;
+            if (!studentDoc) return false;
+            if (studentDoc.isLoggedIn || studentDoc.activeSessionId) {
+                const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
+                if (lastHb === 0 || (Date.now() - lastHb) < STUDENT_LOCK_TIMEOUT_MS) return true;
+            }
+            const hasRunningSess = (appData.examSessions || []).some(ss =>
+                ss.studentId === studentDoc.id &&
+                ss.status === 'IN_PROGRESS' &&
+                Boolean(ss.deviceSessionId)
+            );
+            return hasRunningSess;
         }
 
         function startStudentHeartbeat() {
@@ -1322,14 +1330,12 @@
                 }
             }
 
-            // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain dalam 90 detik terakhir
+            // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain
             const activeOtherExamSess = (appData.examSessions || []).find(ss =>
                 ss.studentId === student.id &&
                 ss.status === 'IN_PROGRESS' &&
                 ss.deviceSessionId &&
-                ss.deviceSessionId !== currentDeviceSessionId &&
-                ss.updatedAtMs &&
-                (Date.now() - Number(ss.updatedAtMs)) < STUDENT_LOCK_TIMEOUT_MS
+                ss.deviceSessionId !== currentDeviceSessionId
             );
 
             if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
@@ -1337,7 +1343,7 @@
                 showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
                 window.showModal(
                     'Akun Sedang Aktif di Perangkat Lain!',
-                    `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login di perangkat atau tab browser lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau hubungi Pengawas / Administrator untuk melakukan Reset Login.`,
+                    `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login atau mengerjakan ujian di perangkat lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau minta Pengawas menekan tombol "Reset Login" pada menu Peserta Ujian.`,
                     'error'
                 );
                 return;
@@ -2196,15 +2202,27 @@
                 activeSessionId: '',
                 lastHeartbeatAt: 0
             });
+
+            // Bebaskan juga kunci perangkat (deviceSessionId) pada sesi ujian yang sedang berjalan tanpa menghapus jawaban siswa
+            const runningSessions = (appData.examSessions || []).filter(ss => ss.studentId === studentId && ss.status === 'IN_PROGRESS');
+            for (const ss of runningSessions) {
+                ss.deviceSessionId = '';
+                ss.sessionToken = '';
+                await syncCollectionRecord('examSessions', ss.id, {
+                    deviceSessionId: '',
+                    sessionToken: ''
+                });
+            }
+
             logActivity(`Administrator mereset kunci login perangkat untuk siswa ${std.fullName} (${std.nisn}).`);
             window.renderAdminCurrentSection();
-            window.showModal('Reset Login Berhasil', `Kunci login akun ${std.fullName} telah dibebaskan. Siswa kini dapat login kembali di perangkat baru.`, 'success');
+            window.showModal('Reset Login Berhasil', `Kunci login perangkat untuk akun ${std.fullName} telah dibebaskan (jawaban ujian tetap aman). Siswa kini dapat login kembali di perangkat baru.`, 'success');
         };
 
         window.unlockAllStudentsLogin = function() {
             window.showModal(
                 'Reset Semua Login Siswa',
-                'Apakah Anda yakin ingin membuka kunci login perangkat untuk seluruh akun siswa?',
+                'Apakah Anda yakin ingin membuka kunci login perangkat untuk seluruh akun siswa (tanpa menghapus progres jawaban ujian mereka)?',
                 'info',
                 async (confirmed) => {
                     if (!confirmed) return true;
@@ -2222,9 +2240,18 @@
                             count++;
                         }
                     }
-                    logActivity(`Administrator mereset kunci login untuk ${count} akun siswa.`);
+                    const runningSessions = (appData.examSessions || []).filter(ss => ss.status === 'IN_PROGRESS' && ss.deviceSessionId);
+                    for (const ss of runningSessions) {
+                        ss.deviceSessionId = '';
+                        ss.sessionToken = '';
+                        await syncCollectionRecord('examSessions', ss.id, {
+                            deviceSessionId: '',
+                            sessionToken: ''
+                        });
+                    }
+                    logActivity(`Administrator mereset kunci login perangkat untuk seluruh siswa.`);
                     window.renderAdminCurrentSection();
-                    window.showModal('Berhasil Direset', `Kunci login untuk ${count} akun siswa telah dibebaskan.`, 'success');
+                    window.showModal('Berhasil Direset', `Kunci login perangkat untuk seluruh siswa telah dibebaskan.`, 'success');
                     return true;
                 },
                 { showCancel: true, okText: 'Ya, Reset Semua Login' }
@@ -5830,9 +5857,9 @@
                 const violations = res && typeof res.violationCount === 'number'
                     ? res.violationCount
                     : (sess && typeof sess.violationCount === 'number' ? sess.violationCount : (part && typeof part.violationCount === 'number' ? part.violationCount : 0));
-                const onlineNow = isStudentCurrentlyLoggedIn(s);
+                const hasDeviceLock = Boolean(isStudentCurrentlyLoggedIn(s) || s.isLoggedIn || s.activeSessionId || (sess && sess.deviceSessionId) || status === 'Sedang Mengerjakan');
                 const progressInfo = sess ? `<span class="block text-[10px] text-indigo-600 font-semibold mt-0.5">Progres: ${sess.answeredCount || 0} terjawab • Soal #${(sess.lastQuestionIndex || 0) + 1}</span>` : '';
-                const loginBadge = onlineNow ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 ml-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Login Aktif</span>` : '';
+                const loginBadge = hasDeviceLock ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 ml-1" title="Terkunci pada perangkat: ${escapeHtml((sess && sess.deviceInfo) || s.deviceInfo || 'Perangkat Aktif')}"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Login Terkunci</span>` : '';
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
                 return `
                     <tr class="border-b border-slate-100 hover:bg-slate-50">
@@ -5852,8 +5879,8 @@
                             </span>
                         </td>
                         <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
-                            ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg font-bold text-xs" title="Bebaskan kunci login perangkat siswa ini"><i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Login</button>` : ''}
-                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-xs"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : (!onlineNow ? '<span class="text-slate-400 text-[11px]">Siap Ujian</span>' : '')}
+                            ${hasDeviceLock ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg font-bold text-xs cursor-pointer" title="Bebaskan kunci login perangkat siswa ini agar bisa pindah HP/Laptop tanpa kehilangan jawaban"><i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Login</button>` : ''}
+                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg font-bold text-xs cursor-pointer" title="Hapus seluruh jawaban & ulangi ujian dari awal"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : (!hasDeviceLock ? '<span class="text-slate-400 text-[11px]">Siap Ujian</span>' : '')}
                         </td>
                     </tr>
                 `;
@@ -5866,13 +5893,16 @@
                             <div class="flex items-center gap-2">
                                 <h3 class="font-bold text-sm text-slate-800">Pemantauan Peserta Ujian, Progres Lintas Perangkat & Reset Sesi</h3>
                             </div>
-                            <p class="text-xs text-slate-500 mt-0.5">Pantau status pengerjaan real-time masing-masing siswa, jumlah jawaban tersimpan, pelanggaran pindah tab, dan reset sesi.</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Pantau status pengerjaan real-time masing-masing siswa, jumlah jawaban tersimpan, pelanggaran pindah tab, reset login perangkat, dan reset sesi.</p>
                         </div>
-                        <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-2.5">
                             <button type="button" onclick="window.openPrintExamCardsModal('participants')" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
                                 <i class="fa-solid fa-id-card"></i> Cetak Kartu Ujian
                             </button>
-                            <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                            <button type="button" onclick="window.unlockAllStudentsLogin()" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold shadow-sm transition flex items-center gap-1.5 cursor-pointer" title="Bebaskan kunci login perangkat seluruh siswa tanpa menghapus jawaban">
+                                <i class="fa-solid fa-unlock-keyhole"></i> Reset Semua Login
+                            </button>
+                            <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
                                 <i class="fa-solid fa-rotate"></i> Reset Semua Sesi
                             </button>
                             <div class="flex flex-wrap items-center gap-2">
