@@ -35,9 +35,96 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- SheetJS untuk baca/tulis file Excel (.xlsx) murni -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- MathLive untuk Editor Rumus Matematika Visual (Pecahan Bertingkat seperti MS Word) -->
+    <link rel="stylesheet" href="https://unpkg.com/mathlive/dist/mathlive-static.css">
+    <script defer src="https://unpkg.com/mathlive"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .font-poppins { font-family: 'Poppins', sans-serif; }
+        /* Styling Visual Pecahan Bertingkat, Akar & Pangkat Proporsional (Seperti MS Word Equation) */
+        .cbt-math-expr {
+            display: inline-flex;
+            align-items: center;
+            vertical-align: middle;
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+            line-height: 1.2;
+            margin: 0 2px;
+        }
+        .cbt-frac {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 3px;
+            margin: 2px 2px;
+            line-height: 1.15;
+        }
+        .cbt-frac > .cbt-num {
+            border-bottom: 1.5px solid currentColor;
+            padding: 0 4px 2px 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.1em;
+            font-size: 0.92em;
+        }
+        .cbt-frac > .cbt-den {
+            padding: 2px 4px 0 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.1em;
+            font-size: 0.92em;
+        }
+        /* Pecahan bertingkat (pecahan di dalam pecahan) otomatis menyesuaikan skala */
+        .cbt-frac .cbt-frac {
+            font-size: 0.88em;
+            margin: 1px 1px;
+        }
+        .cbt-sqrt {
+            display: inline-flex;
+            align-items: stretch;
+            vertical-align: middle;
+            margin: 0 2px;
+        }
+        .cbt-sqrt-sign {
+            font-size: 1.18em;
+            line-height: 1;
+            padding-right: 1px;
+            display: inline-flex;
+            align-items: center;
+            font-weight: 600;
+        }
+        .cbt-sqrt-body {
+            border-top: 1.5px solid currentColor;
+            padding: 1px 3px 0 2px;
+            display: inline-flex;
+            align-items: center;
+        }
+        .cbt-root-idx {
+            font-size: 0.68em;
+            vertical-align: super;
+            margin-right: -2px;
+            align-self: flex-start;
+            line-height: 1;
+        }
+        math-field.cbt-mathlive-field {
+            width: 100%;
+            min-height: 54px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1.5px solid #cbd5e1;
+            background: #ffffff;
+            font-size: 1.08rem;
+            color: #0f172a;
+            outline: none;
+        }
+        math-field.cbt-mathlive-field:focus-within {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
@@ -111,6 +198,79 @@
             <div id="modalFooter" class="px-6 py-3.5 bg-slate-50 flex justify-end gap-2 border-t border-slate-200 shrink-0">
                 <button type="button" id="modalBtnCancel" onclick="window.handleModalCancel()" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-xl hover:bg-slate-300 font-semibold text-sm transition hidden">Batal</button>
                 <button type="button" id="modalBtnOk" onclick="window.handleModalOk()" class="px-5 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-semibold text-sm shadow-md transition">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editor Rumus Matematika Visual (MathLive - Seperti Microsoft Word Equation) -->
+    <div id="mathLiveModal" class="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/65 backdrop-blur-xs hidden p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-xl w-full mx-auto overflow-hidden border border-indigo-100 my-8 flex flex-col">
+            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between">
+                <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
+                    <i class="fa-solid fa-square-root-variable"></i>
+                    <span>Editor Rumus Matematika Visual (MathLive)</span>
+                </h3>
+                <button type="button" onclick="window.closeMathLiveModal()" class="text-white/85 hover:text-white text-xl font-bold leading-none cursor-pointer">&times;</button>
+            </div>
+            <div class="p-5 sm:p-6 space-y-4 text-xs">
+                <div class="p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl text-indigo-900">
+                    <p class="font-bold text-indigo-800">Klik tombol rumus di bawah atau ketik langsung seperti di Microsoft Word:</p>
+                    <p class="text-[11px] text-indigo-700 mt-0.5">Mendukung pecahan biasa, pecahan campuran, <strong>pecahan bertingkat</strong>, pangkat, akar, dan simbol operasi matematika.</p>
+                </div>
+
+                <!-- Tombol Pintasan Cepat Template Rumus di Dalam Modal MathLive -->
+                <div class="flex flex-wrap items-center gap-1.5 p-2 bg-slate-100 rounded-2xl border border-slate-200">
+                    <button type="button" onclick="window.insertIntoMathField('\\frac{#@}{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Pecahan Biasa (Pembilang / Penyebut)">
+                        <span class="font-serif">ᵃ⁄🄱</span> Pecahan
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('#?\\frac{#?}{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Pecahan Campuran">
+                        <span class="font-serif">1ᵃ⁄🄱</span> Campuran
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\frac{\\frac{#?}{#?}}{\\frac{#?}{#?}}')" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl font-extrabold text-xs shadow-2xs cursor-pointer" title="Pecahan Bertingkat (Pembilang Pecahan & Penyebut Pecahan)">
+                        <i class="fa-solid fa-layer-group mr-1 text-[10px]"></i> Pecahan Bertingkat
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('#@^{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Pangkat (xⁿ)">
+                        xⁿ Pangkat
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('#@_{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Indeks Bawah (xₙ)">
+                        xₙ Sub
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\sqrt{#@}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Akar Kuadrat (√x)">
+                        √x Akar
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\sqrt[#?]{#@}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Akar Pangkat n (ⁿ√x)">
+                        ⁿ√x
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\times')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">×</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\div')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">÷</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\pm')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">±</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\le')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">≤</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\ge')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">≥</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\neq')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">≠</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\pi')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">π</button>
+                    <button type="button" onclick="window.insertIntoMathField('^\\circ')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">°</button>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1.5">Area Ketik Rumus Visual (MathLive):</label>
+                    <math-field id="cbtVisualMathField" class="cbt-mathlive-field" virtual-keyboard-mode="manual"></math-field>
+                </div>
+
+                <div class="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Pratinjau Hasil Tampilan di Opsi / Soal:</span>
+                    <div id="mathLiveVisualPreview" class="min-h-[38px] flex items-center text-sm sm:text-base font-semibold text-slate-900"></div>
+                </div>
+            </div>
+            <div class="px-6 py-3.5 bg-slate-50 flex items-center justify-between gap-2 border-t border-slate-200">
+                <button type="button" onclick="window.clearMathLiveField()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-xs transition cursor-pointer">
+                    <i class="fa-solid fa-trash-can mr-1"></i> Bersihkan
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="window.closeMathLiveModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold text-xs transition cursor-pointer">Batal</button>
+                    <button type="button" onclick="window.commitMathLiveToInput()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md transition cursor-pointer">
+                        <i class="fa-solid fa-check mr-1"></i> Masukkan Rumus ke Kolom
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -293,8 +453,315 @@
             safe = safe.replace(/&lt;\/div&gt;/gi, '</div>');
             safe = safe.replace(/&lt;span\s+style=&quot;font-size:\s*(small|large|larger|1\.15em|0\.85em);?&quot;&gt;/gi, '<span style="font-size:$1;">');
             safe = safe.replace(/&lt;\/span&gt;/gi, '</span>');
-            return safe;
+            return renderMathExpressionsInHtml(safe);
         }
+
+        // ============================================================================
+        // PARSER & RENDERER RUMUS MATEMATIKA VISUAL (PECAHAN BERTINGKAT, AKAR, PANGKAT)
+        // ============================================================================
+        function extractBracedGroup(str, startIdx) {
+            if (!str || str[startIdx] !== '{') return null;
+            let depth = 0;
+            for (let i = startIdx; i < str.length; i++) {
+                if (str[i] === '{' && str[i - 1] !== '\\') depth++;
+                else if (str[i] === '}' && str[i - 1] !== '\\') {
+                    depth--;
+                    if (depth === 0) {
+                        return { content: str.slice(startIdx + 1, i), nextIdx: i + 1 };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function extractBracketGroup(str, startIdx) {
+            if (!str || str[startIdx] !== '[') return null;
+            let depth = 0;
+            for (let i = startIdx; i < str.length; i++) {
+                if (str[i] === '[') depth++;
+                else if (str[i] === ']') {
+                    depth--;
+                    if (depth === 0) {
+                        return { content: str.slice(startIdx + 1, i), nextIdx: i + 1 };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function convertLatexSegmentToVisualHtml(latexRaw) {
+            if (!latexRaw) return '';
+            let s = String(latexRaw)
+                .replace(/\\left\s*([\(\[\|])/g, '$1')
+                .replace(/\\right\s*([\)\]\|])/g, '$1')
+                .replace(/\\times\b/g, ' × ')
+                .replace(/\\div\b/g, ' ÷ ')
+                .replace(/\\cdot\b/g, ' · ')
+                .replace(/\\pm\b/g, ' ± ')
+                .replace(/\\le\b|\\leq\b/g, ' ≤ ')
+                .replace(/\\ge\b|\\geq\b/g, ' ≥ ')
+                .replace(/\\neq\b|\\ne\b/g, ' ≠ ')
+                .replace(/\\approx\b/g, ' ≈ ')
+                .replace(/\\pi\b/g, 'π')
+                .replace(/\\infty\b/g, '∞')
+                .replace(/\^\\circ|\\degree\b/g, '°')
+                .replace(/\\,/g, ' ')
+                .replace(/\\;/g, ' ')
+                .replace(/\\quad\b/g, '  ');
+
+            // Proses rekursif untuk \frac{pembilang}{penyebut} atau \dfrac{...}{...} (mendukung pecahan bertingkat tanpa batas)
+            let guard = 0;
+            while (guard < 40) {
+                guard++;
+                const fracMatch = s.match(/\\(?:d|t)?frac\s*\{/);
+                if (!fracMatch) break;
+                const cmdStart = fracMatch.index;
+                const firstBraceIdx = s.indexOf('{', cmdStart);
+                const numGroup = extractBracedGroup(s, firstBraceIdx);
+                if (!numGroup) break;
+                let afterNumIdx = numGroup.nextIdx;
+                while (afterNumIdx < s.length && /\s/.test(s[afterNumIdx])) afterNumIdx++;
+                const denGroup = extractBracedGroup(s, afterNumIdx);
+                if (!denGroup) break;
+
+                const numHtml = convertLatexSegmentToVisualHtml(numGroup.content);
+                const denHtml = convertLatexSegmentToVisualHtml(denGroup.content);
+                const fracHtml = `<span class="cbt-frac"><span class="cbt-num">${numHtml}</span><span class="cbt-den">${denHtml}</span></span>`;
+                s = s.slice(0, cmdStart) + fracHtml + s.slice(denGroup.nextIdx);
+            }
+
+            // Proses \sqrt[n]{x} dan \sqrt{x}
+            guard = 0;
+            while (guard < 30) {
+                guard++;
+                const sqrtMatch = s.match(/\\sqrt\s*(\[|\{)/);
+                if (!sqrtMatch) break;
+                const cmdStart = sqrtMatch.index;
+                const tokenChar = sqrtMatch[1];
+                const tokenIdx = s.indexOf(tokenChar, cmdStart);
+                if (tokenChar === '[') {
+                    const idxGroup = extractBracketGroup(s, tokenIdx);
+                    if (!idxGroup) break;
+                    let afterIdx = idxGroup.nextIdx;
+                    while (afterIdx < s.length && /\s/.test(s[afterIdx])) afterIdx++;
+                    const bodyGroup = extractBracedGroup(s, afterIdx);
+                    if (!bodyGroup) break;
+                    const idxHtml = convertLatexSegmentToVisualHtml(idxGroup.content);
+                    const bodyHtml = convertLatexSegmentToVisualHtml(bodyGroup.content);
+                    const sqrtHtml = `<span class="cbt-sqrt"><span class="cbt-root-idx">${idxHtml}</span><span class="cbt-sqrt-sign">√</span><span class="cbt-sqrt-body">${bodyHtml}</span></span>`;
+                    s = s.slice(0, cmdStart) + sqrtHtml + s.slice(bodyGroup.nextIdx);
+                } else {
+                    const bodyGroup = extractBracedGroup(s, tokenIdx);
+                    if (!bodyGroup) break;
+                    const bodyHtml = convertLatexSegmentToVisualHtml(bodyGroup.content);
+                    const sqrtHtml = `<span class="cbt-sqrt"><span class="cbt-sqrt-sign">√</span><span class="cbt-sqrt-body">${bodyHtml}</span></span>`;
+                    s = s.slice(0, cmdStart) + sqrtHtml + s.slice(bodyGroup.nextIdx);
+                }
+            }
+
+            // Proses pangkat ^{...} atau ^x dan indeks bawah _{...} atau _x
+            guard = 0;
+            while (guard < 30) {
+                guard++;
+                const supIdx = s.indexOf('^{');
+                if (supIdx === -1) break;
+                const grp = extractBracedGroup(s, supIdx + 1);
+                if (!grp) break;
+                s = s.slice(0, supIdx) + `<sup>${convertLatexSegmentToVisualHtml(grp.content)}</sup>` + s.slice(grp.nextIdx);
+            }
+            guard = 0;
+            while (guard < 30) {
+                guard++;
+                const subIdx = s.indexOf('_{');
+                if (subIdx === -1) break;
+                const grp = extractBracedGroup(s, subIdx + 1);
+                if (!grp) break;
+                s = s.slice(0, subIdx) + `<sub>${convertLatexSegmentToVisualHtml(grp.content)}</sub>` + s.slice(grp.nextIdx);
+            }
+
+            s = s.replace(/\^([0-9a-zA-Z\+\-]+)/g, '<sup>$1</sup>');
+            s = s.replace(/\_([0-9a-zA-Z\+\-]+)/g, '<sub>$1</sub>');
+            s = s.replace(/\\text\s*\{([^}]*)\}/g, '$1');
+
+            return s;
+        }
+
+        function renderMathExpressionsInHtml(escapedStr) {
+            if (!escapedStr) return '';
+            let out = String(escapedStr);
+
+            // 1. Render blok eksplisit $$...$$, $...$, atau \(...\)
+            out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => `<span class="cbt-math-expr">${convertLatexSegmentToVisualHtml(expr)}</span>`);
+            out = out.replace(/\$([^\$\n]+?)\$/g, (_, expr) => `<span class="cbt-math-expr">${convertLatexSegmentToVisualHtml(expr)}</span>`);
+            out = out.replace(/\\\(([\s\S]+?)\\\)/g, (_, expr) => `<span class="cbt-math-expr">${convertLatexSegmentToVisualHtml(expr)}</span>`);
+
+            // 2. Jika pengguna menulis langsung \frac{...}{...} atau \sqrt{...} tanpa tanda $ di tengah kalimat biasa
+            if (/\\(?:d|t)?frac\s*\{|\\sqrt\s*[\[\{]|\^\{|\_\{/.test(out)) {
+                out = convertLatexSegmentToVisualHtml(out);
+            }
+
+            return out;
+        }
+
+        window.renderOptionOrMathText = function(rawInput) {
+            if (rawInput === null || rawInput === undefined) return '';
+            return sanitizeRichTextHtml(String(rawInput).trim());
+        };
+
+        // ============================================================================
+        // TOOLBAR & MODAL MATHLIVE UNTUK PILIHAN A-D, KUNCI & PEMBAHASAN
+        // ============================================================================
+        let currentMathLiveTargetId = null;
+
+        window.buildOptionMathToolbarHtml = function(inputId) {
+            const bCls = "px-1.5 py-0.5 rounded-md bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 text-[10px] font-bold transition cursor-pointer flex items-center justify-center min-w-[24px] h-6 shadow-2xs";
+            return `
+                <div class="flex flex-wrap items-center gap-1 px-2 py-1 bg-slate-100/95 border border-b-0 border-slate-200 rounded-t-xl select-none">
+                    <button type="button" onclick="window.openMathLiveModal('${inputId}')" class="px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold transition cursor-pointer flex items-center gap-1 h-6 shadow-2xs" title="Buka Editor Rumus Visual MathLive (Pecahan Bertingkat seperti MS Word)">
+                        <i class="fa-solid fa-square-root-variable text-[9px]"></i> <span>Rumus Visual</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\frac{1}{2}$')" class="${bCls}" title="Sisipkan Pecahan Biasa (Pembilang / Penyebut)">
+                        <span class="font-serif">ᵃ⁄🄱</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$1\\\\frac{1}{2}$')" class="${bCls}" title="Sisipkan Bilangan Pecahan Campuran">
+                        <span class="font-serif">1ᵃ⁄🄱</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\frac{\\\\frac{1}{2}}{\\\\frac{3}{4}}$')" class="${bCls} text-indigo-700 bg-indigo-50/60 border-indigo-200" title="Sisipkan Pecahan Bertingkat">
+                        <span class="text-[9px] font-extrabold">ᵃ⁄🄱÷ᶜ⁄ᵈ</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$x^{2}$')" class="${bCls}" title="Pangkat (x²)">
+                        x²
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\sqrt{x}$')" class="${bCls}" title="Akar Kuadrat (√x)">
+                        √x
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\sqrt[3]{x}$')" class="${bCls}" title="Akar Pangkat Tiga (³√x)">
+                        ³√x
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', ' × ')" class="${bCls} font-mono" title="Kali (×)">×</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', ' ÷ ')" class="${bCls} font-mono" title="Bagi (÷)">÷</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '°')" class="${bCls} font-mono" title="Derajat (°)">°</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', 'π')" class="${bCls} font-mono" title="Pi (π)">π</button>
+                </div>
+            `;
+        };
+
+        window.insertQuickMathSnippet = function(inputId, snippet) {
+            const el = document.getElementById(inputId);
+            if (!el) return;
+            const start = el.selectionStart !== null && el.selectionStart !== undefined ? el.selectionStart : (el.value || '').length;
+            const end = el.selectionEnd !== null && el.selectionEnd !== undefined ? el.selectionEnd : start;
+            const val = el.value || '';
+            el.value = val.substring(0, start) + snippet + val.substring(end);
+            el.focus();
+            const newPos = start + snippet.length;
+            try { el.setSelectionRange(newPos, newPos); } catch (e) {}
+            if (typeof el.oninput === 'function') {
+                el.oninput();
+            } else {
+                window.updateQuestionLivePreview();
+            }
+        };
+
+        window.openMathLiveModal = function(targetInputId) {
+            currentMathLiveTargetId = targetInputId;
+            const modal = document.getElementById('mathLiveModal');
+            const mf = document.getElementById('cbtVisualMathField');
+            const targetEl = document.getElementById(targetInputId);
+            if (!modal || !mf) return;
+
+            let initialLatex = '';
+            if (targetEl && targetEl.value) {
+                const start = targetEl.selectionStart || 0;
+                const end = targetEl.selectionEnd || 0;
+                const selected = start !== end ? targetEl.value.substring(start, end) : '';
+                if (selected) {
+                    initialLatex = selected.replace(/^\$+|\$+$/g, '').trim();
+                } else {
+                    const m = targetEl.value.match(/\$([^\$\n]+)\$/);
+                    if (m) initialLatex = m[1];
+                }
+            }
+
+            try {
+                mf.value = initialLatex || '\\frac{1}{2}';
+            } catch (e) {
+                mf.setAttribute('value', initialLatex || '\\frac{1}{2}');
+            }
+
+            if (!mf._hasCbtListener) {
+                mf.addEventListener('input', () => {
+                    window.updateMathLiveModalPreview();
+                });
+                mf._hasCbtListener = true;
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                try { mf.focus(); } catch (e) {}
+                window.updateMathLiveModalPreview();
+            }, 80);
+        };
+
+        window.closeMathLiveModal = function() {
+            const modal = document.getElementById('mathLiveModal');
+            if (modal) modal.classList.add('hidden');
+            currentMathLiveTargetId = null;
+        };
+
+        window.clearMathLiveField = function() {
+            const mf = document.getElementById('cbtVisualMathField');
+            if (mf) {
+                mf.value = '';
+                try { mf.focus(); } catch (e) {}
+                window.updateMathLiveModalPreview();
+            }
+        };
+
+        window.insertIntoMathField = function(latexTemplate) {
+            const mf = document.getElementById('cbtVisualMathField');
+            if (!mf) return;
+            try {
+                if (typeof mf.executeCommand === 'function') {
+                    mf.executeCommand(['insert', latexTemplate]);
+                } else {
+                    const clean = latexTemplate.replace(/#@|#\?/g, '');
+                    mf.value = (mf.value || '') + clean;
+                }
+                mf.focus();
+            } catch (e) {
+                const clean = latexTemplate.replace(/#@|#\?/g, '1');
+                mf.value = (mf.value || '') + clean;
+            }
+            window.updateMathLiveModalPreview();
+        };
+
+        window.updateMathLiveModalPreview = function() {
+            const mf = document.getElementById('cbtVisualMathField');
+            const prevEl = document.getElementById('mathLiveVisualPreview');
+            if (!mf || !prevEl) return;
+            const rawLatex = (mf.value || '').trim();
+            if (!rawLatex) {
+                prevEl.innerHTML = '<span class="text-slate-400 italic text-xs">(Ketik rumus di atas untuk melihat hasil visual)</span>';
+                return;
+            }
+            prevEl.innerHTML = window.renderOptionOrMathText(`$${rawLatex}$`);
+        };
+
+        window.commitMathLiveToInput = function() {
+            const mf = document.getElementById('cbtVisualMathField');
+            const targetId = currentMathLiveTargetId;
+            if (!mf || !targetId) {
+                window.closeMathLiveModal();
+                return;
+            }
+            const rawLatex = (mf.value || '').trim();
+            if (rawLatex) {
+                const formattedToken = `$${rawLatex}$`;
+                window.insertQuickMathSnippet(targetId, formattedToken);
+            }
+            window.closeMathLiveModal();
+        };
 
         function formatRichQuestionText(rawInput) {
             if (rawInput === null || rawInput === undefined) return '';
@@ -352,6 +819,11 @@
                         <i class="fa-solid fa-list-ol"></i>
                     </button>
                     <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+                    <button type="button" onclick="window.openMathLiveModal('${targetTextareaId}')" class="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold transition shadow-2xs cursor-pointer flex items-center gap-1 h-7" title="Buka Editor Rumus Matematika Visual (Pecahan Bertingkat)">
+                        <i class="fa-solid fa-square-root-variable"></i> <span>Rumus</span>
+                    </button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '$\\\\frac{1}{2}$')" class="${btnCls} font-serif" title="Sisipkan Pecahan (ᵃ⁄🄱)">ᵃ⁄🄱</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '$\\\\frac{\\\\frac{1}{2}}{\\\\frac{3}{4}}$')" class="${btnCls} text-indigo-700" title="Sisipkan Pecahan Bertingkat">ᵃ⁄🄱÷ᶜ⁄ᵈ</button>
                     <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', ' × ')" class="${btnCls} font-mono" title="Simbol Kali (×)">×</button>
                     <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', ' ÷ ')" class="${btnCls} font-mono" title="Simbol Bagi (÷)">÷</button>
                     <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '°')" class="${btnCls} font-mono" title="Simbol Derajat (°)">°</button>
@@ -3171,30 +3643,36 @@
                             <div id="qFormOptionsContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan A</label>
-                                    <input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    ${window.buildOptionMathToolbarHtml('qOptA')}
+                                    <input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan B</label>
-                                    <input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    ${window.buildOptionMathToolbarHtml('qOptB')}
+                                    <input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan C</label>
-                                    <input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    ${window.buildOptionMathToolbarHtml('qOptC')}
+                                    <input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan D</label>
-                                    <input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    ${window.buildOptionMathToolbarHtml('qOptD')}
+                                    <input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                             </div>
 
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Kunci Jawaban *</label>
-                                    <input type="text" id="qFormKey" oninput="window.updateQuestionLivePreview()" placeholder="Contoh: A atau B,C" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-indigo-700">
+                                    ${window.buildOptionMathToolbarHtml('qFormKey')}
+                                    <input type="text" id="qFormKey" oninput="window.updateQuestionLivePreview()" placeholder="Contoh: A atau B,C atau rumus" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs font-bold text-indigo-700">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pembahasan Soal <span class="text-slate-400 font-normal">(Opsional)</span></label>
-                                    <input type="text" id="qFormExplanation" oninput="window.updateQuestionLivePreview()" placeholder="Langkah penyelesaian..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    ${window.buildOptionMathToolbarHtml('qFormExplanation')}
+                                    <input type="text" id="qFormExplanation" oninput="window.updateQuestionLivePreview()" placeholder="Langkah penyelesaian & rumus..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                             </div>
 
@@ -3371,24 +3849,24 @@
 
             if (type === 'pg' || type === 'pg_complex') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan A</label><input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan B</label><input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan C</label><input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan D</label><input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan C</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan D</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
                 `;
             } else if (type === 'matching') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi A / Pasangan 1 (Kiri = Kanan)</label><input type="text" id="qOptA" placeholder="Contoh: Es dipanaskan = Mencair" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi B / Pasangan 2 (Kiri = Kanan)</label><input type="text" id="qOptB" placeholder="Contoh: Air didinginkan = Membeku" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi C / Pasangan 3 (Kiri = Kanan)</label><input type="text" id="qOptC" placeholder="Contoh: Air direbus = Menguap" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi D / Pasangan 4 (Kiri = Kanan)</label><input type="text" id="qOptD" placeholder="Contoh: Kapur barus = Menyublim" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi A / Pasangan 1 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" placeholder="Contoh: Es dipanaskan = Mencair" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi B / Pasangan 2 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" placeholder="Contoh: Air didinginkan = Membeku" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi C / Pasangan 3 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" placeholder="Contoh: Air direbus = Menguap" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi D / Pasangan 4 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" placeholder="Contoh: Kapur barus = Menyublim" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
                 `;
             } else if (type === 'true_false') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 1 / Opsi A</label><input type="text" id="qOptA" placeholder="Benar (atau tulis Pernyataan 1)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 2 / Opsi B</label><input type="text" id="qOptB" placeholder="Salah (atau tulis Pernyataan 2)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 3 (Opsional)</label><input type="text" id="qOptC" placeholder="Pernyataan 3 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 4 (Opsional)</label><input type="text" id="qOptD" placeholder="Pernyataan 4 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 1 / Opsi A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" placeholder="Benar (atau tulis Pernyataan 1)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 2 / Opsi B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" placeholder="Salah (atau tulis Pernyataan 2)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 3 (Opsional)</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" placeholder="Pernyataan 3 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 4 (Opsional)</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" placeholder="Pernyataan 4 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
                 `;
             } else {
                 container.innerHTML = `<div class="sm:col-span-2 p-3 bg-slate-100 rounded-xl text-xs text-slate-600 font-medium">Jenis soal ${escapeHtml(getQuestionTypeBadgeLabel(type))} tidak memerlukan pilihan ganda A-D.</div>`;
@@ -3456,11 +3934,11 @@
 
             if (type === 'matching') {
                 const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
-                keyText.innerText = parsedMatch.readableKey || (key.trim() ? key : '-');
+                keyText.innerHTML = window.renderOptionOrMathText(parsedMatch.readableKey || (key.trim() ? key : '-'));
             } else {
-                keyText.innerText = key.trim() ? key : '-';
+                keyText.innerHTML = window.renderOptionOrMathText(key.trim() ? key : '-');
             }
-            explText.innerText = expl.trim() ? expl : '-';
+            explText.innerHTML = window.renderOptionOrMathText(expl.trim() ? expl : '-');
 
             if (type === 'pg' || type === 'pg_complex') {
                 const badgeType = type === 'pg_complex' ? 'checkbox' : 'radio';
@@ -3471,7 +3949,7 @@
                     const dispText = !isChoiceOptionEmpty(o, idx) ? o.trim() : `Opsi ${String.fromCharCode(65 + idx)}`;
                     return `
                         <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2"><span class="font-bold w-5">${String.fromCharCode(65 + idx)}.</span> <span>${escapeHtml(dispText)}</span></div>
+                            <div class="flex items-center gap-2"><span class="font-bold w-5">${String.fromCharCode(65 + idx)}.</span> <span>${window.renderOptionOrMathText(dispText)}</span></div>
                             <span class="text-[10px] text-slate-400 uppercase font-mono">${badgeType}</span>
                         </div>
                     `;
@@ -3481,8 +3959,8 @@
                 const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
                 optList.innerHTML = parsedMatch.matchingPairs.map((pair, i) => `
                     <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                        <span class="font-bold text-indigo-700">${String.fromCharCode(65 + i)}. ${escapeHtml(pair.left)}</span>
-                        <span class="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold">${escapeHtml(pair.right)}</span>
+                        <span class="font-bold text-indigo-700">${String.fromCharCode(65 + i)}. ${window.renderOptionOrMathText(pair.left)}</span>
+                        <span class="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold">${window.renderOptionOrMathText(pair.right)}</span>
                     </div>
                 `).join('') || `<div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-400">Masukkan pasangan Opsi A s.d D (contoh: Es dipanaskan = Mencair)</div>`;
             } else if (type === 'true_false') {
@@ -3490,7 +3968,7 @@
                 if (parsedTF.isMultiStatement) {
                     optList.innerHTML = parsedTF.options.map((stmt, idx) => `
                         <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                            <span><strong>${idx + 1}.</strong> ${escapeHtml(stmt)}</span>
+                            <span><strong>${idx + 1}.</strong> ${window.renderOptionOrMathText(stmt)}</span>
                             <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded font-bold text-[10px]">Benar / Salah</span>
                         </div>
                     `).join('');
@@ -7528,7 +8006,7 @@
                         <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs' : 'border-slate-200/90 bg-white hover:border-blue-300 shadow-2xs'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
+                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${window.renderOptionOrMathText(String(opt).trim())}</span>
                             </div>
                             <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'border-blue-600' : 'border-slate-300'}">
                                 ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
@@ -7546,7 +8024,7 @@
                         <label class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs' : 'border-slate-200/90 bg-white hover:border-blue-300 shadow-2xs'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${escapeHtml(String(opt).trim())}</span>
+                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${window.renderOptionOrMathText(String(opt).trim())}</span>
                             </div>
                             <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300 shrink-0">
                         </label>
@@ -7566,7 +8044,7 @@
                     return `
                         <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition font-poppins">
                             <td class="p-4 font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">
-                                <strong class="font-semibold text-indigo-700 mr-1.5">${letter}.</strong> ${escapeHtml(stmt)}
+                                <strong class="font-semibold text-indigo-700 mr-1.5">${letter}.</strong> ${window.renderOptionOrMathText(stmt)}
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
                                 <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-poppins font-semibold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
@@ -7609,7 +8087,7 @@
                     const optsHtml = rightOptions.map(ro => `<option value="${escapeHtml(ro)}" ${selectedVal === ro ? 'selected' : ''}>${escapeHtml(ro)}</option>`).join('');
                     return `
                         <div class="font-poppins p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
-                            <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${idx + 1}. ${escapeHtml(p.left)}</span>
+                            <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${idx + 1}. ${window.renderOptionOrMathText(p.left)}</span>
                             <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm sm:text-[15px] font-poppins font-normal text-blue-700">
                                 <option value="">-- Pilih Pasangan --</option>
                                 ${optsHtml}
