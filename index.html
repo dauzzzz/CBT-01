@@ -35,36 +35,101 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- SheetJS untuk baca/tulis file Excel (.xlsx) murni -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- MathLive & KaTeX untuk Editor Rumus Matematika Visual & Pecahan Bertingkat -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/mathlive@0.98.6/dist/mathlive.min.js"></script>
+    <!-- MathLive untuk Editor Rumus Matematika Visual (Pecahan Bertingkat seperti MS Word) -->
+    <link rel="stylesheet" href="https://unpkg.com/mathlive/dist/mathlive-static.css">
+    <script defer src="https://unpkg.com/mathlive"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .font-poppins { font-family: 'Poppins', sans-serif; }
+        /* Styling Visual Pecahan Bertingkat, Akar & Pangkat Proporsional (Seperti MS Word Equation) */
+        .cbt-math-expr {
+            display: inline-flex;
+            align-items: center;
+            vertical-align: middle;
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+            line-height: 1.2;
+            margin: 0 2px;
+        }
+        .cbt-frac {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 3px;
+            margin: 2px 2px;
+            line-height: 1.15;
+        }
+        .cbt-frac > .cbt-num {
+            border-bottom: 1.5px solid currentColor;
+            padding: 0 4px 2px 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.1em;
+            font-size: 0.92em;
+        }
+        .cbt-frac > .cbt-den {
+            padding: 2px 4px 0 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.1em;
+            font-size: 0.92em;
+        }
+        /* Pecahan bertingkat (pecahan di dalam pecahan) otomatis menyesuaikan skala */
+        .cbt-frac .cbt-frac {
+            font-size: 0.88em;
+            margin: 1px 1px;
+        }
+        .cbt-sqrt {
+            display: inline-flex;
+            align-items: stretch;
+            vertical-align: middle;
+            margin: 0 2px;
+        }
+        .cbt-sqrt-sign {
+            font-size: 1.18em;
+            line-height: 1;
+            padding-right: 1px;
+            display: inline-flex;
+            align-items: center;
+            font-weight: 600;
+        }
+        .cbt-sqrt-body {
+            border-top: 1.5px solid currentColor;
+            padding: 1px 3px 0 2px;
+            display: inline-flex;
+            align-items: center;
+        }
+        .cbt-root-idx {
+            font-size: 0.68em;
+            vertical-align: super;
+            margin-right: -2px;
+            align-self: flex-start;
+            line-height: 1;
+        }
+        math-field.cbt-mathlive-field {
+            width: 100%;
+            min-height: 54px;
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1.5px solid #cbd5e1;
+            background: #ffffff;
+            font-size: 1.08rem;
+            color: #0f172a;
+            outline: none;
+        }
+        math-field.cbt-mathlive-field:focus-within {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+        }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .table-responsive-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        math-field {
-            font-size: 1.25rem;
-            padding: 10px 14px;
-            border-radius: 14px;
-            border: 2px solid #c7d2fe;
-            background: #f8fafc;
-            width: 100%;
-            min-height: 54px;
-            display: block;
-            color: #0f172a;
-        }
-        math-field:focus-within {
-            border-color: #4f46e5;
-            background: #ffffff;
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-        }
-        .katex { font-size: 1.08em; }
         @media (max-width: 640px) {
             button, select, input[type="text"], input[type="number"], input[type="password"], input[type="email"] {
                 min-height: 38px;
@@ -137,6 +202,79 @@
         </div>
     </div>
 
+    <!-- Modal Editor Rumus Matematika Visual (MathLive - Seperti Microsoft Word Equation) -->
+    <div id="mathLiveModal" class="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/65 backdrop-blur-xs hidden p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-xl w-full mx-auto overflow-hidden border border-indigo-100 my-8 flex flex-col">
+            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between">
+                <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
+                    <i class="fa-solid fa-square-root-variable"></i>
+                    <span>Editor Rumus Matematika Visual (MathLive)</span>
+                </h3>
+                <button type="button" onclick="window.closeMathLiveModal()" class="text-white/85 hover:text-white text-xl font-bold leading-none cursor-pointer">&times;</button>
+            </div>
+            <div class="p-5 sm:p-6 space-y-4 text-xs">
+                <div class="p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-2xl text-indigo-900">
+                    <p class="font-bold text-indigo-800">Klik tombol rumus di bawah atau ketik langsung seperti di Microsoft Word:</p>
+                    <p class="text-[11px] text-indigo-700 mt-0.5">Mendukung pecahan biasa, pecahan campuran, <strong>pecahan bertingkat</strong>, pangkat, akar, dan simbol operasi matematika.</p>
+                </div>
+
+                <!-- Tombol Pintasan Cepat Template Rumus di Dalam Modal MathLive -->
+                <div class="flex flex-wrap items-center gap-1.5 p-2 bg-slate-100 rounded-2xl border border-slate-200">
+                    <button type="button" onclick="window.insertIntoMathField('\\frac{#@}{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Pecahan Biasa (Pembilang / Penyebut)">
+                        <span class="font-serif">ᵃ⁄🄱</span> Pecahan
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('#?\\frac{#?}{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Pecahan Campuran">
+                        <span class="font-serif">1ᵃ⁄🄱</span> Campuran
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\frac{\\frac{#?}{#?}}{\\frac{#?}{#?}}')" class="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl font-extrabold text-xs shadow-2xs cursor-pointer" title="Pecahan Bertingkat (Pembilang Pecahan & Penyebut Pecahan)">
+                        <i class="fa-solid fa-layer-group mr-1 text-[10px]"></i> Pecahan Bertingkat
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('#@^{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Pangkat (xⁿ)">
+                        xⁿ Pangkat
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('#@_{#?}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Indeks Bawah (xₙ)">
+                        xₙ Sub
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\sqrt{#@}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Akar Kuadrat (√x)">
+                        √x Akar
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\sqrt[#?]{#@}')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer" title="Akar Pangkat n (ⁿ√x)">
+                        ⁿ√x
+                    </button>
+                    <button type="button" onclick="window.insertIntoMathField('\\times')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">×</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\div')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">÷</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\pm')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">±</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\le')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">≤</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\ge')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">≥</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\neq')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">≠</button>
+                    <button type="button" onclick="window.insertIntoMathField('\\pi')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">π</button>
+                    <button type="button" onclick="window.insertIntoMathField('^\\circ')" class="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-xl font-bold text-xs shadow-2xs cursor-pointer">°</button>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-700 mb-1.5">Area Ketik Rumus Visual (MathLive):</label>
+                    <math-field id="cbtVisualMathField" class="cbt-mathlive-field" virtual-keyboard-mode="manual"></math-field>
+                </div>
+
+                <div class="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+                    <span class="text-[10px] font-bold uppercase text-slate-400 block">Pratinjau Hasil Tampilan di Opsi / Soal:</span>
+                    <div id="mathLiveVisualPreview" class="min-h-[38px] flex items-center text-sm sm:text-base font-semibold text-slate-900"></div>
+                </div>
+            </div>
+            <div class="px-6 py-3.5 bg-slate-50 flex items-center justify-between gap-2 border-t border-slate-200">
+                <button type="button" onclick="window.clearMathLiveField()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl font-bold text-xs transition cursor-pointer">
+                    <i class="fa-solid fa-trash-can mr-1"></i> Bersihkan
+                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="window.closeMathLiveModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold text-xs transition cursor-pointer">Batal</button>
+                    <button type="button" onclick="window.commitMathLiveToInput()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md transition cursor-pointer">
+                        <i class="fa-solid fa-check mr-1"></i> Masukkan Rumus ke Kolom
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Overlay Wajib Kembali ke Layar Penuh Saat Ujian Berlangsung (Jika Tertekan ESC) -->
     <div id="fullscreenRequiredModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/85 backdrop-blur-md hidden p-4 select-none font-poppins">
         <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto overflow-hidden border border-indigo-100 p-6 sm:p-8 text-center space-y-5">
@@ -153,53 +291,6 @@
             <button type="button" onclick="window.resumeFullscreenAndContinueExam()" class="w-full py-3.5 px-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-semibold text-xs sm:text-sm shadow-lg transition flex items-center justify-center gap-2 cursor-pointer">
                 <i class="fa-solid fa-expand"></i> Kembali ke Layar Penuh &amp; Lanjutkan Ujian
             </button>
-        </div>
-    </div>
-
-    <!-- Modal Editor Rumus Matematika Visual (MathLive) -->
-    <div id="mathLiveModal" class="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 backdrop-blur-xs hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl max-w-xl w-full mx-auto overflow-hidden border border-indigo-100 flex flex-col">
-            <div class="px-6 py-4 bg-gradient-to-r from-indigo-600 to-blue-600 text-white flex items-center justify-between">
-                <h3 class="font-bold text-sm sm:text-base flex items-center gap-2">
-                    <i class="fa-solid fa-square-root-variable"></i> Editor Rumus Matematika Visual (MathLive)
-                </h3>
-                <button type="button" onclick="window.closeMathLiveModal()" class="text-white/85 hover:text-white text-xl font-bold leading-none">&times;</button>
-            </div>
-            <div class="p-5 sm:p-6 space-y-4 text-xs">
-                <div class="p-3 bg-indigo-50/80 border border-indigo-200 rounded-2xl text-indigo-900 leading-relaxed">
-                    <p class="font-bold flex items-center gap-1.5"><i class="fa-solid fa-wand-magic-sparkles text-indigo-600"></i> Ketik Pecahan Bertingkat, Akar &amp; Pangkat Seperti Microsoft Word</p>
-                    <p class="text-[11px] text-indigo-700 mt-0.5">Gunakan tombol pintasan di bawah untuk menyisipkan template pecahan bertingkat, bilangan campuran, akar, atau pangkat, lalu isi angkanya langsung pada kotak editor visual.</p>
-                </div>
-
-                <!-- Tombol Template Cepat MathLive -->
-                <div class="flex flex-wrap gap-1.5">
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\frac{#?}{#?}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-800 rounded-xl font-bold border border-slate-200 transition cursor-pointer">Pecahan a/b</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('1\\\\frac{#?}{#?}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-800 rounded-xl font-bold border border-slate-200 transition cursor-pointer">Campuran 1 a/b</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\frac{\\\\frac{#?}{#?}}{\\\\frac{#?}{#?}}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-800 rounded-xl font-bold border border-slate-200 transition cursor-pointer">Pecahan Bertingkat</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('{#?}^{#?}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-800 rounded-xl font-bold border border-slate-200 transition cursor-pointer">Pangkat xⁿ</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\sqrt{#?}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-800 rounded-xl font-bold border border-slate-200 transition cursor-pointer">Akar √x</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\sqrt[#?]{#?}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 hover:text-indigo-700 text-slate-800 rounded-xl font-bold border border-slate-200 transition cursor-pointer">Akar ⁿ√x</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\times')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&times;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\div')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&divide;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\pm')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&plusmn;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\le')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&le;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\ge')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&ge;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\neq')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&ne;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('\\\\pi')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&pi;</button>
-                    <button type="button" onclick="window.insertTemplateToMathField('^{\\\\circ}')" class="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-100 text-slate-800 rounded-xl font-bold border border-slate-200 cursor-pointer">&deg;</button>
-                </div>
-
-                <div>
-                    <label class="block font-bold text-slate-700 mb-1.5">Kotak Editor Persamaan Visual:</label>
-                    <math-field id="mathLiveEditorField" virtual-keyboard-mode="manual"></math-field>
-                </div>
-            </div>
-            <div class="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-                <button type="button" onclick="window.closeMathLiveModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-semibold text-xs transition cursor-pointer">Batal</button>
-                <button type="button" onclick="window.confirmInsertMathLiveFormula()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer">
-                    <i class="fa-solid fa-check"></i> Sisipkan Rumus ke Kolom
-                </button>
-            </div>
         </div>
     </div>
 
@@ -351,285 +442,217 @@
                 .replace(/'/g, '&#39;');
         }
 
-        function sanitizeFirestoreData(obj) {
-            if (obj === null || obj === undefined) return null;
-            return JSON.parse(JSON.stringify(obj));
+        function sanitizeRichTextHtml(rawInput) {
+            if (rawInput === null || rawInput === undefined) return '';
+            const str = String(rawInput);
+            let safe = escapeHtml(str);
+            safe = safe.replace(/&lt;(\/?)(b|strong|i|em|u|s|sub|sup|ul|ol|li|br|hr)\s*\/?&gt;/gi, '<$1$2>');
+            safe = safe.replace(/&lt;mark(?:\s+class=&quot;(bg-yellow-200|bg-emerald-200|bg-sky-200)&quot;)?&gt;/gi, (m, cls) => `<mark class="${cls || 'bg-yellow-200'} px-0.5 rounded">`);
+            safe = safe.replace(/&lt;\/mark&gt;/gi, '</mark>');
+            safe = safe.replace(/&lt;div\s+style=&quot;text-align:\s*(left|center|right|justify);?&quot;&gt;/gi, '<div style="text-align:$1;">');
+            safe = safe.replace(/&lt;\/div&gt;/gi, '</div>');
+            safe = safe.replace(/&lt;span\s+style=&quot;font-size:\s*(small|large|larger|1\.15em|0\.85em);?&quot;&gt;/gi, '<span style="font-size:$1;">');
+            safe = safe.replace(/&lt;\/span&gt;/gi, '</span>');
+            return renderMathExpressionsInHtml(safe);
         }
 
         // ============================================================================
-        // RICH TEXT EDITOR TOOLBAR & SANITIZER AMAN (STIMULUS & PERTANYAAN SOAL)
+        // PARSER & RENDERER RUMUS MATEMATIKA VISUAL (PECAHAN BERTINGKAT, AKAR, PANGKAT)
         // ============================================================================
-        window.sanitizeRichTextHtml = function(rawHtml) {
-            if (rawHtml === null || rawHtml === undefined) return '';
-            const str = String(rawHtml);
-            const hasAllowedTags = /<(b|strong|i|em|u|mark|sup|sub|ul|ol|li|div|p|span|br)\b/i.test(str);
-            if (!hasAllowedTags) {
-                return window.renderMathExpressionsInHtml(str);
-            }
-
-            const temp = document.createElement('div');
-            temp.innerHTML = str;
-
-            const allowedTags = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'MARK', 'SUP', 'SUB', 'UL', 'OL', 'LI', 'DIV', 'P', 'SPAN', 'BR']);
-            const allowedAligns = new Set(['left', 'center', 'right', 'justify']);
-
-            const cleanNode = (node) => {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    const wrapper = document.createElement('span');
-                    wrapper.innerHTML = window.renderMathExpressionsInHtml(node.textContent || '');
-                    return wrapper;
-                }
-                if (node.nodeType !== Node.ELEMENT_NODE) {
-                    return document.createTextNode('');
-                }
-                const tag = node.tagName.toUpperCase();
-                if (!allowedTags.has(tag)) {
-                    const frag = document.createDocumentFragment();
-                    Array.from(node.childNodes).forEach(child => frag.appendChild(cleanNode(child)));
-                    return frag;
-                }
-                const cleanEl = document.createElement(tag.toLowerCase());
-                if (tag === 'MARK') {
-                    cleanEl.className = 'bg-amber-200/85 text-slate-900 px-1 rounded';
-                } else if (tag === 'UL') {
-                    cleanEl.className = 'list-disc pl-5 my-1 space-y-0.5';
-                } else if (tag === 'OL') {
-                    cleanEl.className = 'list-decimal pl-5 my-1 space-y-0.5';
-                }
-
-                const textAlign = (node.style && node.style.textAlign) ? node.style.textAlign.toLowerCase() : '';
-                if (allowedAligns.has(textAlign)) {
-                    cleanEl.style.textAlign = textAlign;
-                }
-                Array.from(node.childNodes).forEach(child => cleanEl.appendChild(cleanNode(child)));
-                return cleanEl;
-            };
-
-            const out = document.createElement('div');
-            Array.from(temp.childNodes).forEach(child => out.appendChild(cleanNode(child)));
-            return out.innerHTML.replace(/\r?\n/g, '<br>');
-        };
-
-        window.formatRichQuestionText = function(rawText) {
-            return window.sanitizeRichTextHtml(rawText);
-        };
-
-        window.buildRichTextToolbarHtml = function(targetInputId) {
-            return `
-                <div class="flex flex-wrap items-center gap-1 mb-1.5 p-1.5 bg-slate-100/95 border border-slate-200 rounded-xl">
-                    <!-- Gaya Huruf -->
-                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<b>', '</b>')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs font-extrabold flex items-center justify-center transition cursor-pointer" title="Tebal (Bold)">B</button>
-                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<i>', '</i>')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs italic font-serif font-bold flex items-center justify-center transition cursor-pointer" title="Miring (Italic)">I</button>
-                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<u>', '</u>')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs underline font-bold flex items-center justify-center transition cursor-pointer" title="Garis Bawah (Underline)">U</button>
-                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<mark>', '</mark>')" class="w-7 h-7 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Stabilo / Sorot Teks"><i class="fa-solid fa-highlighter text-[11px]"></i></button>
-
-                    <span class="w-px h-5 bg-slate-300 mx-0.5"></span>
-
-                    <!-- Notasi Ilmiah -->
-                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<sup>', '</sup>')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-[11px] font-bold flex items-center justify-center transition cursor-pointer" title="Pangkat Atas (Superscript)">x<sup>2</sup></button>
-                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<sub>', '</sub>')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-[11px] font-bold flex items-center justify-center transition cursor-pointer" title="Indeks Bawah (Subscript)">H<sub>2</sub>O</button>
-
-                    <span class="w-px h-5 bg-slate-300 mx-0.5"></span>
-
-                    <!-- Perataan Paragraf -->
-                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'left')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Kiri"><i class="fa-solid fa-align-left text-[11px]"></i></button>
-                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'center')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Tengah"><i class="fa-solid fa-align-center text-[11px]"></i></button>
-                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'right')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Kanan"><i class="fa-solid fa-align-right text-[11px]"></i></button>
-                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'justify')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Kanan-Kiri (Justify)"><i class="fa-solid fa-align-justify text-[11px]"></i></button>
-
-                    <span class="w-px h-5 bg-slate-300 mx-0.5"></span>
-
-                    <!-- Daftar & Simbol Matematika Cepat -->
-                    <button type="button" onclick="window.applyRichListToTextarea('${targetInputId}', 'ul')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Daftar Poin (Bullet List)"><i class="fa-solid fa-list-ul text-[11px]"></i></button>
-                    <button type="button" onclick="window.applyRichListToTextarea('${targetInputId}', 'ol')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Daftar Bernomor (Numbered List)"><i class="fa-solid fa-list-ol text-[11px]"></i></button>
-
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' × ')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Kali">&times;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' ÷ ')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Bagi">&divide;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '°')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Derajat">&deg;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '√')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Akar">&radic;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', 'π')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Pi">&pi;</button>
-
-                    <!-- Tombol MathLive Visual -->
-                    <button type="button" onclick="window.openMathLiveModal('${targetInputId}')" class="px-2 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer" title="Editor Rumus & Pecahan Bertingkat">
-                        <i class="fa-solid fa-square-root-variable"></i> Rumus
-                    </button>
-
-                    <!-- Hapus Format -->
-                    <button type="button" onclick="window.clearRichFormatFromTextarea('${targetInputId}')" class="w-7 h-7 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer ml-auto" title="Hapus Format Teks (Eraser)"><i class="fa-solid fa-eraser text-[11px]"></i></button>
-                </div>
-            `;
-        };
-
-        window.applyRichTagToTextarea = function(targetInputId, openTag, closeTag) {
-            const el = document.getElementById(targetInputId);
-            if (!el) return;
-            const start = el.selectionStart !== undefined ? el.selectionStart : el.value.length;
-            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
-            const selected = el.value.slice(start, end) || 'teks';
-            const replacement = `${openTag}${selected}${closeTag}`;
-            el.value = el.value.slice(0, start) + replacement + el.value.slice(end);
-            el.focus();
-            try {
-                el.setSelectionRange(start + openTag.length, start + openTag.length + selected.length);
-            } catch (e) {}
-            window.updateQuestionLivePreview();
-        };
-
-        window.applyRichAlignToTextarea = function(targetInputId, alignDir) {
-            const el = document.getElementById(targetInputId);
-            if (!el) return;
-            const start = el.selectionStart !== undefined ? el.selectionStart : 0;
-            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
-            const selected = el.value.slice(start, end).trim() || el.value.trim() || 'Paragraf teks';
-            const openTag = `<div style="text-align:${alignDir};">`;
-            const closeTag = `</div>`;
-            if (el.selectionStart !== el.selectionEnd) {
-                el.value = el.value.slice(0, start) + openTag + selected + closeTag + el.value.slice(end);
-            } else {
-                el.value = openTag + selected + closeTag;
-            }
-            el.focus();
-            window.updateQuestionLivePreview();
-        };
-
-        window.applyRichListToTextarea = function(targetInputId, listType) {
-            const el = document.getElementById(targetInputId);
-            if (!el) return;
-            const start = el.selectionStart !== undefined ? el.selectionStart : el.value.length;
-            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
-            const selected = el.value.slice(start, end).trim();
-            const lines = selected
-                ? selected.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-                : ['Poin pertama', 'Poin kedua'];
-            const liHtml = lines.map(item => `<li>${item}</li>`).join('');
-            const listHtml = `<${listType}>${liHtml}</${listType}>`;
-            el.value = el.value.slice(0, start) + listHtml + el.value.slice(end);
-            el.focus();
-            window.updateQuestionLivePreview();
-        };
-
-        window.clearRichFormatFromTextarea = function(targetInputId) {
-            const el = document.getElementById(targetInputId);
-            if (!el) return;
-            const start = el.selectionStart !== undefined ? el.selectionStart : 0;
-            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
-            const stripTags = (txt) => txt
-                .replace(/<\/li>\s*<li>/gi, '\n')
-                .replace(/<br\s*\/?>/gi, '\n')
-                .replace(/<\/?(b|strong|i|em|u|mark|sup|sub|ul|ol|li|div|p|span)[^>]*>/gi, '');
-
-            if (start !== end) {
-                const cleaned = stripTags(el.value.slice(start, end));
-                el.value = el.value.slice(0, start) + cleaned + el.value.slice(end);
-            } else {
-                el.value = stripTags(el.value);
-            }
-            el.focus();
-            window.updateQuestionLivePreview();
-        };
-
-        // ============================================================================
-        // INTEGRASI MATHLIVE & RENDERER RUMUS MATEMATIKA VISUAL (PECAHAN BERTINGKAT)
-        // ============================================================================
-        let activeMathTargetInputId = null;
-
-        function buildSingleFractionHtml(numHtml, denHtml, nested = false) {
-            const padCls = nested ? 'px-1 py-0 text-[0.82em]' : 'px-1.5 py-0.5 text-[0.9em]';
-            return `<span class="inline-flex flex-col items-center align-middle mx-1 leading-tight select-none" style="vertical-align:middle;"><span class="${padCls} border-b border-current text-center font-medium">${numHtml}</span><span class="${padCls} text-center font-medium">${denHtml}</span></span>`;
-        }
-
-        function renderLatexFallbackHtml(latexStr) {
-            let s = escapeHtml(String(latexStr || '').trim());
-            // Pecahan bertingkat: \frac{\frac{a}{b}}{\frac{c}{d}}
-            s = s.replace(/\\frac\{\\frac\{([^{}]+)\}\{([^{}]+)\}\}\{\\frac\{([^{}]+)\}\{([^{}]+)\}\}/g, (_, a, b, c, d) => {
-                const topFrac = buildSingleFractionHtml(a, b, true);
-                const botFrac = buildSingleFractionHtml(c, d, true);
-                return buildSingleFractionHtml(topFrac, botFrac, false);
-            });
-            // Pecahan campuran: 1\frac{a}{b}
-            s = s.replace(/(\d+)\s*\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (_, whole, num, den) => {
-                return `<span class="inline-flex items-center align-middle gap-0.5"><span class="font-semibold">${whole}</span>${buildSingleFractionHtml(num, den, false)}</span>`;
-            });
-            // Pecahan biasa: \frac{a}{b}
-            s = s.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, (_, num, den) => buildSingleFractionHtml(num, den, false));
-            // Akar pangkat n: \sqrt[n]{x}
-            s = s.replace(/\\sqrt\[([^\[\]]+)\]\{([^{}]+)\}/g, (_, n, x) => `<span class="inline-flex items-baseline"><sup class="text-[0.7em] mr-0.5">${n}</sup>&radic;<span class="border-t border-current px-0.5">${x}</span></span>`);
-            // Akar kuadrat: \sqrt{x}
-            s = s.replace(/\\sqrt\{([^{}]+)\}/g, (_, x) => `<span class="inline-flex items-baseline">&radic;<span class="border-t border-current px-0.5">${x}</span></span>`);
-            // Pangkat: x^{n} atau x^2
-            s = s.replace(/\^\{([^{}]+)\}/g, '<sup>$1</sup>').replace(/\^([0-9a-zA-Z]+)/g, '<sup>$1</sup>');
-            // Indeks bawah: x_{n}
-            s = s.replace(/_\{([^{}]+)\}/g, '<sub>$1</sub>').replace(/_([0-9a-zA-Z]+)/g, '<sub>$1</sub>');
-            // Simbol matematika umum
-            s = s.replace(/\\times/g, '&times;')
-                 .replace(/\\div/g, '&divide;')
-                 .replace(/\\pm/g, '&plusmn;')
-                 .replace(/\\le/g, '&le;')
-                 .replace(/\\ge/g, '&ge;')
-                 .replace(/\\neq/g, '&ne;')
-                 .replace(/\\pi/g, '&pi;')
-                 .replace(/\\circ/g, '&deg;');
-            return `<span class="inline-math-visual font-serif px-0.5">${s}</span>`;
-        }
-
-        window.renderMathExpressionsInHtml = function(rawText) {
-            if (rawText === null || rawText === undefined) return '';
-            const str = String(rawText);
-            if (!str.includes('$')) {
-                return escapeHtml(str).replace(/\r?\n/g, '<br>');
-            }
-            // Pisahkan teks biasa dan blok rumus $...$ atau $$...$$
-            const parts = str.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g);
-            return parts.map(part => {
-                if (!part) return '';
-                const isDisplay = part.startsWith('$$') && part.endsWith('$$') && part.length > 4;
-                const isInline = !isDisplay && part.startsWith('$') && part.endsWith('$') && part.length > 2;
-                if (isDisplay || isInline) {
-                    const latex = isDisplay ? part.slice(2, -2).trim() : part.slice(1, -1).trim();
-                    if (!latex) return '';
-                    if (typeof window.katex !== 'undefined' && typeof window.katex.renderToString === 'function') {
-                        try {
-                            return window.katex.renderToString(latex, {
-                                throwOnError: false,
-                                displayMode: isDisplay
-                            });
-                        } catch (e) {
-                            return renderLatexFallbackHtml(latex);
-                        }
+        function extractBracedGroup(str, startIdx) {
+            if (!str || str[startIdx] !== '{') return null;
+            let depth = 0;
+            for (let i = startIdx; i < str.length; i++) {
+                if (str[i] === '{' && str[i - 1] !== '\\') depth++;
+                else if (str[i] === '}' && str[i - 1] !== '\\') {
+                    depth--;
+                    if (depth === 0) {
+                        return { content: str.slice(startIdx + 1, i), nextIdx: i + 1 };
                     }
-                    return renderLatexFallbackHtml(latex);
                 }
-                return escapeHtml(part).replace(/\r?\n/g, '<br>');
-            }).join('');
+            }
+            return null;
+        }
+
+        function extractBracketGroup(str, startIdx) {
+            if (!str || str[startIdx] !== '[') return null;
+            let depth = 0;
+            for (let i = startIdx; i < str.length; i++) {
+                if (str[i] === '[') depth++;
+                else if (str[i] === ']') {
+                    depth--;
+                    if (depth === 0) {
+                        return { content: str.slice(startIdx + 1, i), nextIdx: i + 1 };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function convertLatexSegmentToVisualHtml(latexRaw) {
+            if (!latexRaw) return '';
+            let s = String(latexRaw)
+                .replace(/\\left\s*([\(\[\|])/g, '$1')
+                .replace(/\\right\s*([\)\]\|])/g, '$1')
+                .replace(/\\times\b/g, ' × ')
+                .replace(/\\div\b/g, ' ÷ ')
+                .replace(/\\cdot\b/g, ' · ')
+                .replace(/\\pm\b/g, ' ± ')
+                .replace(/\\le\b|\\leq\b/g, ' ≤ ')
+                .replace(/\\ge\b|\\geq\b/g, ' ≥ ')
+                .replace(/\\neq\b|\\ne\b/g, ' ≠ ')
+                .replace(/\\approx\b/g, ' ≈ ')
+                .replace(/\\pi\b/g, 'π')
+                .replace(/\\infty\b/g, '∞')
+                .replace(/\^\\circ|\\degree\b/g, '°')
+                .replace(/\\,/g, ' ')
+                .replace(/\\;/g, ' ')
+                .replace(/\\quad\b/g, '  ');
+
+            // Proses rekursif untuk \frac{pembilang}{penyebut} atau \dfrac{...}{...} (mendukung pecahan bertingkat tanpa batas)
+            let guard = 0;
+            while (guard < 40) {
+                guard++;
+                const fracMatch = s.match(/\\(?:d|t)?frac\s*\{/);
+                if (!fracMatch) break;
+                const cmdStart = fracMatch.index;
+                const firstBraceIdx = s.indexOf('{', cmdStart);
+                const numGroup = extractBracedGroup(s, firstBraceIdx);
+                if (!numGroup) break;
+                let afterNumIdx = numGroup.nextIdx;
+                while (afterNumIdx < s.length && /\s/.test(s[afterNumIdx])) afterNumIdx++;
+                const denGroup = extractBracedGroup(s, afterNumIdx);
+                if (!denGroup) break;
+
+                const numHtml = convertLatexSegmentToVisualHtml(numGroup.content);
+                const denHtml = convertLatexSegmentToVisualHtml(denGroup.content);
+                const fracHtml = `<span class="cbt-frac"><span class="cbt-num">${numHtml}</span><span class="cbt-den">${denHtml}</span></span>`;
+                s = s.slice(0, cmdStart) + fracHtml + s.slice(denGroup.nextIdx);
+            }
+
+            // Proses \sqrt[n]{x} dan \sqrt{x}
+            guard = 0;
+            while (guard < 30) {
+                guard++;
+                const sqrtMatch = s.match(/\\sqrt\s*(\[|\{)/);
+                if (!sqrtMatch) break;
+                const cmdStart = sqrtMatch.index;
+                const tokenChar = sqrtMatch[1];
+                const tokenIdx = s.indexOf(tokenChar, cmdStart);
+                if (tokenChar === '[') {
+                    const idxGroup = extractBracketGroup(s, tokenIdx);
+                    if (!idxGroup) break;
+                    let afterIdx = idxGroup.nextIdx;
+                    while (afterIdx < s.length && /\s/.test(s[afterIdx])) afterIdx++;
+                    const bodyGroup = extractBracedGroup(s, afterIdx);
+                    if (!bodyGroup) break;
+                    const idxHtml = convertLatexSegmentToVisualHtml(idxGroup.content);
+                    const bodyHtml = convertLatexSegmentToVisualHtml(bodyGroup.content);
+                    const sqrtHtml = `<span class="cbt-sqrt"><span class="cbt-root-idx">${idxHtml}</span><span class="cbt-sqrt-sign">√</span><span class="cbt-sqrt-body">${bodyHtml}</span></span>`;
+                    s = s.slice(0, cmdStart) + sqrtHtml + s.slice(bodyGroup.nextIdx);
+                } else {
+                    const bodyGroup = extractBracedGroup(s, tokenIdx);
+                    if (!bodyGroup) break;
+                    const bodyHtml = convertLatexSegmentToVisualHtml(bodyGroup.content);
+                    const sqrtHtml = `<span class="cbt-sqrt"><span class="cbt-sqrt-sign">√</span><span class="cbt-sqrt-body">${bodyHtml}</span></span>`;
+                    s = s.slice(0, cmdStart) + sqrtHtml + s.slice(bodyGroup.nextIdx);
+                }
+            }
+
+            // Proses pangkat ^{...} atau ^x dan indeks bawah _{...} atau _x
+            guard = 0;
+            while (guard < 30) {
+                guard++;
+                const supIdx = s.indexOf('^{');
+                if (supIdx === -1) break;
+                const grp = extractBracedGroup(s, supIdx + 1);
+                if (!grp) break;
+                s = s.slice(0, supIdx) + `<sup>${convertLatexSegmentToVisualHtml(grp.content)}</sup>` + s.slice(grp.nextIdx);
+            }
+            guard = 0;
+            while (guard < 30) {
+                guard++;
+                const subIdx = s.indexOf('_{');
+                if (subIdx === -1) break;
+                const grp = extractBracedGroup(s, subIdx + 1);
+                if (!grp) break;
+                s = s.slice(0, subIdx) + `<sub>${convertLatexSegmentToVisualHtml(grp.content)}</sub>` + s.slice(grp.nextIdx);
+            }
+
+            s = s.replace(/\^([0-9a-zA-Z\+\-]+)/g, '<sup>$1</sup>');
+            s = s.replace(/\_([0-9a-zA-Z\+\-]+)/g, '<sub>$1</sub>');
+            s = s.replace(/\\text\s*\{([^}]*)\}/g, '$1');
+
+            return s;
+        }
+
+        function renderMathExpressionsInHtml(escapedStr) {
+            if (!escapedStr) return '';
+            let out = String(escapedStr);
+
+            // 1. Render blok eksplisit $$...$$, $...$, atau \(...\)
+            out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => `<span class="cbt-math-expr">${convertLatexSegmentToVisualHtml(expr)}</span>`);
+            out = out.replace(/\$([^\$\n]+?)\$/g, (_, expr) => `<span class="cbt-math-expr">${convertLatexSegmentToVisualHtml(expr)}</span>`);
+            out = out.replace(/\\\(([\s\S]+?)\\\)/g, (_, expr) => `<span class="cbt-math-expr">${convertLatexSegmentToVisualHtml(expr)}</span>`);
+
+            // 2. Jika pengguna menulis langsung \frac{...}{...} atau \sqrt{...} tanpa tanda $ di tengah kalimat biasa
+            if (/\\(?:d|t)?frac\s*\{|\\sqrt\s*[\[\{]|\^\{|\_\{/.test(out)) {
+                out = convertLatexSegmentToVisualHtml(out);
+            }
+
+            return out;
+        }
+
+        window.renderOptionOrMathText = function(rawInput) {
+            if (rawInput === null || rawInput === undefined) return '';
+            return sanitizeRichTextHtml(String(rawInput).trim());
         };
 
-        window.buildOptionMathToolbarHtml = function(targetInputId) {
+        // ============================================================================
+        // TOOLBAR & MODAL MATHLIVE UNTUK PILIHAN A-D, KUNCI & PEMBAHASAN
+        // ============================================================================
+        let currentMathLiveTargetId = null;
+
+        window.buildOptionMathToolbarHtml = function(inputId) {
+            const bCls = "px-1.5 py-0.5 rounded-md bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 text-[10px] font-bold transition cursor-pointer flex items-center justify-center min-w-[24px] h-6 shadow-2xs";
             return `
-                <div class="flex flex-wrap items-center gap-1 mb-1.5 p-1.5 bg-slate-100/90 border border-slate-200 rounded-xl">
-                    <button type="button" onclick="window.openMathLiveModal('${targetInputId}')" class="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer" title="Buka Editor Persamaan Visual MathLive">
-                        <i class="fa-solid fa-square-root-variable"></i> Rumus Visual
+                <div class="flex flex-wrap items-center gap-1 px-2 py-1 bg-slate-100/95 border border-b-0 border-slate-200 rounded-t-xl select-none">
+                    <button type="button" onclick="window.openMathLiveModal('${inputId}')" class="px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold transition cursor-pointer flex items-center gap-1 h-6 shadow-2xs" title="Buka Editor Rumus Visual MathLive (Pecahan Bertingkat seperti MS Word)">
+                        <i class="fa-solid fa-square-root-variable text-[9px]"></i> <span>Rumus Visual</span>
                     </button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '$\\\\frac{1}{2}$')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer" title="Sisipkan Pecahan Biasa">a/b</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '$1\\\\frac{1}{2}$')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer" title="Sisipkan Bilangan Campuran">1 a/b</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '$\\\\frac{\\\\frac{1}{2}}{\\\\frac{3}{4}}$')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer" title="Sisipkan Pecahan Bertingkat">Bertingkat</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '$x^{2}$')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer" title="Sisipkan Pangkat">xⁿ</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '$\\\\sqrt{9}$')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer" title="Sisipkan Akar">&radic;x</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' $\\\\times$ ')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer">&times;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' $\\\\div$ ')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer">&divide;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' $\\\\pi$ ')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer">&pi;</button>
-                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '$^{\\\\circ}$')" class="px-1.5 py-1 bg-white hover:bg-indigo-50 text-slate-700 border border-slate-200 rounded-lg text-[10px] font-bold cursor-pointer">&deg;</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\frac{1}{2}$')" class="${bCls}" title="Sisipkan Pecahan Biasa (Pembilang / Penyebut)">
+                        <span class="font-serif">ᵃ⁄🄱</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$1\\\\frac{1}{2}$')" class="${bCls}" title="Sisipkan Bilangan Pecahan Campuran">
+                        <span class="font-serif">1ᵃ⁄🄱</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\frac{\\\\frac{1}{2}}{\\\\frac{3}{4}}$')" class="${bCls} text-indigo-700 bg-indigo-50/60 border-indigo-200" title="Sisipkan Pecahan Bertingkat">
+                        <span class="text-[9px] font-extrabold">ᵃ⁄🄱÷ᶜ⁄ᵈ</span>
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$x^{2}$')" class="${bCls}" title="Pangkat (x²)">
+                        x²
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\sqrt{x}$')" class="${bCls}" title="Akar Kuadrat (√x)">
+                        √x
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '$\\\\sqrt[3]{x}$')" class="${bCls}" title="Akar Pangkat Tiga (³√x)">
+                        ³√x
+                    </button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', ' × ')" class="${bCls} font-mono" title="Kali (×)">×</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', ' ÷ ')" class="${bCls} font-mono" title="Bagi (÷)">÷</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', '°')" class="${bCls} font-mono" title="Derajat (°)">°</button>
+                    <button type="button" onclick="window.insertQuickMathSnippet('${inputId}', 'π')" class="${bCls} font-mono" title="Pi (π)">π</button>
                 </div>
             `;
         };
 
-        window.insertLatexSnippetToInput = function(targetInputId, snippet) {
-            const el = document.getElementById(targetInputId);
+        window.insertQuickMathSnippet = function(inputId, snippet) {
+            const el = document.getElementById(inputId);
             if (!el) return;
-            const start = el.selectionStart !== undefined ? el.selectionStart : el.value.length;
-            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
-            const before = el.value.slice(0, start);
-            const after = el.value.slice(end);
-            el.value = before + snippet + after;
+            const start = el.selectionStart !== null && el.selectionStart !== undefined ? el.selectionStart : (el.value || '').length;
+            const end = el.selectionEnd !== null && el.selectionEnd !== undefined ? el.selectionEnd : start;
+            const val = el.value || '';
+            el.value = val.substring(0, start) + snippet + val.substring(end);
             el.focus();
             const newPos = start + snippet.length;
             try { el.setSelectionRange(newPos, newPos); } catch (e) {}
@@ -641,48 +664,246 @@
         };
 
         window.openMathLiveModal = function(targetInputId) {
-            activeMathTargetInputId = targetInputId;
+            currentMathLiveTargetId = targetInputId;
             const modal = document.getElementById('mathLiveModal');
-            const mf = document.getElementById('mathLiveEditorField');
-            if (mf) {
-                mf.value = '\\frac{1}{2}';
+            const mf = document.getElementById('cbtVisualMathField');
+            const targetEl = document.getElementById(targetInputId);
+            if (!modal || !mf) return;
+
+            let initialLatex = '';
+            if (targetEl && targetEl.value) {
+                const start = targetEl.selectionStart || 0;
+                const end = targetEl.selectionEnd || 0;
+                const selected = start !== end ? targetEl.value.substring(start, end) : '';
+                if (selected) {
+                    initialLatex = selected.replace(/^\$+|\$+$/g, '').trim();
+                } else {
+                    const m = targetEl.value.match(/\$([^\$\n]+)\$/);
+                    if (m) initialLatex = m[1];
+                }
             }
-            if (modal) {
-                modal.classList.remove('hidden');
-                setTimeout(() => {
-                    if (mf) mf.focus();
-                }, 80);
+
+            try {
+                mf.value = initialLatex || '\\frac{1}{2}';
+            } catch (e) {
+                mf.setAttribute('value', initialLatex || '\\frac{1}{2}');
             }
+
+            if (!mf._hasCbtListener) {
+                mf.addEventListener('input', () => {
+                    window.updateMathLiveModalPreview();
+                });
+                mf._hasCbtListener = true;
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                try { mf.focus(); } catch (e) {}
+                window.updateMathLiveModalPreview();
+            }, 80);
         };
 
         window.closeMathLiveModal = function() {
             const modal = document.getElementById('mathLiveModal');
             if (modal) modal.classList.add('hidden');
-            activeMathTargetInputId = null;
+            currentMathLiveTargetId = null;
         };
 
-        window.insertTemplateToMathField = function(latexTpl) {
-            const mf = document.getElementById('mathLiveEditorField');
-            if (!mf) return;
-            if (typeof mf.executeCommand === 'function') {
-                mf.executeCommand(['insert', latexTpl]);
-            } else {
-                mf.value = (mf.value || '') + latexTpl;
+        window.clearMathLiveField = function() {
+            const mf = document.getElementById('cbtVisualMathField');
+            if (mf) {
+                mf.value = '';
+                try { mf.focus(); } catch (e) {}
+                window.updateMathLiveModalPreview();
             }
-            mf.focus();
         };
 
-        window.confirmInsertMathLiveFormula = function() {
-            const mf = document.getElementById('mathLiveEditorField');
-            const targetId = activeMathTargetInputId;
-            if (mf && targetId) {
-                const rawLatex = String(mf.value || '').trim();
-                if (rawLatex) {
-                    window.insertLatexSnippetToInput(targetId, `$${rawLatex}$`);
+        window.insertIntoMathField = function(latexTemplate) {
+            const mf = document.getElementById('cbtVisualMathField');
+            if (!mf) return;
+            try {
+                if (typeof mf.executeCommand === 'function') {
+                    mf.executeCommand(['insert', latexTemplate]);
+                } else {
+                    const clean = latexTemplate.replace(/#@|#\?/g, '');
+                    mf.value = (mf.value || '') + clean;
                 }
+                mf.focus();
+            } catch (e) {
+                const clean = latexTemplate.replace(/#@|#\?/g, '1');
+                mf.value = (mf.value || '') + clean;
+            }
+            window.updateMathLiveModalPreview();
+        };
+
+        window.updateMathLiveModalPreview = function() {
+            const mf = document.getElementById('cbtVisualMathField');
+            const prevEl = document.getElementById('mathLiveVisualPreview');
+            if (!mf || !prevEl) return;
+            const rawLatex = (mf.value || '').trim();
+            if (!rawLatex) {
+                prevEl.innerHTML = '<span class="text-slate-400 italic text-xs">(Ketik rumus di atas untuk melihat hasil visual)</span>';
+                return;
+            }
+            prevEl.innerHTML = window.renderOptionOrMathText(`$${rawLatex}$`);
+        };
+
+        window.commitMathLiveToInput = function() {
+            const mf = document.getElementById('cbtVisualMathField');
+            const targetId = currentMathLiveTargetId;
+            if (!mf || !targetId) {
+                window.closeMathLiveModal();
+                return;
+            }
+            const rawLatex = (mf.value || '').trim();
+            if (rawLatex) {
+                const formattedToken = `$${rawLatex}$`;
+                window.insertQuickMathSnippet(targetId, formattedToken);
             }
             window.closeMathLiveModal();
         };
+
+        function formatRichQuestionText(rawInput) {
+            if (rawInput === null || rawInput === undefined) return '';
+            const trimmed = String(rawInput).replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+            if (!trimmed) return '';
+            return sanitizeRichTextHtml(trimmed).replace(/\r?\n/g, '<br>');
+        }
+
+        function stripRichTextTags(rawInput) {
+            if (rawInput === null || rawInput === undefined) return '';
+            return String(rawInput).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+        }
+
+        window.buildRichTextToolbarHtml = function(targetTextareaId) {
+            const btnCls = "px-2 py-1 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200/90 text-[11px] font-bold transition shadow-2xs cursor-pointer flex items-center justify-center min-w-[28px] h-7";
+            return `
+                <div class="flex flex-wrap items-center gap-1 p-1.5 bg-slate-100/90 border border-b-0 border-slate-200 rounded-t-xl select-none">
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<b>', '</b>')" class="${btnCls}" title="Tebal (Bold)">
+                        <i class="fa-solid fa-bold"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<i>', '</i>')" class="${btnCls}" title="Miring (Italic)">
+                        <i class="fa-solid fa-italic"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<u>', '</u>')" class="${btnCls}" title="Garis Bawah (Underline)">
+                        <i class="fa-solid fa-underline"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<mark class=&quot;bg-yellow-200&quot;>', '</mark>')" class="${btnCls}" title="Stabilo / Sorot Teks">
+                        <i class="fa-solid fa-highlighter text-amber-500"></i>
+                    </button>
+                    <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<sup>', '</sup>')" class="${btnCls}" title="Pangkat Atas (Superscript, misal x²)">
+                        <i class="fa-solid fa-superscript"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<sub>', '</sub>')" class="${btnCls}" title="Indeks Bawah (Subscript, misal H₂O)">
+                        <i class="fa-solid fa-subscript"></i>
+                    </button>
+                    <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<div style=&quot;text-align:left;&quot;>', '</div>')" class="${btnCls}" title="Rata Kiri">
+                        <i class="fa-solid fa-align-left"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<div style=&quot;text-align:center;&quot;>', '</div>')" class="${btnCls}" title="Rata Tengah">
+                        <i class="fa-solid fa-align-center"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<div style=&quot;text-align:right;&quot;>', '</div>')" class="${btnCls}" title="Rata Kanan">
+                        <i class="fa-solid fa-align-right"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextTag('${targetTextareaId}', '<div style=&quot;text-align:justify;&quot;>', '</div>')" class="${btnCls}" title="Rata Kanan-Kiri (Justify)">
+                        <i class="fa-solid fa-align-justify"></i>
+                    </button>
+                    <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+                    <button type="button" onclick="window.applyRichTextList('${targetTextareaId}', 'bullet')" class="${btnCls}" title="Daftar Poin (Bullet List)">
+                        <i class="fa-solid fa-list-ul"></i>
+                    </button>
+                    <button type="button" onclick="window.applyRichTextList('${targetTextareaId}', 'number')" class="${btnCls}" title="Daftar Nomor (Numbered List)">
+                        <i class="fa-solid fa-list-ol"></i>
+                    </button>
+                    <span class="w-px h-4 bg-slate-300 mx-0.5"></span>
+                    <button type="button" onclick="window.openMathLiveModal('${targetTextareaId}')" class="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold transition shadow-2xs cursor-pointer flex items-center gap-1 h-7" title="Buka Editor Rumus Matematika Visual (Pecahan Bertingkat)">
+                        <i class="fa-solid fa-square-root-variable"></i> <span>Rumus</span>
+                    </button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '$\\\\frac{1}{2}$')" class="${btnCls} font-serif" title="Sisipkan Pecahan (ᵃ⁄🄱)">ᵃ⁄🄱</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '$\\\\frac{\\\\frac{1}{2}}{\\\\frac{3}{4}}$')" class="${btnCls} text-indigo-700" title="Sisipkan Pecahan Bertingkat">ᵃ⁄🄱÷ᶜ⁄ᵈ</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', ' × ')" class="${btnCls} font-mono" title="Simbol Kali (×)">×</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', ' ÷ ')" class="${btnCls} font-mono" title="Simbol Bagi (÷)">÷</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '°')" class="${btnCls} font-mono" title="Simbol Derajat (°)">°</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', '√')" class="${btnCls} font-mono" title="Simbol Akar (√)">√</button>
+                    <button type="button" onclick="window.insertRichTextSymbol('${targetTextareaId}', 'π')" class="${btnCls} font-mono" title="Simbol Pi (π)">π</button>
+                    <button type="button" onclick="window.clearRichTextFormatting('${targetTextareaId}')" class="${btnCls} ml-auto text-red-600 hover:bg-red-50 hover:text-red-700" title="Bersihkan Tag Format pada Teks yang Diblok">
+                        <i class="fa-solid fa-eraser"></i>
+                    </button>
+                </div>
+            `;
+        };
+
+        window.applyRichTextTag = function(textareaId, openTag, closeTag) {
+            const el = document.getElementById(textareaId);
+            if (!el) return;
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
+            const val = el.value || '';
+            const selected = val.substring(start, end);
+            const replacement = openTag + (selected || 'teks') + closeTag;
+            el.value = val.substring(0, start) + replacement + val.substring(end);
+            el.focus();
+            const newCursorStart = start + openTag.length;
+            const newCursorEnd = newCursorStart + (selected ? selected.length : 4);
+            try { el.setSelectionRange(newCursorStart, newCursorEnd); } catch (e) {}
+            window.updateQuestionLivePreview();
+        };
+
+        window.applyRichTextList = function(textareaId, mode = 'bullet') {
+            const el = document.getElementById(textareaId);
+            if (!el) return;
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
+            const val = el.value || '';
+            const selected = val.substring(start, end).trim();
+            const rawLines = selected ? selected.split(/\r?\n/) : ['Butir 1', 'Butir 2'];
+            const formattedLines = rawLines.map((line, i) => {
+                const cleanLine = line.replace(/^(\d+[\.\)]\s*|•\s*|\-\s*)/, '').trim();
+                return mode === 'number' ? `${i + 1}. ${cleanLine || `Butir ${i + 1}`}` : `• ${cleanLine || `Butir ${i + 1}`}`;
+            }).join('\n');
+            const prefixNewline = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+            const replacement = prefixNewline + formattedLines;
+            el.value = val.substring(0, start) + replacement + val.substring(end);
+            el.focus();
+            window.updateQuestionLivePreview();
+        };
+
+        window.insertRichTextSymbol = function(textareaId, symbolStr) {
+            const el = document.getElementById(textareaId);
+            if (!el) return;
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
+            const val = el.value || '';
+            el.value = val.substring(0, start) + symbolStr + val.substring(end);
+            el.focus();
+            const pos = start + symbolStr.length;
+            try { el.setSelectionRange(pos, pos); } catch (e) {}
+            window.updateQuestionLivePreview();
+        };
+
+        window.clearRichTextFormatting = function(textareaId) {
+            const el = document.getElementById(textareaId);
+            if (!el) return;
+            const start = el.selectionStart || 0;
+            const end = el.selectionEnd || 0;
+            const val = el.value || '';
+            if (start !== end) {
+                const cleaned = val.substring(start, end).replace(/<[^>]*>/g, '');
+                el.value = val.substring(0, start) + cleaned + val.substring(end);
+            } else {
+                el.value = val.replace(/<[^>]*>/g, '');
+            }
+            el.focus();
+            window.updateQuestionLivePreview();
+        };
+
+        function sanitizeFirestoreData(obj) {
+            if (obj === null || obj === undefined) return null;
+            return JSON.parse(JSON.stringify(obj));
+        }
 
         let appData = {
             currentUser: null,
@@ -703,7 +924,8 @@
                 resultSort: 'desc',
                 analysisExam: 'ALL',
                 participantExam: 'ALL',
-                participantSearch: ''
+                participantSearch: '',
+                participantStatus: 'ALL'
             },
             settings: {
                 schoolName: 'SD NEGERI GEDONGBOYOUNTUNG',
@@ -760,53 +982,6 @@
         let selectedResultIds = new Set();
 
         // ============================================================================
-        // ROLE-BASED ACCESS CONTROL (ADMIN UTAMA VS EDITOR BANK SOAL / GURU)
-        // ============================================================================
-        const STAFF_SESSION_STORAGE_KEY = 'cbt_staff_auth_session_v1';
-
-        window.getSavedStaffSession = function() {
-            try {
-                const raw = sessionStorage.getItem(STAFF_SESSION_STORAGE_KEY) || localStorage.getItem(STAFF_SESSION_STORAGE_KEY);
-                return raw ? JSON.parse(raw) : null;
-            } catch (e) {
-                return null;
-            }
-        };
-
-        window.saveStaffSession = function(userObj) {
-            if (!userObj) return;
-            const payload = JSON.stringify({
-                role: userObj.role === 'admin' ? 'admin' : 'editor_soal',
-                name: userObj.name || 'Guru Editor',
-                email: userObj.email || '',
-                username: userObj.username || userObj.email || '',
-                teacherId: userObj.teacherId || null,
-                loginAt: Date.now()
-            });
-            try {
-                sessionStorage.setItem(STAFF_SESSION_STORAGE_KEY, payload);
-                localStorage.setItem(STAFF_SESSION_STORAGE_KEY, payload);
-            } catch (e) {}
-        };
-
-        window.clearStaffSession = function() {
-            try {
-                sessionStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-                localStorage.removeItem(STAFF_SESSION_STORAGE_KEY);
-            } catch (e) {}
-        };
-
-        window.isStaffUser = function(user = appData.currentUser) {
-            return Boolean(user && (user.role === 'admin' || user.role === 'editor_soal'));
-        };
-
-        window.getCurrentStaffRole = function() {
-            const u = appData.currentUser || window.getSavedStaffSession();
-            if (!u) return null;
-            return u.role === 'admin' ? 'admin' : 'editor_soal';
-        };
-
-        // ============================================================================
         // FULLSCREEN API HELPERS (OTOMATIS FULLSCREEN SAAT LOGIN & UJIAN SISWA)
         // ============================================================================
         window.isDocumentFullscreen = function() {
@@ -833,7 +1008,9 @@
         window.resumeFullscreenAndContinueExam = async function() {
             await window.enterStudentFullscreen();
             const fsModal = document.getElementById('fullscreenRequiredModal');
-            if (fsModal) {
+            if (fsModal && window.isDocumentFullscreen()) {
+                fsModal.classList.add('hidden');
+            } else if (fsModal) {
                 fsModal.classList.add('hidden');
             }
         };
@@ -857,6 +1034,7 @@
                 window.updateFullscreenButtonUI();
                 return true;
             } catch (err) {
+                // Browser mungkin memblokir jika dipanggil di luar gesture klik langsung
                 window.updateFullscreenButtonUI();
                 return false;
             }
@@ -902,7 +1080,7 @@
         // ============================================================================
         // SINGLE-DEVICE & SINGLE-TAB LOGIN LOCK (ANTI MULTI-LOGIN SISWA)
         // ============================================================================
-        const STUDENT_LOCK_TIMEOUT_MS = 90 * 1000; // 90 detik batas aktif heartbeat
+        const STUDENT_LOCK_TIMEOUT_MS = 15 * 60 * 1000; // 15 menit batas aktif kunci perangkat
         let studentHeartbeatInterval = null;
         let studentBroadcastChannel = null;
 
@@ -930,13 +1108,21 @@
             if (studentDoc.activeSessionId === mySessionId) return false;
             const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
             const ageMs = Date.now() - lastHb;
-            return lastHb > 0 && ageMs < STUDENT_LOCK_TIMEOUT_MS;
+            return lastHb === 0 || ageMs < STUDENT_LOCK_TIMEOUT_MS;
         }
 
         function isStudentCurrentlyLoggedIn(studentDoc) {
-            if (!studentDoc || !studentDoc.isLoggedIn || !studentDoc.activeSessionId) return false;
-            const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
-            return lastHb > 0 && (Date.now() - lastHb) < STUDENT_LOCK_TIMEOUT_MS;
+            if (!studentDoc) return false;
+            if (studentDoc.isLoggedIn || studentDoc.activeSessionId) {
+                const lastHb = Number(studentDoc.lastHeartbeatAt) || 0;
+                if (lastHb === 0 || (Date.now() - lastHb) < STUDENT_LOCK_TIMEOUT_MS) return true;
+            }
+            const hasRunningSess = (appData.examSessions || []).some(ss =>
+                ss.studentId === studentDoc.id &&
+                ss.status === 'IN_PROGRESS' &&
+                Boolean(ss.deviceSessionId)
+            );
+            return hasRunningSess;
         }
 
         function startStudentHeartbeat() {
@@ -1174,8 +1360,8 @@
                     return;
                 }
 
-                // 3. Jika sedang login sebagai Administrator atau Editor Bank Soal
-                if (window.isStaffUser(appData.currentUser)) {
+                // 3. Jika sedang login sebagai Administrator
+                if (appData.currentUser.role === 'admin') {
                     updateBrowserFaviconAndTitle();
                     if (sourceCollection === 'appSettings') {
                         const activeEl = document.activeElement;
@@ -1450,7 +1636,7 @@
 
                     // Perbarui tampilan Portal Siswa, Banner Login, dan Kartu Manajemen Ujian Admin secara otomatis dan instan
                     if (appData.currentUser) {
-                        if (window.isStaffUser(appData.currentUser) && appData.activeAdminMenu === 'exams') {
+                        if (appData.currentUser.role === 'admin' && appData.activeAdminMenu === 'exams') {
                             const mainEl = document.getElementById('adminMainContent');
                             if (mainEl) renderExamsContent(mainEl);
                         } else if (appData.currentUser.role === 'student' && !isExamWorkspaceActive) {
@@ -1620,7 +1806,7 @@
                         <div class="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-7 sm:p-8 w-full max-w-md border border-white/40">
                             <div class="text-center mb-5">
                                 <h3 class="text-2xl font-extrabold text-slate-900">Masuk Aplikasi</h3>
-                                <p class="text-slate-500 text-xs mt-1">Pilih tab akun Siswa atau Admin / Guru</p>
+                                <p class="text-slate-500 text-xs mt-1">Pilih tab akun Siswa atau Administrator</p>
                             </div>
 
                             <div class="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
@@ -1628,7 +1814,7 @@
                                     <i class="fa-solid fa-user-graduate mr-1.5"></i> Siswa
                                 </button>
                                 <button type="button" onclick="window.switchLoginTab('admin')" id="tabAdminBtn" class="flex-1 py-2.5 rounded-xl font-bold text-xs sm:text-sm text-slate-600 hover:text-slate-900 transition">
-                                    <i class="fa-solid fa-user-shield mr-1.5"></i> Admin / Guru
+                                    <i class="fa-solid fa-user-shield mr-1.5"></i> Administrator
                                 </button>
                             </div>
 
@@ -1666,21 +1852,21 @@
 
                             <div id="formAdmin" class="space-y-4 hidden">
                                 <div>
-                                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Email / Username Admin atau Guru</label>
+                                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Email Administrator</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-envelope"></i></span>
-                                        <input type="text" id="loginAdminEmail" value="" placeholder="Email, Username, atau NIP Guru" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="email" id="loginAdminEmail" value="" placeholder="admin@sekolah.sch.id" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Password / PIN Login</label>
+                                    <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Password Administrator</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
                                         <input type="password" id="loginAdminPass" value="" placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <button type="button" onclick="window.handleAdminLogin()" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-lg transition">
-                                    Masuk Panel Admin / Guru <i class="fa-solid fa-shield-halved ml-1.5"></i>
+                                    Masuk Panel Administrator <i class="fa-solid fa-shield-halved ml-1.5"></i>
                                 </button>
                             </div>
                         </div>
@@ -1762,14 +1948,12 @@
                 }
             }
 
-            // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain dalam 90 detik terakhir
+            // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain
             const activeOtherExamSess = (appData.examSessions || []).find(ss =>
                 ss.studentId === student.id &&
                 ss.status === 'IN_PROGRESS' &&
                 ss.deviceSessionId &&
-                ss.deviceSessionId !== currentDeviceSessionId &&
-                ss.updatedAtMs &&
-                (Date.now() - Number(ss.updatedAtMs)) < STUDENT_LOCK_TIMEOUT_MS
+                ss.deviceSessionId !== currentDeviceSessionId
             );
 
             if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
@@ -1777,7 +1961,7 @@
                 showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
                 window.showModal(
                     'Akun Sedang Aktif di Perangkat Lain!',
-                    `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login di perangkat atau tab browser lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau hubungi Pengawas / Administrator untuk melakukan Reset Login.`,
+                    `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login atau mengerjakan ujian di perangkat lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau minta Pengawas menekan tombol "Reset Login" pada menu Peserta Ujian.`,
                     'error'
                 );
                 return;
@@ -1834,85 +2018,26 @@
         };
 
         window.handleAdminLogin = async function() {
-            const emailOrUser = document.getElementById('loginAdminEmail').value.trim();
+            const email = document.getElementById('loginAdminEmail').value.trim();
             const pass = document.getElementById('loginAdminPass').value.trim();
 
-            if (!emailOrUser || !pass) {
-                showLoginError('Email/Username dan Password wajib diisi.');
+            if (!email || !pass) {
+                showLoginError('Email dan Password Administrator wajib diisi.');
                 return;
             }
 
-            // 1. Cek Akun Administrator Utama
-            if (emailOrUser.toLowerCase() === 'admin@sdngedongboyountung.sch.id' && pass === 'admin123') {
-                const adminUser = {
-                    role: 'admin',
-                    email: emailOrUser,
-                    username: emailOrUser,
-                    name: 'Administrator Utama',
-                    teacherId: null
-                };
-                appData.currentUser = adminUser;
-                appData.activeAdminMenu = 'dashboard';
-                window.saveStaffSession(adminUser);
+            if (email.toLowerCase() === 'admin@sdngedongboyountung.sch.id' && pass === 'admin123') {
+                appData.currentUser = { role: 'admin', email, name: 'Administrator Utama' };
                 window.renderAdminLayout();
                 return;
             }
 
-            // 2. Pastikan koleksi akun guru terbaru termuat dari Firestore
-            if (!IS_PREVIEW && db && (!Array.isArray(appData.teachers) || appData.teachers.length === 0)) {
-                try {
-                    const tSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teachers'));
-                    appData.teachers = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                } catch (fetchErr) {
-                    console.warn('Gagal memuat koleksi teachers saat login:', fetchErr);
-                }
-            }
-
-            // 3. Cek kecocokan akun Guru di Firestore (Username, Email, atau NIP)
-            const matchedTeacher = (appData.teachers || []).find(t => {
-                const candidates = [t.username, t.email, t.nip]
-                    .filter(Boolean)
-                    .map(v => String(v).trim().toLowerCase());
-                const isIdentityMatch = candidates.includes(emailOrUser.toLowerCase());
-                const storedPass = String(t.password || t.pin || '').trim();
-                const storedHash = t.passwordHash || '';
-                const isPassMatch = (storedPass !== '' && storedPass === pass) || (storedHash !== '' && storedHash === hashCredential(pass));
-                return isIdentityMatch && isPassMatch && (t.status || 'Aktif') === 'Aktif';
-            });
-
-            if (matchedTeacher) {
-                const assignedRole = matchedTeacher.role === 'admin' ? 'admin' : 'editor_soal';
-                const staffUser = {
-                    role: assignedRole,
-                    email: matchedTeacher.email || matchedTeacher.username || emailOrUser,
-                    username: matchedTeacher.username || matchedTeacher.email || matchedTeacher.nip || emailOrUser,
-                    name: matchedTeacher.fullName || matchedTeacher.name || 'Guru Editor',
-                    teacherId: matchedTeacher.id
-                };
-                appData.currentUser = staffUser;
-                appData.activeAdminMenu = assignedRole === 'admin' ? 'dashboard' : 'questionBanks';
-                window.saveStaffSession(staffUser);
-                logActivity(`${staffUser.name} (${assignedRole === 'admin' ? 'Administrator' : 'Editor Bank Soal'}) berhasil login.`);
-                window.renderAdminLayout();
-                return;
-            }
-
-            // 4. Fallback Firebase Auth Email/Password (untuk akun admin tambahan)
             try {
-                await signInWithEmailAndPassword(auth, emailOrUser, pass);
-                const fbAdminUser = {
-                    role: 'admin',
-                    email: emailOrUser,
-                    username: emailOrUser,
-                    name: 'Administrator Utama',
-                    teacherId: null
-                };
-                appData.currentUser = fbAdminUser;
-                appData.activeAdminMenu = 'dashboard';
-                window.saveStaffSession(fbAdminUser);
+                await signInWithEmailAndPassword(auth, email, pass);
+                appData.currentUser = { role: 'admin', email, name: 'Administrator Utama' };
                 window.renderAdminLayout();
             } catch (e) {
-                showLoginError('Email/Username atau Password tidak sesuai.');
+                showLoginError('Email atau Password Administrator salah.');
             }
         };
 
@@ -1992,7 +2117,6 @@
             if (wasStudent) {
                 await window.releaseStudentLoginLock(appData.currentUser.studentId);
             }
-            window.clearStaffSession();
             stopStudentHeartbeat();
             window.stopAllExamTimersAndWatchers();
             isExamWorkspaceActive = false;
@@ -2040,22 +2164,10 @@
         window.renderAdminLayout = function() {
             updateBrowserFaviconAndTitle();
             const container = document.getElementById('appContainer');
-            const staffRole = window.getCurrentStaffRole();
-            const isFullAdmin = staffRole === 'admin';
-
-            // Jika bukan admin (editor_soal), paksa menu aktif selalu di Bank Soal
-            if (!isFullAdmin && appData.activeAdminMenu !== 'questionBanks') {
-                appData.activeAdminMenu = 'questionBanks';
-            }
-
-            const visibleMenus = isFullAdmin
-                ? ADMIN_MENUS
-                : ADMIN_MENUS.filter(m => m.id === 'questionBanks');
-
             let navHtml = '';
             let lastGroup = '';
 
-            visibleMenus.forEach(m => {
+            ADMIN_MENUS.forEach(m => {
                 if (m.group !== lastGroup) {
                     navHtml += `<div class="px-4 pt-4 pb-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">${m.group}</div>`;
                     lastGroup = m.group;
@@ -2069,17 +2181,8 @@
                 `;
             });
 
-            const activeMenuObj = visibleMenus.find(x => x.id === appData.activeAdminMenu) || visibleMenus[0];
+            const activeMenuObj = ADMIN_MENUS.find(x => x.id === appData.activeAdminMenu) || ADMIN_MENUS[0];
             const currentLogo = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
-            const sidebarUserName = isFullAdmin
-                ? (appData.currentUser?.name || 'Administrator Utama')
-                : (appData.currentUser?.name || 'Guru Editor');
-            const sidebarRoleLabel = isFullAdmin
-                ? '• Cloud Aktif'
-                : '• Editor Bank Soal';
-            const sidebarRoleClass = isFullAdmin
-                ? 'text-emerald-400'
-                : 'text-amber-300';
 
             container.innerHTML = `
                 <div class="flex-1 flex h-full overflow-hidden relative">
@@ -2093,7 +2196,7 @@
                                 <img src="${escapeHtml(currentLogo)}" onerror="this.src='${DEFAULT_SCHOOL_LOGO}'" alt="Logo Sekolah" class="w-10 h-10 rounded-xl object-contain bg-white p-0.5 border border-indigo-400/30 shrink-0 shadow-sm">
                                 <div class="overflow-hidden">
                                     <h2 class="text-xs font-extrabold truncate tracking-wide">${escapeHtml(appData.settings.schoolName || 'CBT SEKOLAH')}</h2>
-                                    <p class="text-[10px] text-indigo-300 truncate">${escapeHtml(isFullAdmin ? (appData.settings.appName || 'Panel Administrator') : 'Panel Editor Bank Soal')}</p>
+                                    <p class="text-[10px] text-indigo-300 truncate">${escapeHtml(appData.settings.appName || 'Panel Administrator')}</p>
                                 </div>
                             </div>
                             <button type="button" onclick="window.toggleMobileSidebar(false)" class="md:hidden p-2 text-slate-400 hover:text-white rounded-lg">
@@ -2101,12 +2204,12 @@
                             </button>
                         </div>
                         <nav class="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">${navHtml}</nav>
-                        <div class="p-4 border-t border-slate-800 flex items-center justify-between gap-2">
+                        <div class="p-4 border-t border-slate-800 flex items-center justify-between">
                             <div class="truncate">
-                                <p class="text-xs font-bold truncate" title="${escapeHtml(sidebarUserName)}">${escapeHtml(sidebarUserName)}</p>
-                                <p class="text-[10px] ${sidebarRoleClass} font-semibold">${sidebarRoleLabel}</p>
+                                <p class="text-xs font-bold truncate">${escapeHtml(appData.currentUser?.name || 'Administrator')}</p>
+                                <p class="text-[10px] text-emerald-400 font-semibold">• Cloud Aktif</p>
                             </div>
-                            <button type="button" onclick="window.logoutApp()" class="p-2 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white rounded-xl text-xs transition shrink-0" title="Keluar">
+                            <button type="button" onclick="window.logoutApp()" class="p-2 bg-red-500/20 hover:bg-red-500 text-red-300 hover:text-white rounded-xl text-xs transition" title="Keluar">
                                 <i class="fa-solid fa-power-off"></i>
                             </button>
                         </div>
@@ -2161,35 +2264,14 @@
         };
 
         window.switchAdminMenu = function(menuId) {
-            const staffRole = window.getCurrentStaffRole();
-            const normalizedMenu = (menuId === 'bank-soal' || menuId === 'questionBanks') ? 'questionBanks' : menuId;
-
-            if (staffRole !== 'admin' && normalizedMenu !== 'questionBanks') {
-                appData.activeAdminMenu = 'questionBanks';
-                isMobileSidebarOpen = false;
-                window.showModal(
-                    'Akses Dibatasi',
-                    'Akun Anda memiliki hak akses sebagai Editor Bank Soal dan hanya diizinkan mengakses menu Bank Soal.',
-                    'error'
-                );
-                window.renderAdminLayout();
-                return false;
-            }
-
-            appData.activeAdminMenu = normalizedMenu;
+            appData.activeAdminMenu = menuId;
             isMobileSidebarOpen = false;
             window.renderAdminLayout();
-            return true;
         };
-        window.switchTab = window.switchAdminMenu;
 
         window.renderAdminCurrentSection = function() {
             const mainEl = document.getElementById('adminMainContent');
             if (!mainEl) return;
-            const staffRole = window.getCurrentStaffRole();
-            if (staffRole !== 'admin' && appData.activeAdminMenu !== 'questionBanks') {
-                appData.activeAdminMenu = 'questionBanks';
-            }
             const m = appData.activeAdminMenu;
             if (m === 'dashboard') renderDashboardContent(mainEl);
             else if (m === 'students') renderStudentsContent(mainEl);
@@ -2738,15 +2820,27 @@
                 activeSessionId: '',
                 lastHeartbeatAt: 0
             });
+
+            // Bebaskan juga kunci perangkat (deviceSessionId) pada sesi ujian yang sedang berjalan tanpa menghapus jawaban siswa
+            const runningSessions = (appData.examSessions || []).filter(ss => ss.studentId === studentId && ss.status === 'IN_PROGRESS');
+            for (const ss of runningSessions) {
+                ss.deviceSessionId = '';
+                ss.sessionToken = '';
+                await syncCollectionRecord('examSessions', ss.id, {
+                    deviceSessionId: '',
+                    sessionToken: ''
+                });
+            }
+
             logActivity(`Administrator mereset kunci login perangkat untuk siswa ${std.fullName} (${std.nisn}).`);
             window.renderAdminCurrentSection();
-            window.showModal('Reset Login Berhasil', `Kunci login akun ${std.fullName} telah dibebaskan. Siswa kini dapat login kembali di perangkat baru.`, 'success');
+            window.showModal('Reset Login Berhasil', `Kunci login perangkat untuk akun ${std.fullName} telah dibebaskan (jawaban ujian tetap aman). Siswa kini dapat login kembali di perangkat baru.`, 'success');
         };
 
         window.unlockAllStudentsLogin = function() {
             window.showModal(
                 'Reset Semua Login Siswa',
-                'Apakah Anda yakin ingin membuka kunci login perangkat untuk seluruh akun siswa?',
+                'Apakah Anda yakin ingin membuka kunci login perangkat untuk seluruh akun siswa (tanpa menghapus progres jawaban ujian mereka)?',
                 'info',
                 async (confirmed) => {
                     if (!confirmed) return true;
@@ -2764,9 +2858,18 @@
                             count++;
                         }
                     }
-                    logActivity(`Administrator mereset kunci login untuk ${count} akun siswa.`);
+                    const runningSessions = (appData.examSessions || []).filter(ss => ss.status === 'IN_PROGRESS' && ss.deviceSessionId);
+                    for (const ss of runningSessions) {
+                        ss.deviceSessionId = '';
+                        ss.sessionToken = '';
+                        await syncCollectionRecord('examSessions', ss.id, {
+                            deviceSessionId: '',
+                            sessionToken: ''
+                        });
+                    }
+                    logActivity(`Administrator mereset kunci login perangkat untuk seluruh siswa.`);
                     window.renderAdminCurrentSection();
-                    window.showModal('Berhasil Direset', `Kunci login untuk ${count} akun siswa telah dibebaskan.`, 'success');
+                    window.showModal('Berhasil Direset', `Kunci login perangkat untuk seluruh siswa telah dibebaskan.`, 'success');
                     return true;
                 },
                 { showCancel: true, okText: 'Ya, Reset Semua Login' }
@@ -3432,7 +3535,7 @@
             const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${selectedBank === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
 
             const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
-            const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(q.questionText.slice(0, 40))}...</option>`).join('');
+            const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(stripRichTextTags(q.questionText).slice(0, 40))}...</option>`).join('');
 
             const canDeleteBank = selectedBank !== 'ALL' && appData.questionBanks.some(b => b.id === selectedBank);
 
@@ -3510,9 +3613,12 @@
                             </div>
 
                             <div>
-                                <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teks Stimulus / Bacaan <span class="text-slate-400 font-normal">(Opsional)</span></label>
+                                <div class="flex items-center justify-between mb-1">
+                                    <label class="block text-[11px] font-bold uppercase text-slate-600">Teks Stimulus / Bacaan <span class="text-slate-400 font-normal">(Opsional)</span></label>
+                                    <span class="text-[10px] text-indigo-600 font-semibold"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Mendukung Toolbar Format Teks</span>
+                                </div>
                                 ${window.buildRichTextToolbarHtml('qFormStimulus')}
-                                <textarea id="qFormStimulus" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Masukkan bacaan, data, atau pengantar soal..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
+                                <textarea id="qFormStimulus" rows="4" oninput="window.updateQuestionLivePreview()" placeholder="Masukkan bacaan, data, atau pengantar soal... (Blok teks lalu klik tombol B / I / U atau perataan di atas)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-b-xl text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
                             </div>
 
                             <div>
@@ -3521,9 +3627,12 @@
                             </div>
 
                             <div>
-                                <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teks Pertanyaan Soal *</label>
+                                <div class="flex items-center justify-between mb-1">
+                                    <label class="block text-[11px] font-bold uppercase text-slate-600">Teks Pertanyaan Soal *</label>
+                                    <span class="text-[10px] text-indigo-600 font-semibold"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Mendukung Toolbar Format Teks</span>
+                                </div>
                                 ${window.buildRichTextToolbarHtml('qFormText')}
-                                <textarea id="qFormText" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Tuliskan pertanyaan soal di sini... (Bisa gabung teks biasa & rumus seperti $\\frac{3}{4}$)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"></textarea>
+                                <textarea id="qFormText" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Tuliskan pertanyaan soal di sini..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-b-xl text-xs font-semibold leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
                             </div>
 
                             <div>
@@ -3535,22 +3644,22 @@
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan A</label>
                                     ${window.buildOptionMathToolbarHtml('qOptA')}
-                                    <input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan B</label>
                                     ${window.buildOptionMathToolbarHtml('qOptB')}
-                                    <input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan C</label>
                                     ${window.buildOptionMathToolbarHtml('qOptC')}
-                                    <input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan D</label>
                                     ${window.buildOptionMathToolbarHtml('qOptD')}
-                                    <input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                             </div>
 
@@ -3558,12 +3667,12 @@
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Kunci Jawaban *</label>
                                     ${window.buildOptionMathToolbarHtml('qFormKey')}
-                                    <input type="text" id="qFormKey" oninput="window.updateQuestionLivePreview()" placeholder="Contoh: A atau B,C atau $\\frac{3}{4}$" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-indigo-700">
+                                    <input type="text" id="qFormKey" oninput="window.updateQuestionLivePreview()" placeholder="Contoh: A atau B,C atau rumus" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs font-bold text-indigo-700">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pembahasan Soal <span class="text-slate-400 font-normal">(Opsional)</span></label>
                                     ${window.buildOptionMathToolbarHtml('qFormExplanation')}
-                                    <input type="text" id="qFormExplanation" oninput="window.updateQuestionLivePreview()" placeholder="Langkah penyelesaian & rumus..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qFormExplanation" oninput="window.updateQuestionLivePreview()" placeholder="Langkah penyelesaian & rumus..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs">
                                 </div>
                             </div>
 
@@ -3740,24 +3849,24 @@
 
             if (type === 'pg' || type === 'pg_complex') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan C</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan D</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan C</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan D</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks biasa atau rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
                 `;
             } else if (type === 'matching') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi A / Pasangan 1 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" placeholder="Contoh: Es dipanaskan = Mencair" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi B / Pasangan 2 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" placeholder="Contoh: Air didinginkan = Membeku" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi C / Pasangan 3 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" placeholder="Contoh: Air direbus = Menguap" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi D / Pasangan 4 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" placeholder="Contoh: Kapur barus = Menyublim" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi A / Pasangan 1 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" placeholder="Contoh: Es dipanaskan = Mencair" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi B / Pasangan 2 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" placeholder="Contoh: Air didinginkan = Membeku" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi C / Pasangan 3 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" placeholder="Contoh: Air direbus = Menguap" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Opsi D / Pasangan 4 (Kiri = Kanan)</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" placeholder="Contoh: Kapur barus = Menyublim" oninput="window.syncMatchingKeyFromOptions()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
                 `;
             } else if (type === 'true_false') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 1 / Opsi A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" placeholder="Benar (atau tulis Pernyataan 1)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 2 / Opsi B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" placeholder="Salah (atau tulis Pernyataan 2)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 3 (Opsional)</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" placeholder="Pernyataan 3 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 4 (Opsional)</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" placeholder="Pernyataan 4 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 1 / Opsi A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" placeholder="Benar (atau tulis Pernyataan 1)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 2 / Opsi B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" placeholder="Salah (atau tulis Pernyataan 2)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 3 (Opsional)</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" placeholder="Pernyataan 3 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pernyataan 4 (Opsional)</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" placeholder="Pernyataan 4 (Kosongkan jika B/S tunggal)" oninput="window.updateQuestionLivePreview()" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-b-xl text-xs"></div>
                 `;
             } else {
                 container.innerHTML = `<div class="sm:col-span-2 p-3 bg-slate-100 rounded-xl text-xs text-slate-600 font-medium">Jenis soal ${escapeHtml(getQuestionTypeBadgeLabel(type))} tidak memerlukan pilihan ganda A-D.</div>`;
@@ -3798,7 +3907,8 @@
             if (typeBadge) typeBadge.innerText = getQuestionTypeBadgeLabel(type);
 
             if (stimulus.trim() || stimImgUrl.trim()) {
-                stimText.innerHTML = window.formatRichQuestionText(stimulus);
+                stimText.innerHTML = formatStimulusTextWithBoldLead(stimulus);
+                stimText.classList.remove('italic');
                 if (stimImg) {
                     if (stimImgUrl.trim()) {
                         stimImg.src = stimImgUrl.trim();
@@ -3812,7 +3922,7 @@
                 stimBox.classList.add('hidden');
             }
 
-            qText.innerHTML = text.trim() ? window.formatRichQuestionText(text) : '(Teks pertanyaan akan tampil di sini)';
+            qText.innerHTML = text.trim() ? formatRichQuestionText(text) : '(Teks pertanyaan akan tampil di sini)';
             if (qImg) {
                 if (qImgUrl.trim()) {
                     qImg.src = qImgUrl.trim();
@@ -3824,11 +3934,11 @@
 
             if (type === 'matching') {
                 const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
-                keyText.innerHTML = window.renderMathExpressionsInHtml(parsedMatch.readableKey || (key.trim() ? key : '-'));
+                keyText.innerHTML = window.renderOptionOrMathText(parsedMatch.readableKey || (key.trim() ? key : '-'));
             } else {
-                keyText.innerHTML = window.renderMathExpressionsInHtml(key.trim() ? key : '-');
+                keyText.innerHTML = window.renderOptionOrMathText(key.trim() ? key : '-');
             }
-            explText.innerHTML = window.renderMathExpressionsInHtml(expl.trim() ? expl : '-');
+            explText.innerHTML = window.renderOptionOrMathText(expl.trim() ? expl : '-');
 
             if (type === 'pg' || type === 'pg_complex') {
                 const badgeType = type === 'pg_complex' ? 'checkbox' : 'radio';
@@ -3839,8 +3949,8 @@
                     const dispText = !isChoiceOptionEmpty(o, idx) ? o.trim() : `Opsi ${String.fromCharCode(65 + idx)}`;
                     return `
                         <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2"><span class="font-bold w-5 shrink-0">${String.fromCharCode(65 + idx)}.</span> <div>${window.renderMathExpressionsInHtml(dispText)}</div></div>
-                            <span class="text-[10px] text-slate-400 uppercase font-mono shrink-0">${badgeType}</span>
+                            <div class="flex items-center gap-2"><span class="font-bold w-5">${String.fromCharCode(65 + idx)}.</span> <span>${window.renderOptionOrMathText(dispText)}</span></div>
+                            <span class="text-[10px] text-slate-400 uppercase font-mono">${badgeType}</span>
                         </div>
                     `;
                 }).filter(Boolean).join('');
@@ -3849,8 +3959,8 @@
                 const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], key);
                 optList.innerHTML = parsedMatch.matchingPairs.map((pair, i) => `
                     <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                        <span class="font-bold text-indigo-700">${String.fromCharCode(65 + i)}. ${window.renderMathExpressionsInHtml(pair.left)}</span>
-                        <span class="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold">${window.renderMathExpressionsInHtml(pair.right)}</span>
+                        <span class="font-bold text-indigo-700">${String.fromCharCode(65 + i)}. ${window.renderOptionOrMathText(pair.left)}</span>
+                        <span class="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg font-bold">${window.renderOptionOrMathText(pair.right)}</span>
                     </div>
                 `).join('') || `<div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs text-slate-400">Masukkan pasangan Opsi A s.d D (contoh: Es dipanaskan = Mencair)</div>`;
             } else if (type === 'true_false') {
@@ -3858,7 +3968,7 @@
                 if (parsedTF.isMultiStatement) {
                     optList.innerHTML = parsedTF.options.map((stmt, idx) => `
                         <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                            <span><strong>${idx + 1}.</strong> ${window.renderMathExpressionsInHtml(stmt)}</span>
+                            <span><strong>${idx + 1}.</strong> ${window.renderOptionOrMathText(stmt)}</span>
                             <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded font-bold text-[10px]">Benar / Salah</span>
                         </div>
                     `).join('');
@@ -4366,60 +4476,40 @@
         };
 
         function renderTeachersContent(container) {
-            const rows = appData.teachers.map((t, idx) => {
-                const roleVal = t.role === 'admin' ? 'admin' : 'editor_soal';
-                const roleBadge = roleVal === 'admin'
-                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">Admin Utama</span>'
-                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200">Editor Bank Soal</span>';
-                const loginUser = t.username || t.email || t.nip || '-';
-                return `
+            const rows = appData.teachers.map((t, idx) => `
                 <tr class="hover:bg-slate-50 transition border-b border-slate-100">
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
                     <td class="px-4 py-3 text-xs font-mono font-bold text-slate-900">${escapeHtml(t.nip)}</td>
                     <td class="px-4 py-3 text-xs font-bold text-slate-900">${escapeHtml(t.fullName)}</td>
                     <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml((t.subjects || []).join(', '))}</td>
-                    <td class="px-4 py-3 text-xs font-mono text-indigo-700 font-semibold">${escapeHtml(loginUser)}</td>
-                    <td class="px-4 py-3 text-xs">${roleBadge}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${t.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(t.status || 'Aktif')}</span></td>
-                    <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
-                        <button type="button" onclick="window.openTeacherFormModal('${t.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold" title="Edit Akun & Peran Guru"><i class="fa-solid fa-pen"></i></button>
-                        <button type="button" onclick="window.deleteTeacherRecord('${t.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold" title="Hapus Guru"><i class="fa-solid fa-trash"></i></button>
+                    <td class="px-4 py-3 text-xs space-x-1">
+                        <button type="button" onclick="window.openTeacherFormModal('${t.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="window.deleteTeacherRecord('${t.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
-            `;
-            }).join('');
+            `).join('');
 
             container.innerHTML = `
                 <div class="space-y-4">
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <h3 class="font-bold text-slate-800 text-sm">Data Administrasi Guru & Hak Akses Editor Soal</h3>
-                            <p class="text-xs text-slate-500">Kelola data pendidik, akun login guru, impor massal Excel (.xlsx), serta pembagian peran (Editor Bank Soal atau Administrator).</p>
+                            <h3 class="font-bold text-slate-800 text-sm">Data Administrasi Guru & Wali Kelas</h3>
+                            <p class="text-xs text-slate-500">Kelola data pendidik, NIP, serta mata pelajaran yang diampu.</p>
                         </div>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="window.downloadTeacherTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">
-                                <i class="fa-solid fa-download mr-1"></i> Unduh Template Excel
-                            </button>
-                            <button type="button" onclick="window.triggerTeacherExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition">
-                                <i class="fa-solid fa-file-excel mr-1"></i> Impor Excel (.xlsx)
-                            </button>
-                            <button type="button" onclick="window.exportTeachersExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
-                                <i class="fa-solid fa-file-export mr-1"></i> Ekspor Data (.xlsx)
-                            </button>
-                            <button type="button" onclick="window.openTeacherFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">
-                                <i class="fa-solid fa-plus mr-1"></i> Tambah Guru
-                            </button>
-                        </div>
+                        <button type="button" onclick="window.openTeacherFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">
+                            <i class="fa-solid fa-plus mr-1"></i> Tambah Guru
+                        </button>
                     </div>
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[740px] text-left border-collapse">
+                            <table class="w-full min-w-[600px] text-left border-collapse">
                                 <thead>
                                     <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
-                                        <th class="px-4 py-3">No</th><th class="px-4 py-3">NIP</th><th class="px-4 py-3">Nama Guru</th><th class="px-4 py-3">Bidang Mapel</th><th class="px-4 py-3">Username / Email Login</th><th class="px-4 py-3">Peran Akses</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
+                                        <th class="px-4 py-3">No</th><th class="px-4 py-3">NIP</th><th class="px-4 py-3">Nama Guru</th><th class="px-4 py-3">Bidang Mapel</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
                                     </tr>
                                 </thead>
-                                <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada data guru.</td></tr>'}</tbody>
+                                <tbody>${rows || '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-slate-400">Belum ada data guru.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
@@ -4427,266 +4517,39 @@
             `;
         }
 
-        window.downloadTeacherTemplate = function() {
-            const headers = [
-                'NIP / ID Guru',
-                'Nama Lengkap & Gelar',
-                'Bidang Mata Pelajaran',
-                'Email / Username Login',
-                'Password / PIN Login',
-                'Peran (editor_soal / admin)'
-            ];
-            const sampleRows = [
-                ['198809022023211005', 'ALFIAN FIRDAUS S, S.Pd., M.Pd.', 'GURU KELAS', 'alfian@sekolah.sch.id', 'guru123', 'editor_soal'],
-                ['199004152022212008', 'SITI AMINAH, S.Pd.', 'Matematika, IPAS', 'siti.aminah@sekolah.sch.id', 'guru123', 'editor_soal']
-            ];
-            window.downloadExcelFile('Template_Impor_Akun_Guru.xlsx', headers, sampleRows);
-        };
-
-        window.exportTeachersExcel = function() {
-            const headers = ['No', 'NIP', 'Nama Lengkap & Gelar', 'Bidang Mapel', 'Username / Email Login', 'Peran Akses', 'Status'];
-            const rows = (appData.teachers || []).map((t, idx) => [
-                idx + 1,
-                t.nip || '-',
-                t.fullName || '',
-                Array.isArray(t.subjects) ? t.subjects.join(', ') : (t.subjects || 'Umum'),
-                t.username || t.email || t.nip || '-',
-                t.role === 'admin' ? 'admin' : 'editor_soal',
-                t.status || 'Aktif'
-            ]);
-            window.downloadExcelFile('Data_Akun_Guru_CBT.xlsx', headers, rows);
-        };
-
-        window.triggerTeacherExcelImport = function() {
-            const fileInput = document.getElementById('globalFileInput');
-            if (!fileInput) return;
-            fileInput.value = '';
-            fileInput.onchange = function(e) {
-                const file = e.target.files[0];
-                if (!file) return;
-                window.readExcelWorkbookRows(file, (rows) => {
-                    fileInput.value = '';
-                    if (!rows || rows.length < 2) {
-                        window.showModal('Data Kosong', 'File Excel tidak memiliki baris data guru di bawah baris judul (header).', 'error');
-                        return;
-                    }
-
-                    const parsedTeachers = [];
-                    for (let i = 1; i < rows.length; i++) {
-                        const cols = rows[i];
-                        if (!cols || cols.length === 0) continue;
-
-                        const nip = String(cols[0] ?? '').trim();
-                        const fullName = String(cols[1] ?? '').trim();
-                        const subjectsRaw = String(cols[2] ?? '').trim();
-                        const usernameRaw = String(cols[3] ?? '').trim();
-                        const passwordRaw = String(cols[4] ?? '').trim() || 'guru123';
-                        const roleRaw = String(cols[5] ?? 'editor_soal').trim().toLowerCase();
-
-                        if (!fullName && !nip) continue;
-                        if (!fullName) continue;
-
-                        const finalNip = nip || ('GURU-' + (1000 + i));
-                        const finalUsername = usernameRaw || finalNip;
-                        const finalRole = (roleRaw === 'admin' || roleRaw === 'administrator') ? 'admin' : 'editor_soal';
-                        const subjects = subjectsRaw ? subjectsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Umum'];
-
-                        const isDuplicate = (appData.teachers || []).some(t =>
-                            (t.nip && String(t.nip).trim().toLowerCase() === finalNip.toLowerCase()) ||
-                            (t.username && String(t.username).trim().toLowerCase() === finalUsername.toLowerCase()) ||
-                            (t.email && String(t.email).trim().toLowerCase() === finalUsername.toLowerCase())
-                        ) || parsedTeachers.some(p =>
-                            p.nip.toLowerCase() === finalNip.toLowerCase() ||
-                            p.username.toLowerCase() === finalUsername.toLowerCase()
-                        );
-
-                        parsedTeachers.push({
-                            nip: finalNip,
-                            fullName,
-                            subjects,
-                            username: finalUsername,
-                            password: passwordRaw,
-                            role: finalRole,
-                            isDuplicate
-                        });
-                    }
-
-                    if (parsedTeachers.length === 0) {
-                        window.showModal('Tidak Ada Data Valid', 'Pastikan kolom Nama Lengkap & NIP terisi sesuai Template_Impor_Akun_Guru.xlsx.', 'error');
-                        return;
-                    }
-
-                    const validList = parsedTeachers.filter(t => !t.isDuplicate);
-                    const previewRowsHtml = parsedTeachers.map((t, idx) => `
-                        <tr class="border-b border-slate-100 ${t.isDuplicate ? 'bg-amber-50/70 text-slate-400' : 'hover:bg-slate-50'}">
-                            <td class="px-3 py-2 text-xs">${idx + 1}</td>
-                            <td class="px-3 py-2 text-xs font-mono font-bold">${escapeHtml(t.nip)}</td>
-                            <td class="px-3 py-2 text-xs font-bold text-slate-800">${escapeHtml(t.fullName)}</td>
-                            <td class="px-3 py-2 text-xs">${escapeHtml(t.subjects.join(', '))}</td>
-                            <td class="px-3 py-2 text-xs font-mono text-indigo-700">${escapeHtml(t.username)}</td>
-                            <td class="px-3 py-2 text-xs font-mono">${escapeHtml(t.password)}</td>
-                            <td class="px-3 py-2 text-xs font-bold">${escapeHtml(t.role)}</td>
-                            <td class="px-3 py-2 text-xs">
-                                ${t.isDuplicate
-                                    ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">NIP / Akun Duplikat</span>'
-                                    : '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">Siap Diimpor</span>'}
-                            </td>
-                        </tr>
-                    `).join('');
-
-                    const html = `
-                        <div class="space-y-3">
-                            <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
-                                <div>
-                                    <span class="font-bold text-indigo-900">File: ${escapeHtml(file.name)}</span>
-                                    <p class="text-[11px] text-indigo-700 mt-0.5">Total Terbaca: <strong>${parsedTeachers.length} baris</strong> • Siap Disimpan: <strong>${validList.length} akun guru</strong></p>
-                                </div>
-                            </div>
-                            <div class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
-                                            <th class="px-3 py-2">No</th><th class="px-3 py-2">NIP</th><th class="px-3 py-2">Nama Guru</th><th class="px-3 py-2">Bidang Mapel</th><th class="px-3 py-2">Username/Email</th><th class="px-3 py-2">Password</th><th class="px-3 py-2">Peran</th><th class="px-3 py-2">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>${previewRowsHtml}</tbody>
-                                </table>
-                            </div>
-                        </div>
-                    `;
-
-                    window.showModal('Pratinjau Impor Akun Guru (.xlsx)', '', 'info', async (confirmed) => {
-                        if (!confirmed) return true;
-                        for (let idx = 0; idx < validList.length; idx++) {
-                            const item = validList[idx];
-                            const newTch = {
-                                id: 'TCH-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000),
-                                nip: item.nip,
-                                fullName: item.fullName,
-                                subjects: item.subjects,
-                                role: item.role,
-                                username: item.username,
-                                email: item.username,
-                                password: item.password,
-                                passwordHash: hashCredential(item.password),
-                                classes: ['4'],
-                                status: 'Aktif'
-                            };
-                            appData.teachers.push(newTch);
-                            await syncCollectionRecord('teachers', newTch.id, newTch);
-                        }
-                        logActivity(`Impor Excel Guru selesai: ${validList.length} akun guru baru ditambahkan.`);
-                        renderTeachersContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Akun Guru Berhasil', `Berhasil menyimpan ${validList.length} akun guru ke Firebase Firestore.`, 'success');
-                        return true;
-                    }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Guru ke Database` });
-                });
-            };
-            fileInput.click();
-        };
-
         window.openTeacherFormModal = function(teacherId = null) {
             const existing = teacherId ? appData.teachers.find(x => x.id === teacherId) : null;
             const currentSubjects = existing && Array.isArray(existing.subjects) ? existing.subjects.join(', ') : '';
-            const currentRole = existing && existing.role === 'admin' ? 'admin' : 'editor_soal';
-            const currentUsername = existing ? (existing.username || existing.email || existing.nip || '') : '';
-            const currentPassword = existing ? (existing.password || '') : '';
-
             const html = `
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">NIP / ID Guru *</label>
-                        <input type="text" id="tchFormNip" value="${escapeHtml(existing ? existing.nip : '')}" placeholder="Contoh: 198809022023211005" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono">
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">Peran Hak Akses *</label>
-                        <select id="tchFormRole" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-indigo-700 bg-indigo-50/40">
-                            <option value="editor_soal" ${currentRole === 'editor_soal' ? 'selected' : ''}>Editor Bank Soal (Khusus Bank Soal)</option>
-                            <option value="admin" ${currentRole === 'admin' ? 'selected' : ''}>Administrator Utama (Akses Penuh)</option>
-                        </select>
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="block font-bold text-slate-700 mb-1">Nama Lengkap & Gelar *</label>
-                        <input type="text" id="tchFormName" value="${escapeHtml(existing ? existing.fullName : '')}" placeholder="Contoh: ALFIAN FIRDAUS S, S.Pd., M.Pd." class="w-full px-3 py-2 border border-slate-300 rounded-xl">
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="block font-bold text-slate-700 mb-1">Bidang Mata Pelajaran</label>
-                        <input type="text" id="tchFormSubjects" value="${escapeHtml(currentSubjects)}" placeholder="Contoh: GURU KELAS / Matematika" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">Email / Username Login *</label>
-                        <input type="text" id="tchFormUsername" value="${escapeHtml(currentUsername)}" placeholder="Contoh: guru@sekolah.sch.id atau NIP" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono">
-                    </div>
-                    <div>
-                        <label class="block font-bold text-slate-700 mb-1">Password / PIN Login ${existing ? '<span class="text-slate-400 font-normal">(Kosongkan jika tetap)</span>' : '*'}</label>
-                        <input type="text" id="tchFormPassword" value="${escapeHtml(currentPassword)}" placeholder="${existing ? 'Ketik password baru jika ingin ubah' : 'Contoh: guru123'}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold text-slate-800">
-                    </div>
-                    <div class="sm:col-span-2">
-                        <label class="block font-bold text-slate-700 mb-1">Status Keaktifan</label>
-                        <select id="tchFormStatus" class="w-full px-3 py-2 border border-slate-300 rounded-xl">
-                            <option value="Aktif" ${!existing || existing.status === 'Aktif' ? 'selected' : ''}>Aktif</option>
-                            <option value="Nonaktif" ${existing && existing.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option>
-                        </select>
-                    </div>
+                <div class="grid grid-cols-1 gap-3 text-xs">
+                    <div><label class="block font-bold text-slate-700 mb-1">NIP / ID Guru *</label><input type="text" id="tchFormNip" value="${escapeHtml(existing ? existing.nip : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">Nama Lengkap & Gelar *</label><input type="text" id="tchFormName" value="${escapeHtml(existing ? existing.fullName : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">Bidang Mata Pelajaran</label><input type="text" id="tchFormSubjects" value="${escapeHtml(currentSubjects)}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">Status Keaktifan</label><select id="tchFormStatus" class="w-full px-3 py-2 border border-slate-300 rounded-xl"><option value="Aktif" ${!existing || existing.status === 'Aktif' ? 'selected' : ''}>Aktif</option><option value="Nonaktif" ${existing && existing.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option></select></div>
                 </div>
             `;
-            window.showModal(existing ? 'Edit Data & Hak Akses Guru' : 'Tambah Data Guru Baru', '', 'info', (confirmed) => {
+            window.showModal(existing ? 'Edit Data Guru' : 'Tambah Data Guru Baru', '', 'info', (confirmed) => {
                 if (!confirmed) return true;
                 const nip = document.getElementById('tchFormNip').value.trim();
                 const fullName = document.getElementById('tchFormName').value.trim();
                 const subjectsRaw = document.getElementById('tchFormSubjects').value.trim();
-                const role = document.getElementById('tchFormRole').value === 'admin' ? 'admin' : 'editor_soal';
-                const username = document.getElementById('tchFormUsername').value.trim() || nip;
-                const rawPassword = document.getElementById('tchFormPassword').value.trim();
                 const status = document.getElementById('tchFormStatus').value;
-
-                if (!nip || !fullName) {
-                    window.showModal('Validasi Data Guru', 'NIP dan Nama Lengkap guru wajib diisi!', 'error');
-                    return false;
-                }
-                if (!username) {
-                    window.showModal('Validasi Akun Login', 'Email / Username login guru wajib diisi!', 'error');
-                    return false;
-                }
-                if (!existing && !rawPassword) {
-                    window.showModal('Validasi Password', 'Password / PIN login wajib diisi untuk akun guru baru!', 'error');
-                    return false;
-                }
-
+                if (!nip || !fullName) return false;
                 const subjects = subjectsRaw ? subjectsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['Umum'];
                 if (existing) {
                     existing.nip = nip;
                     existing.fullName = fullName;
                     existing.subjects = subjects;
-                    existing.role = role;
-                    existing.username = username;
-                    existing.email = username;
-                    if (rawPassword !== '') {
-                        existing.password = rawPassword;
-                        existing.passwordHash = hashCredential(rawPassword);
-                    }
                     existing.status = status;
                     syncCollectionRecord('teachers', existing.id, existing);
                 } else {
-                    const newTch = {
-                        id: 'TCH-' + Date.now(),
-                        nip,
-                        fullName,
-                        subjects,
-                        role,
-                        username,
-                        email: username,
-                        password: rawPassword,
-                        passwordHash: hashCredential(rawPassword),
-                        classes: ['4'],
-                        status
-                    };
+                    const newTch = { id: 'TCH-' + Date.now(), nip, fullName, subjects, classes: ['4'], status };
                     appData.teachers.push(newTch);
                     syncCollectionRecord('teachers', newTch.id, newTch);
                 }
                 renderTeachersContent(document.getElementById('adminMainContent'));
                 return true;
-            }, { html, wide: true, okText: 'Simpan Guru' });
+            }, { html, okText: 'Simpan Guru' });
         };
 
         window.deleteTeacherRecord = function(teacherId) {
@@ -6587,7 +6450,33 @@
             }).join('');
 
             const searchParticipant = (appData.filters.participantSearch || '').trim().toLowerCase();
-            const filteredParticipantStudents = appData.students.filter(s => {
+            const statusFilter = appData.filters.participantStatus || 'ALL';
+
+            // Hitung status masing-masing siswa untuk keperluan filter dan ringkasan jumlah
+            let countAll = 0;
+            let countInProgress = 0;
+            let countNotStarted = 0;
+            let countFinished = 0;
+
+            const enrichedStudents = appData.students.map(s => {
+                const res = appData.examResults.find(r => r.studentId === s.id && (!activeExamId || r.examId === activeExamId));
+                const sess = appData.examSessions.find(ss => ss.studentId === s.id && (!activeExamId || ss.examId === activeExamId) && ss.status === 'IN_PROGRESS');
+                const part = appData.examParticipants.find(p => p.studentId === s.id && (!activeExamId || p.examId === activeExamId));
+                const status = res ? 'Selesai' : (sess ? 'Sedang Mengerjakan' : (part && part.status ? part.status : 'Belum Mulai'));
+
+                countAll++;
+                if (status === 'Sedang Mengerjakan') countInProgress++;
+                else if (status === 'Selesai') countFinished++;
+                else countNotStarted++;
+
+                return { student: s, res, sess, part, status };
+            });
+
+            const filteredParticipantEntries = enrichedStudents.filter(({ student: s, status }) => {
+                if (statusFilter === 'IN_PROGRESS' && status !== 'Sedang Mengerjakan') return false;
+                if (statusFilter === 'NOT_STARTED' && status !== 'Belum Mulai') return false;
+                if (statusFilter === 'FINISHED' && status !== 'Selesai') return false;
+
                 if (!searchParticipant) return true;
                 const schoolStr = s.asalSekolah !== undefined ? (s.asalSekolah || '') : (appData.settings.schoolName || '');
                 return (
@@ -6597,17 +6486,13 @@
                 );
             });
 
-            const rows = filteredParticipantStudents.map((s, idx) => {
-                const res = appData.examResults.find(r => r.studentId === s.id && (!activeExamId || r.examId === activeExamId));
-                const sess = appData.examSessions.find(ss => ss.studentId === s.id && (!activeExamId || ss.examId === activeExamId) && ss.status === 'IN_PROGRESS');
-                const part = appData.examParticipants.find(p => p.studentId === s.id && (!activeExamId || p.examId === activeExamId));
-                const status = res ? 'Selesai' : (sess ? 'Sedang Mengerjakan' : (part && part.status ? part.status : 'Belum Mulai'));
+            const rows = filteredParticipantEntries.map(({ student: s, res, sess, part, status }, idx) => {
                 const violations = res && typeof res.violationCount === 'number'
                     ? res.violationCount
                     : (sess && typeof sess.violationCount === 'number' ? sess.violationCount : (part && typeof part.violationCount === 'number' ? part.violationCount : 0));
-                const onlineNow = isStudentCurrentlyLoggedIn(s);
+                const hasDeviceLock = Boolean(isStudentCurrentlyLoggedIn(s) || s.isLoggedIn || s.activeSessionId || (sess && sess.deviceSessionId) || status === 'Sedang Mengerjakan');
                 const progressInfo = sess ? `<span class="block text-[10px] text-indigo-600 font-semibold mt-0.5">Progres: ${sess.answeredCount || 0} terjawab • Soal #${(sess.lastQuestionIndex || 0) + 1}</span>` : '';
-                const loginBadge = onlineNow ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 ml-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Login Aktif</span>` : '';
+                const loginBadge = hasDeviceLock ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 ml-1" title="Terkunci pada perangkat: ${escapeHtml((sess && sess.deviceInfo) || s.deviceInfo || 'Perangkat Aktif')}"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Login Terkunci</span>` : '';
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
                 return `
                     <tr class="border-b border-slate-100 hover:bg-slate-50">
@@ -6627,8 +6512,8 @@
                             </span>
                         </td>
                         <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
-                            ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg font-bold text-xs" title="Bebaskan kunci login perangkat siswa ini"><i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Login</button>` : ''}
-                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-bold text-xs"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : (!onlineNow ? '<span class="text-slate-400 text-[11px]">Siap Ujian</span>' : '')}
+                            ${hasDeviceLock ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg font-bold text-xs cursor-pointer" title="Bebaskan kunci login perangkat siswa ini agar bisa pindah HP/Laptop tanpa kehilangan jawaban"><i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Login</button>` : ''}
+                            ${(res || sess || violations > 0 || status === 'Sedang Mengerjakan') ? `<button type="button" onclick="window.resetStudentExamSession('${s.id}', '${escapeHtml(activeExamId)}')" class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg font-bold text-xs cursor-pointer" title="Hapus seluruh jawaban & ulangi ujian dari awal"><i class="fa-solid fa-rotate-left mr-1"></i> Reset Sesi</button>` : (!hasDeviceLock ? '<span class="text-slate-400 text-[11px]">Siap Ujian</span>' : '')}
                         </td>
                     </tr>
                 `;
@@ -6641,13 +6526,16 @@
                             <div class="flex items-center gap-2">
                                 <h3 class="font-bold text-sm text-slate-800">Pemantauan Peserta Ujian, Progres Lintas Perangkat & Reset Sesi</h3>
                             </div>
-                            <p class="text-xs text-slate-500 mt-0.5">Pantau status pengerjaan real-time masing-masing siswa, jumlah jawaban tersimpan, pelanggaran pindah tab, dan reset sesi.</p>
+                            <p class="text-xs text-slate-500 mt-0.5">Pantau status pengerjaan real-time masing-masing siswa, jumlah jawaban tersimpan, pelanggaran pindah tab, reset login perangkat, dan reset sesi.</p>
                         </div>
-                        <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-2.5">
                             <button type="button" onclick="window.openPrintExamCardsModal('participants')" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
                                 <i class="fa-solid fa-id-card"></i> Cetak Kartu Ujian
                             </button>
-                            <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5">
+                            <button type="button" onclick="window.unlockAllStudentsLogin()" class="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-extrabold shadow-sm transition flex items-center gap-1.5 cursor-pointer" title="Bebaskan kunci login perangkat seluruh siswa tanpa menghapus jawaban">
+                                <i class="fa-solid fa-unlock-keyhole"></i> Reset Semua Login
+                            </button>
+                            <button type="button" onclick="window.resetAllExamSessions('${escapeHtml(activeExamId)}')" class="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer">
                                 <i class="fa-solid fa-rotate"></i> Reset Semua Sesi
                             </button>
                             <div class="flex flex-wrap items-center gap-2">
@@ -6660,14 +6548,41 @@
                         </div>
                     </div>
 
-                    <div class="bg-white p-3.5 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                        <div class="relative flex-1 min-w-[240px]">
-                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-2.5 text-slate-400 text-xs"></i>
-                            <input type="text" id="participantSearchInput" value="${escapeHtml(appData.filters.participantSearch || '')}" oninput="window.filterParticipantSearch(this.value)" placeholder="Cari peserta berdasarkan NISN, Nama Siswa, atau Asal Sekolah..." class="w-full pl-9 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                            ${appData.filters.participantSearch ? `<button type="button" onclick="window.filterParticipantSearch('')" class="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer" title="Bersihkan Pencarian"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                    <div class="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div class="relative flex-1 min-w-[240px]">
+                                <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-2.5 text-slate-400 text-xs"></i>
+                                <input type="text" id="participantSearchInput" value="${escapeHtml(appData.filters.participantSearch || '')}" oninput="window.filterParticipantSearch(this.value)" placeholder="Cari peserta berdasarkan NISN, Nama Siswa, atau Asal Sekolah..." class="w-full pl-9 pr-8 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                ${appData.filters.participantSearch ? `<button type="button" onclick="window.filterParticipantSearch('')" class="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer" title="Bersihkan Pencarian"><i class="fa-solid fa-xmark"></i></button>` : ''}
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <select onchange="window.filterParticipantStatus(this.value)" class="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="ALL" ${statusFilter === 'ALL' ? 'selected' : ''}>Semua Status (${countAll})</option>
+                                    <option value="IN_PROGRESS" ${statusFilter === 'IN_PROGRESS' ? 'selected' : ''}>Sedang Mengerjakan (${countInProgress})</option>
+                                    <option value="NOT_STARTED" ${statusFilter === 'NOT_STARTED' ? 'selected' : ''}>Belum Mengerjakan (${countNotStarted})</option>
+                                    <option value="FINISHED" ${statusFilter === 'FINISHED' ? 'selected' : ''}>Sudah Selesai (${countFinished})</option>
+                                </select>
+                                <div class="text-xs font-bold text-slate-500">
+                                    Menampilkan <span class="text-indigo-700 font-extrabold">${filteredParticipantEntries.length}</span> dari ${appData.students.length} Peserta
+                                </div>
+                            </div>
                         </div>
-                        <div class="text-xs font-bold text-slate-500">
-                            Menampilkan <span class="text-indigo-700 font-extrabold">${filteredParticipantStudents.length}</span> dari ${appData.students.length} Peserta
+
+                        <!-- Tombol Filter Cepat Status Pengerjaan -->
+                        <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+                            <span class="text-[11px] font-bold text-slate-400 uppercase mr-1"><i class="fa-solid fa-filter mr-1"></i> Filter Status:</span>
+                            <button type="button" onclick="window.filterParticipantStatus('ALL')" class="px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${statusFilter === 'ALL' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}">
+                                Semua Peserta (${countAll})
+                            </button>
+                            <button type="button" onclick="window.filterParticipantStatus('IN_PROGRESS')" class="px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${statusFilter === 'IN_PROGRESS' ? 'bg-blue-600 text-white shadow-xs' : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'}">
+                                <span class="w-2 h-2 rounded-full ${statusFilter === 'IN_PROGRESS' ? 'bg-white' : 'bg-blue-600'} animate-pulse"></span> Sedang Mengerjakan (${countInProgress})
+                            </button>
+                            <button type="button" onclick="window.filterParticipantStatus('NOT_STARTED')" class="px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${statusFilter === 'NOT_STARTED' ? 'bg-amber-500 text-slate-950 shadow-xs' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'}">
+                                <span class="w-2 h-2 rounded-full ${statusFilter === 'NOT_STARTED' ? 'bg-slate-950' : 'bg-amber-500'}"></span> Belum Mengerjakan (${countNotStarted})
+                            </button>
+                            <button type="button" onclick="window.filterParticipantStatus('FINISHED')" class="px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${statusFilter === 'FINISHED' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'}">
+                                <span class="w-2 h-2 rounded-full ${statusFilter === 'FINISHED' ? 'bg-white' : 'bg-emerald-600'}"></span> Sudah Selesai (${countFinished})
+                            </button>
                         </div>
                     </div>
 
@@ -6675,7 +6590,7 @@
                         <div class="table-responsive-wrapper custom-scrollbar">
                             <table class="w-full min-w-[740px] text-left border-collapse">
                                 <thead><tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase"><th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">Nama Peserta</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status Sesi</th><th class="px-4 py-3">Pelanggaran</th><th class="px-4 py-3">Aksi Pengawas</th></tr></thead>
-                                <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada peserta ujian yang cocok dengan kata kunci pencarian.</td></tr>'}</tbody>
+                                <tbody>${rows || '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Tidak ada peserta ujian yang sesuai dengan filter status atau kata kunci pencarian.</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>
@@ -6685,6 +6600,11 @@
 
         window.filterParticipantExam = function(examId) {
             appData.filters.participantExam = examId;
+            renderParticipantsContent(document.getElementById('adminMainContent'));
+        };
+
+        window.filterParticipantStatus = function(statusVal) {
+            appData.filters.participantStatus = statusVal || 'ALL';
             renderParticipantsContent(document.getElementById('adminMainContent'));
         };
 
@@ -8019,9 +7939,6 @@
             if (!rawText) return '';
             const trimmedText = String(rawText).replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
             if (!trimmedText) return '';
-            if (/<(b|strong|i|em|u|mark|sup|sub|ul|ol|li|div|p|span|br)\b/i.test(trimmedText)) {
-                return window.sanitizeRichTextHtml(trimmedText);
-            }
             const lines = trimmedText.split(/\r?\n/).map(l => l.trim()).filter((l, idx, arr) => {
                 // Hapus baris kosong beruntun di awal/akhir
                 if (idx === 0 && l === '') return false;
@@ -8032,9 +7949,9 @@
             return lines.map(line => {
                 if (!firstNonEmptyFormatted && line !== '') {
                     firstNonEmptyFormatted = true;
-                    return `<strong class="font-poppins font-semibold text-slate-900 text-[15px] sm:text-[16px] leading-snug">${window.renderMathExpressionsInHtml(line)}</strong>`;
+                    return `<strong class="font-poppins font-semibold text-slate-900 text-[15px] sm:text-[16px] leading-snug">${sanitizeRichTextHtml(line)}</strong>`;
                 }
-                return window.renderMathExpressionsInHtml(line);
+                return sanitizeRichTextHtml(line);
             }).join('<br>');
         }
 
@@ -8089,7 +8006,7 @@
                         <label onclick="window.saveAnswerAndRefresh('${q.id}', '${letter}')" class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs' : 'border-slate-200/90 bg-white hover:border-blue-300 shadow-2xs'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${window.renderMathExpressionsInHtml(String(opt).trim())}</span>
+                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${window.renderOptionOrMathText(String(opt).trim())}</span>
                             </div>
                             <span class="w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selected ? 'border-blue-600' : 'border-slate-300'}">
                                 ${selected ? '<span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span>' : ''}
@@ -8107,7 +8024,7 @@
                         <label class="font-poppins flex items-center justify-between gap-3 p-3.5 sm:p-4 rounded-2xl border ${selected ? 'border-blue-500 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs' : 'border-slate-200/90 bg-white hover:border-blue-300 shadow-2xs'} cursor-pointer transition">
                             <div class="flex items-center gap-3.5">
                                 <span class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm sm:text-base font-poppins font-semibold shrink-0 ${selected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}">${letter}</span>
-                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${window.renderMathExpressionsInHtml(String(opt).trim())}</span>
+                                <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${window.renderOptionOrMathText(String(opt).trim())}</span>
                             </div>
                             <input type="checkbox" value="${letter}" ${selected ? 'checked' : ''} onchange="window.saveComplexAnswer('${q.id}', '${letter}', this.checked)" class="w-5 h-5 text-blue-600 rounded border-slate-300 shrink-0">
                         </label>
@@ -8127,7 +8044,7 @@
                     return `
                         <tr class="border-b border-slate-200/80 hover:bg-slate-50/60 transition font-poppins">
                             <td class="p-4 font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">
-                                <strong class="font-semibold text-indigo-700 mr-1.5">${letter}.</strong> ${window.renderMathExpressionsInHtml(stmt)}
+                                <strong class="font-semibold text-indigo-700 mr-1.5">${letter}.</strong> ${window.renderOptionOrMathText(stmt)}
                             </td>
                             <td class="p-3 text-center w-24 sm:w-32">
                                 <button type="button" onclick="window.saveMultiTrueFalseAnswer('${q.id}', '${idx}', 'Benar')" class="w-full py-2.5 px-3 rounded-xl text-xs sm:text-sm font-poppins font-semibold border transition cursor-pointer ${isBenar ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200' : 'bg-white text-slate-700 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300'}">
@@ -8170,7 +8087,7 @@
                     const optsHtml = rightOptions.map(ro => `<option value="${escapeHtml(ro)}" ${selectedVal === ro ? 'selected' : ''}>${escapeHtml(ro)}</option>`).join('');
                     return `
                         <div class="font-poppins p-3.5 sm:p-4 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
-                            <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${idx + 1}. ${window.renderMathExpressionsInHtml(p.left)}</span>
+                            <span class="font-poppins font-normal text-[15px] sm:text-[16px] text-slate-800 leading-relaxed">${idx + 1}. ${window.renderOptionOrMathText(p.left)}</span>
                             <select onchange="window.saveMatchingAnswer('${q.id}', '${idx}', this.value)" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm sm:text-[15px] font-poppins font-normal text-blue-700">
                                 <option value="">-- Pilih Pasangan --</option>
                                 ${optsHtml}
@@ -8364,7 +8281,7 @@
                             <div class="p-4 sm:p-6 flex-1 lg:overflow-y-auto custom-scrollbar space-y-4">
                                 <div class="bg-[#f8fafd] p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
                                     <div class="font-poppins font-normal text-[16.5px] sm:text-[18.5px] text-slate-900 leading-relaxed">
-                                        ${window.formatRichQuestionText(q.questionText)}
+                                        ${formatRichQuestionText(q.questionText)}
                                     </div>
                                     ${hasQuestionImg ? `
                                         <div class="pt-1">
@@ -8840,24 +8757,10 @@
             try {
                 await initFirebaseProduction();
                 startScheduleTransitionWatcher();
-                const savedStaff = window.getSavedStaffSession();
-                if (savedStaff && (savedStaff.role === 'admin' || savedStaff.role === 'editor_soal')) {
-                    appData.currentUser = savedStaff;
-                    appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
-                    window.renderAdminLayout();
-                } else {
-                    window.renderLoginView();
-                }
+                window.renderLoginView();
             } catch (error) {
                 startScheduleTransitionWatcher();
-                const savedStaff = window.getSavedStaffSession();
-                if (savedStaff && (savedStaff.role === 'admin' || savedStaff.role === 'editor_soal')) {
-                    appData.currentUser = savedStaff;
-                    appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
-                    window.renderAdminLayout();
-                } else {
-                    window.renderLoginView();
-                }
+                window.renderLoginView();
                 window.showModal(
                     'Koneksi Firebase Gagal',
                     'Aplikasi belum dapat terhubung ke Firebase. Periksa konfigurasi project, pastikan Firestore Database tersedia, dan sesuaikan Security Rules.',
