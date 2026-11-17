@@ -357,6 +357,178 @@
         }
 
         // ============================================================================
+        // RICH TEXT EDITOR TOOLBAR & SANITIZER AMAN (STIMULUS & PERTANYAAN SOAL)
+        // ============================================================================
+        window.sanitizeRichTextHtml = function(rawHtml) {
+            if (rawHtml === null || rawHtml === undefined) return '';
+            const str = String(rawHtml);
+            const hasAllowedTags = /<(b|strong|i|em|u|mark|sup|sub|ul|ol|li|div|p|span|br)\b/i.test(str);
+            if (!hasAllowedTags) {
+                return window.renderMathExpressionsInHtml(str);
+            }
+
+            const temp = document.createElement('div');
+            temp.innerHTML = str;
+
+            const allowedTags = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'MARK', 'SUP', 'SUB', 'UL', 'OL', 'LI', 'DIV', 'P', 'SPAN', 'BR']);
+            const allowedAligns = new Set(['left', 'center', 'right', 'justify']);
+
+            const cleanNode = (node) => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const wrapper = document.createElement('span');
+                    wrapper.innerHTML = window.renderMathExpressionsInHtml(node.textContent || '');
+                    return wrapper;
+                }
+                if (node.nodeType !== Node.ELEMENT_NODE) {
+                    return document.createTextNode('');
+                }
+                const tag = node.tagName.toUpperCase();
+                if (!allowedTags.has(tag)) {
+                    const frag = document.createDocumentFragment();
+                    Array.from(node.childNodes).forEach(child => frag.appendChild(cleanNode(child)));
+                    return frag;
+                }
+                const cleanEl = document.createElement(tag.toLowerCase());
+                if (tag === 'MARK') {
+                    cleanEl.className = 'bg-amber-200/85 text-slate-900 px-1 rounded';
+                } else if (tag === 'UL') {
+                    cleanEl.className = 'list-disc pl-5 my-1 space-y-0.5';
+                } else if (tag === 'OL') {
+                    cleanEl.className = 'list-decimal pl-5 my-1 space-y-0.5';
+                }
+
+                const textAlign = (node.style && node.style.textAlign) ? node.style.textAlign.toLowerCase() : '';
+                if (allowedAligns.has(textAlign)) {
+                    cleanEl.style.textAlign = textAlign;
+                }
+                Array.from(node.childNodes).forEach(child => cleanEl.appendChild(cleanNode(child)));
+                return cleanEl;
+            };
+
+            const out = document.createElement('div');
+            Array.from(temp.childNodes).forEach(child => out.appendChild(cleanNode(child)));
+            return out.innerHTML.replace(/\r?\n/g, '<br>');
+        };
+
+        window.formatRichQuestionText = function(rawText) {
+            return window.sanitizeRichTextHtml(rawText);
+        };
+
+        window.buildRichTextToolbarHtml = function(targetInputId) {
+            return `
+                <div class="flex flex-wrap items-center gap-1 mb-1.5 p-1.5 bg-slate-100/95 border border-slate-200 rounded-xl">
+                    <!-- Gaya Huruf -->
+                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<b>', '</b>')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs font-extrabold flex items-center justify-center transition cursor-pointer" title="Tebal (Bold)">B</button>
+                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<i>', '</i>')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs italic font-serif font-bold flex items-center justify-center transition cursor-pointer" title="Miring (Italic)">I</button>
+                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<u>', '</u>')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs underline font-bold flex items-center justify-center transition cursor-pointer" title="Garis Bawah (Underline)">U</button>
+                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<mark>', '</mark>')" class="w-7 h-7 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Stabilo / Sorot Teks"><i class="fa-solid fa-highlighter text-[11px]"></i></button>
+
+                    <span class="w-px h-5 bg-slate-300 mx-0.5"></span>
+
+                    <!-- Notasi Ilmiah -->
+                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<sup>', '</sup>')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-[11px] font-bold flex items-center justify-center transition cursor-pointer" title="Pangkat Atas (Superscript)">x<sup>2</sup></button>
+                    <button type="button" onclick="window.applyRichTagToTextarea('${targetInputId}', '<sub>', '</sub>')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 hover:text-indigo-700 border border-slate-200 rounded-lg text-[11px] font-bold flex items-center justify-center transition cursor-pointer" title="Indeks Bawah (Subscript)">H<sub>2</sub>O</button>
+
+                    <span class="w-px h-5 bg-slate-300 mx-0.5"></span>
+
+                    <!-- Perataan Paragraf -->
+                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'left')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Kiri"><i class="fa-solid fa-align-left text-[11px]"></i></button>
+                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'center')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Tengah"><i class="fa-solid fa-align-center text-[11px]"></i></button>
+                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'right')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Kanan"><i class="fa-solid fa-align-right text-[11px]"></i></button>
+                    <button type="button" onclick="window.applyRichAlignToTextarea('${targetInputId}', 'justify')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Rata Kanan-Kiri (Justify)"><i class="fa-solid fa-align-justify text-[11px]"></i></button>
+
+                    <span class="w-px h-5 bg-slate-300 mx-0.5"></span>
+
+                    <!-- Daftar & Simbol Matematika Cepat -->
+                    <button type="button" onclick="window.applyRichListToTextarea('${targetInputId}', 'ul')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Daftar Poin (Bullet List)"><i class="fa-solid fa-list-ul text-[11px]"></i></button>
+                    <button type="button" onclick="window.applyRichListToTextarea('${targetInputId}', 'ol')" class="w-7 h-7 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer" title="Daftar Bernomor (Numbered List)"><i class="fa-solid fa-list-ol text-[11px]"></i></button>
+
+                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' × ')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Kali">&times;</button>
+                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', ' ÷ ')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Bagi">&divide;</button>
+                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '°')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Derajat">&deg;</button>
+                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', '√')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Akar">&radic;</button>
+                    <button type="button" onclick="window.insertLatexSnippetToInput('${targetInputId}', 'π')" class="px-2 h-7 bg-white hover:bg-indigo-50 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold cursor-pointer" title="Simbol Pi">&pi;</button>
+
+                    <!-- Tombol MathLive Visual -->
+                    <button type="button" onclick="window.openMathLiveModal('${targetInputId}')" class="px-2 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer" title="Editor Rumus & Pecahan Bertingkat">
+                        <i class="fa-solid fa-square-root-variable"></i> Rumus
+                    </button>
+
+                    <!-- Hapus Format -->
+                    <button type="button" onclick="window.clearRichFormatFromTextarea('${targetInputId}')" class="w-7 h-7 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs flex items-center justify-center transition cursor-pointer ml-auto" title="Hapus Format Teks (Eraser)"><i class="fa-solid fa-eraser text-[11px]"></i></button>
+                </div>
+            `;
+        };
+
+        window.applyRichTagToTextarea = function(targetInputId, openTag, closeTag) {
+            const el = document.getElementById(targetInputId);
+            if (!el) return;
+            const start = el.selectionStart !== undefined ? el.selectionStart : el.value.length;
+            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
+            const selected = el.value.slice(start, end) || 'teks';
+            const replacement = `${openTag}${selected}${closeTag}`;
+            el.value = el.value.slice(0, start) + replacement + el.value.slice(end);
+            el.focus();
+            try {
+                el.setSelectionRange(start + openTag.length, start + openTag.length + selected.length);
+            } catch (e) {}
+            window.updateQuestionLivePreview();
+        };
+
+        window.applyRichAlignToTextarea = function(targetInputId, alignDir) {
+            const el = document.getElementById(targetInputId);
+            if (!el) return;
+            const start = el.selectionStart !== undefined ? el.selectionStart : 0;
+            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
+            const selected = el.value.slice(start, end).trim() || el.value.trim() || 'Paragraf teks';
+            const openTag = `<div style="text-align:${alignDir};">`;
+            const closeTag = `</div>`;
+            if (el.selectionStart !== el.selectionEnd) {
+                el.value = el.value.slice(0, start) + openTag + selected + closeTag + el.value.slice(end);
+            } else {
+                el.value = openTag + selected + closeTag;
+            }
+            el.focus();
+            window.updateQuestionLivePreview();
+        };
+
+        window.applyRichListToTextarea = function(targetInputId, listType) {
+            const el = document.getElementById(targetInputId);
+            if (!el) return;
+            const start = el.selectionStart !== undefined ? el.selectionStart : el.value.length;
+            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
+            const selected = el.value.slice(start, end).trim();
+            const lines = selected
+                ? selected.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+                : ['Poin pertama', 'Poin kedua'];
+            const liHtml = lines.map(item => `<li>${item}</li>`).join('');
+            const listHtml = `<${listType}>${liHtml}</${listType}>`;
+            el.value = el.value.slice(0, start) + listHtml + el.value.slice(end);
+            el.focus();
+            window.updateQuestionLivePreview();
+        };
+
+        window.clearRichFormatFromTextarea = function(targetInputId) {
+            const el = document.getElementById(targetInputId);
+            if (!el) return;
+            const start = el.selectionStart !== undefined ? el.selectionStart : 0;
+            const end = el.selectionEnd !== undefined ? el.selectionEnd : el.value.length;
+            const stripTags = (txt) => txt
+                .replace(/<\/li>\s*<li>/gi, '\n')
+                .replace(/<br\s*\/?>/gi, '\n')
+                .replace(/<\/?(b|strong|i|em|u|mark|sup|sub|ul|ol|li|div|p|span)[^>]*>/gi, '');
+
+            if (start !== end) {
+                const cleaned = stripTags(el.value.slice(start, end));
+                el.value = el.value.slice(0, start) + cleaned + el.value.slice(end);
+            } else {
+                el.value = stripTags(el.value);
+            }
+            el.focus();
+            window.updateQuestionLivePreview();
+        };
+
+        // ============================================================================
         // INTEGRASI MATHLIVE & RENDERER RUMUS MATEMATIKA VISUAL (PECAHAN BERTINGKAT)
         // ============================================================================
         let activeMathTargetInputId = null;
@@ -3339,7 +3511,7 @@
 
                             <div>
                                 <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teks Stimulus / Bacaan <span class="text-slate-400 font-normal">(Opsional)</span></label>
-                                ${window.buildOptionMathToolbarHtml('qFormStimulus')}
+                                ${window.buildRichTextToolbarHtml('qFormStimulus')}
                                 <textarea id="qFormStimulus" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Masukkan bacaan, data, atau pengantar soal..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
                             </div>
 
@@ -3350,7 +3522,7 @@
 
                             <div>
                                 <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teks Pertanyaan Soal *</label>
-                                ${window.buildOptionMathToolbarHtml('qFormText')}
+                                ${window.buildRichTextToolbarHtml('qFormText')}
                                 <textarea id="qFormText" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Tuliskan pertanyaan soal di sini... (Bisa gabung teks biasa & rumus seperti $\\frac{3}{4}$)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"></textarea>
                             </div>
 
@@ -3626,7 +3798,7 @@
             if (typeBadge) typeBadge.innerText = getQuestionTypeBadgeLabel(type);
 
             if (stimulus.trim() || stimImgUrl.trim()) {
-                stimText.innerHTML = window.renderMathExpressionsInHtml(stimulus);
+                stimText.innerHTML = window.formatRichQuestionText(stimulus);
                 if (stimImg) {
                     if (stimImgUrl.trim()) {
                         stimImg.src = stimImgUrl.trim();
@@ -3640,7 +3812,7 @@
                 stimBox.classList.add('hidden');
             }
 
-            qText.innerHTML = text.trim() ? window.renderMathExpressionsInHtml(text) : '(Teks pertanyaan akan tampil di sini)';
+            qText.innerHTML = text.trim() ? window.formatRichQuestionText(text) : '(Teks pertanyaan akan tampil di sini)';
             if (qImg) {
                 if (qImgUrl.trim()) {
                     qImg.src = qImgUrl.trim();
@@ -7847,6 +8019,9 @@
             if (!rawText) return '';
             const trimmedText = String(rawText).replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
             if (!trimmedText) return '';
+            if (/<(b|strong|i|em|u|mark|sup|sub|ul|ol|li|div|p|span|br)\b/i.test(trimmedText)) {
+                return window.sanitizeRichTextHtml(trimmedText);
+            }
             const lines = trimmedText.split(/\r?\n/).map(l => l.trim()).filter((l, idx, arr) => {
                 // Hapus baris kosong beruntun di awal/akhir
                 if (idx === 0 && l === '') return false;
@@ -8189,7 +8364,7 @@
                             <div class="p-4 sm:p-6 flex-1 lg:overflow-y-auto custom-scrollbar space-y-4">
                                 <div class="bg-[#f8fafd] p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-2xs space-y-4">
                                     <div class="font-poppins font-normal text-[16.5px] sm:text-[18.5px] text-slate-900 leading-relaxed">
-                                        ${window.renderMathExpressionsInHtml(q.questionText)}
+                                        ${window.formatRichQuestionText(q.questionText)}
                                     </div>
                                     ${hasQuestionImg ? `
                                         <div class="pt-1">
