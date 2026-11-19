@@ -1253,9 +1253,39 @@
             }
         }
 
+        async function fetchSingleFirestoreDoc(collectionName, docId) {
+            if (IS_PREVIEW || !db) return null;
+            if (docId === undefined || docId === null || String(docId).trim() === '') return null;
+            try {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, String(docId).trim());
+                const snap = await getDoc(ref);
+                if (snap.exists()) {
+                    const raw = snap.data();
+                    if (collectionName === 'examResults') {
+                        return { ...raw, id: snap.id, _docId: snap.id, resultId: raw.resultId || snap.id };
+                    }
+                    return { ...raw, id: snap.id, _docId: snap.id };
+                }
+                return null;
+            } catch (err) {
+                console.error(`Fetch Doc Error [${collectionName}/${docId}]:`, err);
+                return null;
+            }
+        }
+
+        function promiseWithTimeout(promise, ms = 15000, label = 'Timeout koneksi Firestore') {
+            let timerId = null;
+            const timeoutPromise = new Promise((_, reject) => {
+                timerId = setTimeout(() => reject(new Error(label)), ms);
+            });
+            return Promise.race([promise, timeoutPromise]).finally(() => {
+                if (timerId) clearTimeout(timerId);
+            });
+        }
+
         async function bulkSyncCollectionRecords(collectionName, items, isDelete = false, onProgress = null) {
             const list = Array.isArray(items) ? items : [];
-            if (list.length === 0) return { successCount: 0, failedCount: 0, successIds: new Set() };
+            if (list.length === 0) return { successCount: 0, failedCount: 0, successIds: new Set(), errorMessage: '' };
 
             if (IS_PREVIEW || !db) {
                 const successIds = new Set();
@@ -1282,25 +1312,27 @@
                     });
                 }
                 if (typeof onProgress === 'function') onProgress(list.length, list.length);
-                return { successCount: successIds.size, failedCount: 0, successIds };
+                return { successCount: successIds.size, failedCount: 0, successIds, errorMessage: '' };
             }
 
             isBulkOperationInProgress = true;
             const successIds = new Set();
             let failedCount = 0;
             let processedCount = 0;
+            let lastErrorMessage = '';
 
             try {
                 if (auth && !auth.currentUser) {
                     try {
-                        await signInAnonymously(auth);
+                        await promiseWithTimeout(signInAnonymously(auth), 8000, 'Timeout autentikasi Firebase');
                     } catch (reAuthErr) {
                         console.warn('Re-auth notice:', reAuthErr.code || reAuthErr.message);
                     }
                 }
 
                 updateLiveSyncIndicator('syncing', `${isDelete ? 'Menghapus' : 'Menyimpan'} ${list.length} Data...`);
-                const batchLimit = 250; // Aman jauh di bawah batas 500 operasi per Firestore writeBatch
+                // Gunakan batch kecil (20 dokumen/transaksi) agar progres tampil real-time dan stabil di semua jaringan
+                const batchLimit = 20;
 
                 for (let i = 0; i < list.length; i += batchLimit) {
                     const slice = list.slice(i, i + batchLimit);
@@ -1328,7 +1360,7 @@
                             }
                         });
 
-                        await batch.commit();
+                        await promiseWithTimeout(batch.commit(), 15000, 'Timeout menyimpan batch ke Firestore');
 
                         if (isDelete) {
                             const delSet = new Set(sliceIds);
@@ -1352,27 +1384,48 @@
 
                         processedCount += slice.length;
                         if (typeof onProgress === 'function') onProgress(processedCount, list.length);
+                        // Beri jeda singkat agar browser me-render pembaruan progress bar dengan mulus
+                        await new Promise(resolve => setTimeout(resolve, 40));
                     } catch (batchErr) {
-                        console.warn(`Batch commit gagal [${collectionName}], beralih ke fallback per item:`, batchErr);
-                        // Fallback otomatis bila batch gagal agar data tetap tersimpan/terhapus satu per satu
-                        for (const entry of slice) {
-                            const safeId = isDelete ? String(entry || '').trim() : String(entry._docId || entry.id || '').trim();
-                            if (!safeId) {
-                                failedCount++;
+                        const errCode = batchErr?.code || '';
+                        lastErrorMessage = batchErr?.message || String(batchErr);
+                        console.warn(`Batch commit gagal [${collectionName}] (${errCode}):`, batchErr);
+
+                        if (errCode === 'permission-denied' || errCode === 'unauthenticated') {
+                            failedCount += (list.length - processedCount);
+                            break;
+                        }
+
+                        // Fallback paralel per 5 dokumen dengan timeout agar tetap cepat & tidak macet
+                        const subChunkSize = 5;
+                        for (let j = 0; j < slice.length; j += subChunkSize) {
+                            const subSlice = slice.slice(j, j + subChunkSize);
+                            const results = await Promise.allSettled(subSlice.map(async (entry) => {
+                                const safeId = isDelete ? String(entry || '').trim() : String(entry._docId || entry.id || '').trim();
+                                if (!safeId) return { ok: false, id: '' };
+                                const ok = await promiseWithTimeout(
+                                    syncCollectionRecord(collectionName, safeId, isDelete ? null : entry, isDelete),
+                                    10000,
+                                    'Timeout item Firestore'
+                                );
+                                return { ok, id: safeId };
+                            }));
+                            results.forEach(r => {
+                                if (r.status === 'fulfilled' && r.value.ok && r.value.id) {
+                                    successIds.add(r.value.id);
+                                } else {
+                                    failedCount++;
+                                }
                                 processedCount++;
-                                continue;
-                            }
-                            const ok = await syncCollectionRecord(collectionName, safeId, isDelete ? null : entry, isDelete);
-                            if (ok) successIds.add(safeId);
-                            else failedCount++;
-                            processedCount++;
+                            });
                             if (typeof onProgress === 'function') onProgress(processedCount, list.length);
+                            await new Promise(resolve => setTimeout(resolve, 30));
                         }
                     }
                 }
 
                 updateLiveSyncIndicator(failedCount > 0 ? 'error' : 'updated', failedCount > 0 ? 'Sebagian Gagal' : 'Data Diperbarui');
-                return { successCount: successIds.size, failedCount, successIds };
+                return { successCount: successIds.size, failedCount, successIds, errorMessage: lastErrorMessage };
             } finally {
                 isBulkOperationInProgress = false;
             }
@@ -2780,6 +2833,15 @@
                                     <p class="text-[11px] text-indigo-700 mt-0.5">Total Terbaca: <strong>${parsedStudents.length} baris</strong> • Siap Disimpan: <strong>${validList.length} siswa</strong> ${parsedStudents.length - validList.length > 0 ? `• Duplikat dilewati: <strong>${parsedStudents.length - validList.length}</strong>` : ''}</p>
                                 </div>
                             </div>
+                            <div id="studentImportProgressWrap" class="hidden p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1.5">
+                                <div class="flex items-center justify-between text-[11px] font-bold text-emerald-800">
+                                    <span id="studentImportProgressText"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyimpan data ke database...</span>
+                                    <span id="studentImportProgressPct">0%</span>
+                                </div>
+                                <div class="w-full h-2.5 bg-emerald-100 rounded-full overflow-hidden">
+                                    <div id="studentImportProgressBar" class="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 rounded-full transition-all duration-200" style="width: 0%;"></div>
+                                </div>
+                            </div>
                             <div class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
                                 <table class="w-full text-left border-collapse">
                                     <thead>
@@ -2801,6 +2863,15 @@
                     window.showModal('Pratinjau Impor Data Siswa (.xlsx)', '', 'info', async (confirmed) => {
                         if (!confirmed) return true;
                         const btnOk = document.getElementById('modalBtnOk');
+                        const btnCancel = document.getElementById('modalBtnCancel');
+                        const progWrap = document.getElementById('studentImportProgressWrap');
+                        const progBar = document.getElementById('studentImportProgressBar');
+                        const progText = document.getElementById('studentImportProgressText');
+                        const progPct = document.getElementById('studentImportProgressPct');
+
+                        if (progWrap) progWrap.classList.remove('hidden');
+                        if (btnCancel) btnCancel.disabled = true;
+
                         const baseTs = Date.now();
                         const newRecords = validList.map((item, idx) => {
                             const clsObj = appData.classes.find(c => String(c.className || '').trim().toLowerCase() === String(item.className).toLowerCase()) || appData.classes[0];
@@ -2821,15 +2892,26 @@
                             };
                         });
 
-                        if (btnOk) btnOk.innerText = `Menyimpan 0/${newRecords.length}...`;
-                        const res = await bulkSyncCollectionRecords('students', newRecords, false, (done, total) => {
-                            if (btnOk) btnOk.innerText = `Menyimpan ${done}/${total}...`;
-                        });
+                        const updateUiProgress = (done, total) => {
+                            const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+                            if (btnOk) btnOk.innerText = `Menyimpan ${done}/${total} (${pct}%)...`;
+                            if (progBar) progBar.style.width = `${pct}%`;
+                            if (progPct) progPct.innerText = `${pct}%`;
+                            if (progText) progText.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyimpan ${done} dari ${total} siswa ke Cloud...`;
+                        };
 
+                        updateUiProgress(0, newRecords.length);
+                        // Beri kesempatan browser menampilkan progress bar sebelum batch pertama berjalan
+                        await new Promise(resolve => setTimeout(resolve, 40));
+
+                        const res = await bulkSyncCollectionRecords('students', newRecords, false, updateUiProgress);
+
+                        if (btnCancel) btnCancel.disabled = false;
                         logActivity(`Impor Excel Siswa selesai: ${res.successCount} data siswa baru ditambahkan.`);
                         renderStudentsContent(document.getElementById('adminMainContent'));
                         if (res.failedCount > 0) {
-                            window.showModal('Sebagian Impor Gagal', `${res.successCount} siswa berhasil disimpan, namun ${res.failedCount} siswa gagal disimpan ke Firestore. Silakan coba impor ulang untuk sisanya.`, 'error');
+                            const errHint = res.errorMessage ? ` Detail: ${res.errorMessage}` : '';
+                            window.showModal('Sebagian Impor Gagal', `${res.successCount} siswa berhasil disimpan, namun ${res.failedCount} siswa gagal disimpan ke Firestore.${errHint}`, 'error');
                         } else {
                             window.showModal('Impor Berhasil', `Berhasil menyimpan seluruh ${res.successCount} data siswa ke Firebase Firestore.`, 'success');
                         }
