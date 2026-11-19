@@ -261,7 +261,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const APP_VERSION = '4.0.0';
@@ -1260,11 +1260,7 @@
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, String(docId).trim());
                 const snap = await getDoc(ref);
                 if (snap.exists()) {
-                    const raw = snap.data();
-                    if (collectionName === 'examResults') {
-                        return { ...raw, id: snap.id, _docId: snap.id, resultId: raw.resultId || snap.id };
-                    }
-                    return { ...raw, id: snap.id, _docId: snap.id };
+                    return { ...snap.data(), id: snap.id, _docId: snap.id };
                 }
                 return null;
             } catch (err) {
@@ -1273,7 +1269,7 @@
             }
         }
 
-        function promiseWithTimeout(promise, ms = 15000, label = 'Timeout koneksi Firestore') {
+        function promiseWithTimeout(promise, ms = 30000, label = 'Timeout koneksi Firestore') {
             let timerId = null;
             const timeoutPromise = new Promise((_, reject) => {
                 timerId = setTimeout(() => reject(new Error(label)), ms);
@@ -1324,15 +1320,15 @@
             try {
                 if (auth && !auth.currentUser) {
                     try {
-                        await promiseWithTimeout(signInAnonymously(auth), 8000, 'Timeout autentikasi Firebase');
+                        await promiseWithTimeout(signInAnonymously(auth), 10000, 'Timeout autentikasi Firebase');
                     } catch (reAuthErr) {
                         console.warn('Re-auth notice:', reAuthErr.code || reAuthErr.message);
                     }
                 }
 
                 updateLiveSyncIndicator('syncing', `${isDelete ? 'Menghapus' : 'Menyimpan'} ${list.length} Data...`);
-                // Gunakan batch kecil (20 dokumen/transaksi) agar progres tampil real-time dan stabil di semua jaringan
-                const batchLimit = 20;
+                // Gunakan batch 50 dokumen per transaksi atomik agar 238+ siswa selesai dalam ~5 transaksi cepat & pasti tersimpan di server
+                const batchLimit = 50;
 
                 for (let i = 0; i < list.length; i += batchLimit) {
                     const slice = list.slice(i, i + batchLimit);
@@ -1360,7 +1356,8 @@
                             }
                         });
 
-                        await promiseWithTimeout(batch.commit(), 15000, 'Timeout menyimpan batch ke Firestore');
+                        // Tunggu konfirmasi langsung dari server Firestore (bukan sekadar cache lokal)
+                        await promiseWithTimeout(batch.commit(), 30000, 'Timeout konfirmasi server Firestore');
 
                         if (isDelete) {
                             const delSet = new Set(sliceIds);
@@ -1384,20 +1381,19 @@
 
                         processedCount += slice.length;
                         if (typeof onProgress === 'function') onProgress(processedCount, list.length);
-                        // Beri jeda singkat agar browser me-render pembaruan progress bar dengan mulus
-                        await new Promise(resolve => setTimeout(resolve, 40));
+                        await new Promise(resolve => setTimeout(resolve, 20));
                     } catch (batchErr) {
                         const errCode = batchErr?.code || '';
-                        lastErrorMessage = batchErr?.message || String(batchErr);
-                        console.warn(`Batch commit gagal [${collectionName}] (${errCode}):`, batchErr);
+                        lastErrorMessage = errCode ? `[${errCode}] ${batchErr?.message || ''}` : (batchErr?.message || String(batchErr));
+                        console.error(`Batch commit gagal [${collectionName}]:`, batchErr);
 
                         if (errCode === 'permission-denied' || errCode === 'unauthenticated') {
                             failedCount += (list.length - processedCount);
                             break;
                         }
 
-                        // Fallback paralel per 5 dokumen dengan timeout agar tetap cepat & tidak macet
-                        const subChunkSize = 5;
+                        // Fallback paralel per 10 dokumen bila 1 batch gagal
+                        const subChunkSize = 10;
                         for (let j = 0; j < slice.length; j += subChunkSize) {
                             const subSlice = slice.slice(j, j + subChunkSize);
                             const results = await Promise.allSettled(subSlice.map(async (entry) => {
@@ -1405,7 +1401,7 @@
                                 if (!safeId) return { ok: false, id: '' };
                                 const ok = await promiseWithTimeout(
                                     syncCollectionRecord(collectionName, safeId, isDelete ? null : entry, isDelete),
-                                    10000,
+                                    15000,
                                     'Timeout item Firestore'
                                 );
                                 return { ok, id: safeId };
@@ -1419,12 +1415,11 @@
                                 processedCount++;
                             });
                             if (typeof onProgress === 'function') onProgress(processedCount, list.length);
-                            await new Promise(resolve => setTimeout(resolve, 30));
                         }
                     }
                 }
 
-                updateLiveSyncIndicator(failedCount > 0 ? 'error' : 'updated', failedCount > 0 ? 'Sebagian Gagal' : 'Data Diperbarui');
+                updateLiveSyncIndicator(failedCount > 0 ? 'error' : 'updated', failedCount > 0 ? 'Sebagian Gagal' : 'Data Tersimpan Cloud');
                 return { successCount: successIds.size, failedCount, successIds, errorMessage: lastErrorMessage };
             } finally {
                 isBulkOperationInProgress = false;
@@ -1446,7 +1441,15 @@
             try {
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
-                db = getFirestore(app);
+                // Gunakan experimentalAutoDetectLongPolling agar koneksi Firestore stabil dan tidak macet pada jaringan sekolah/proxy
+                try {
+                    db = initializeFirestore(app, {
+                        experimentalAutoDetectLongPolling: true,
+                        useFetchStreams: false
+                    });
+                } catch (fsInitErr) {
+                    db = getFirestore(app);
+                }
                 storage = getStorage(app);
 
                 try {
@@ -1465,22 +1468,31 @@
                     'examParticipants', 'examSessions', 'examResults'
                 ];
 
-                for (const colName of collectionsToLoad) {
-                    const snap = await getDocs(
-                        collection(db, 'artifacts', appId, 'public', 'data', colName)
-                    );
-                    appData[colName] = snap.docs.map(d => {
+                // Muat seluruh koleksi & pengaturan secara paralel agar halaman terbuka jauh lebih cepat saat reload
+                const [colSnapshots, settingsSnap] = await Promise.all([
+                    Promise.all(collectionsToLoad.map(colName =>
+                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName))
+                            .then(snap => ({ colName, snap }))
+                    )),
+                    getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'appSettings', 'global'))
+                ]);
+
+                colSnapshots.forEach(({ colName, snap }) => {
+                    const docsList = snap.docs.map(d => {
                         const raw = d.data();
                         if (colName === 'examResults') {
                             return { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id };
                         }
                         return { ...raw, id: d.id, _docId: d.id };
                     });
-                }
+                    if (colName === 'questions') {
+                        docsList.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+                    } else if (colName === 'students') {
+                        docsList.sort((a, b) => (Number(a.importOrder) || 0) - (Number(b.importOrder) || 0) || String(a.fullName || '').localeCompare(String(b.fullName || '')));
+                    }
+                    appData[colName] = docsList;
+                });
 
-                const settingsSnap = await getDoc(
-                    doc(db, 'artifacts', appId, 'public', 'data', 'appSettings', 'global')
-                );
                 if (settingsSnap.exists()) {
                     appData.settings = { ...appData.settings, ...settingsSnap.data() };
                 }
@@ -1522,10 +1534,11 @@
                         }
                         return { ...raw, id: d.id, _docId: d.id };
                     });
-
-                    // Urutkan soal berdasarkan nomor urut agar konsisten
+                    // Urutkan soal & siswa agar tampilan selalu konsisten saat reload maupun live sync
                     if (colName === 'questions') {
                         docsList.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+                    } else if (colName === 'students') {
+                        docsList.sort((a, b) => (Number(a.importOrder) || 0) - (Number(b.importOrder) || 0) || String(a.fullName || '').localeCompare(String(b.fullName || '')));
                     }
 
                     appData[colName] = docsList;
@@ -2875,8 +2888,10 @@
                         const baseTs = Date.now();
                         const newRecords = validList.map((item, idx) => {
                             const clsObj = appData.classes.find(c => String(c.className || '').trim().toLowerCase() === String(item.className).toLowerCase()) || appData.classes[0];
+                            const cleanNisnId = String(item.nisn || '').replace(/[^a-zA-Z0-9_-]/g, '');
+                            const docId = cleanNisnId ? `STD-${cleanNisnId}` : `STD-${baseTs}-${idx}`;
                             return {
-                                id: `STD-${baseTs}-${idx}-${Math.floor(Math.random() * 10000)}`,
+                                id: docId,
                                 nisn: item.nisn,
                                 nis: item.nis,
                                 fullName: item.fullName,
@@ -2888,6 +2903,7 @@
                                 username: item.nisn,
                                 pin: item.pin,
                                 passwordHash: hashCredential(item.pin),
+                                importOrder: idx + 1,
                                 status: 'Aktif'
                             };
                         });
@@ -2902,18 +2918,29 @@
 
                         updateUiProgress(0, newRecords.length);
                         // Beri kesempatan browser menampilkan progress bar sebelum batch pertama berjalan
-                        await new Promise(resolve => setTimeout(resolve, 40));
+                        await new Promise(resolve => setTimeout(resolve, 30));
 
                         const res = await bulkSyncCollectionRecords('students', newRecords, false, updateUiProgress);
+
+                        // Verifikasi ulang langsung dari server Firestore agar 100% pasti tersimpan permanen saat reload
+                        if (!IS_PREVIEW && db && res.successCount > 0) {
+                            try {
+                                const verifySnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'students'));
+                                appData.students = verifySnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }))
+                                    .sort((a, b) => (Number(a.importOrder) || 0) - (Number(b.importOrder) || 0) || String(a.fullName || '').localeCompare(String(b.fullName || '')));
+                            } catch (verifyErr) {
+                                console.warn('Verify students reload notice:', verifyErr);
+                            }
+                        }
 
                         if (btnCancel) btnCancel.disabled = false;
                         logActivity(`Impor Excel Siswa selesai: ${res.successCount} data siswa baru ditambahkan.`);
                         renderStudentsContent(document.getElementById('adminMainContent'));
                         if (res.failedCount > 0) {
                             const errHint = res.errorMessage ? ` Detail: ${res.errorMessage}` : '';
-                            window.showModal('Sebagian Impor Gagal', `${res.successCount} siswa berhasil disimpan, namun ${res.failedCount} siswa gagal disimpan ke Firestore.${errHint}`, 'error');
+                            window.showModal('Sebagian Impor Gagal', `${res.successCount} siswa berhasil disimpan permanen, namun ${res.failedCount} siswa gagal disimpan ke Firestore.${errHint}`, 'error');
                         } else {
-                            window.showModal('Impor Berhasil', `Berhasil menyimpan seluruh ${res.successCount} data siswa ke Firebase Firestore.`, 'success');
+                            window.showModal('Impor Berhasil', `Berhasil menyimpan seluruh ${res.successCount} data siswa secara permanen ke Firebase Firestore.`, 'success');
                         }
                         return true;
                     }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Siswa ke Database` });
