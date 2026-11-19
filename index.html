@@ -1045,31 +1045,31 @@
             });
         }
 
+        let isCleaningOrphans = false;
+
         async function cleanupOrphanedResultsAndSessionsInCloud() {
+            if (isCleaningOrphans || isBulkOperationInProgress) return 0;
             const validExamIds = new Set((appData.exams || []).map(e => e.id));
             const orphanedResults = (appData.examResults || []).filter(r => !isResultValidAndActive(r));
             const orphanedSessions = (appData.examSessions || []).filter(s => !validExamIds.has(s.examId));
 
             if (orphanedResults.length === 0 && orphanedSessions.length === 0) return 0;
 
-            let removedCount = 0;
-            for (const r of orphanedResults) {
-                const docId = r.id || r.resultId;
-                if (docId) {
-                    await syncCollectionRecord('examResults', docId, null, true);
-                    removedCount++;
-                }
-            }
-            appData.examResults = (appData.examResults || []).filter(r => isResultValidAndActive(r));
+            isCleaningOrphans = true;
+            try {
+                const resIds = orphanedResults.map(r => String(r._docId || r.id || r.resultId || '')).filter(Boolean);
+                const sessIds = orphanedSessions.map(s => String(s._docId || s.id || '')).filter(Boolean);
 
-            for (const s of orphanedSessions) {
-                if (s.id) {
-                    await syncCollectionRecord('examSessions', s.id, null, true);
+                if (resIds.length > 0) {
+                    await bulkSyncCollectionRecords('examResults', resIds, true);
                 }
+                if (sessIds.length > 0) {
+                    await bulkSyncCollectionRecords('examSessions', sessIds, true);
+                }
+                return resIds.length;
+            } finally {
+                isCleaningOrphans = false;
             }
-            appData.examSessions = (appData.examSessions || []).filter(s => validExamIds.has(s.examId));
-
-            return removedCount;
         }
 
         function getDeviceLabel() {
@@ -1609,7 +1609,7 @@
             // Fallback polling ringan setiap 15 detik untuk menjaga konsistensi jika koneksi sempat idle
             if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
             fallbackPollingInterval = setInterval(async () => {
-                if (!db || document.hidden) return;
+                if (!db || document.hidden || isBulkOperationInProgress) return;
                 try {
                     const dynamicCols = ['exams', 'examParticipants', 'examSessions', 'examResults'];
                     for (const cName of dynamicCols) {
@@ -1865,21 +1865,21 @@
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">NISN / Username Siswa</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-id-card"></i></span>
-                                        <input type="text" id="loginStudentUsername" value="" placeholder="Masukkan NISN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="text" id="loginStudentUsername" value="" onkeydown="if(event.key==='Enter') window.handleStudentLogin()" placeholder="Masukkan NISN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">PIN / Password Siswa</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
-                                        <input type="password" id="loginStudentPin" value="" placeholder="Masukkan PIN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="password" id="loginStudentPin" value="" onkeydown="if(event.key==='Enter') window.handleStudentLogin()" placeholder="Masukkan PIN" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Token Ujian <span class="text-slate-400 font-normal">(Opsional)</span></label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-key"></i></span>
-                                        <input type="text" id="loginStudentToken" value="" placeholder="Contoh: IPAS4A" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase tracking-widest text-indigo-700">
+                                        <input type="text" id="loginStudentToken" value="" onkeydown="if(event.key==='Enter') window.handleStudentLogin()" placeholder="Contoh: IPAS4A" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase tracking-widest text-indigo-700">
                                     </div>
                                 </div>
                                 <button type="button" onclick="window.handleStudentLogin()" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-lg transition">
@@ -1892,14 +1892,14 @@
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Email / Username Admin atau Guru</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-envelope"></i></span>
-                                        <input type="text" id="loginAdminEmail" value="" placeholder="Email, Username, atau NIP Guru" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="text" id="loginAdminEmail" value="" onkeydown="if(event.key==='Enter') window.handleAdminLogin()" placeholder="Email, Username, atau NIP Guru" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold uppercase text-slate-600 mb-1">Password / PIN Login</label>
                                     <div class="relative">
                                         <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400"><i class="fa-solid fa-lock"></i></span>
-                                        <input type="password" id="loginAdminPass" value="" placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
+                                        <input type="password" id="loginAdminPass" value="" onkeydown="if(event.key==='Enter') window.handleAdminLogin()" placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
                                 <button type="button" onclick="window.handleAdminLogin()" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-lg transition">
@@ -1952,7 +1952,10 @@
                 return;
             }
 
-            const student = appData.students.find(s => (s.nisn === username || s.username === username) && s.status === 'Aktif');
+            const student = appData.students.find(s =>
+                (String(s.nisn || '').trim() === username || String(s.username || '').trim() === username) &&
+                (s.status || 'Aktif') === 'Aktif'
+            );
             if (!student) {
                 showLoginError('Akun siswa tidak ditemukan atau tidak aktif.');
                 return;
@@ -1968,18 +1971,20 @@
             // Aktifkan mode layar penuh (Fullscreen) segera saat tombol login siswa ditekan
             window.enterStudentFullscreen();
 
+            const studentDocId = String(student._docId || student.id);
+
             // Cek status login real-time langsung dari Firestore untuk mencegah login ganda di perangkat/tab lain
             let latestStudentDoc = student;
             if (!IS_PREVIEW && db) {
                 try {
-                    const cloudStudent = await fetchSingleFirestoreDoc('students', student.id);
+                    const cloudStudent = await fetchSingleFirestoreDoc('students', studentDocId);
                     if (cloudStudent) {
                         latestStudentDoc = cloudStudent;
-                        const sIdx = appData.students.findIndex(s => s.id === student.id);
+                        const sIdx = appData.students.findIndex(s => String(s._docId || s.id) === studentDocId);
                         if (sIdx !== -1) appData.students[sIdx] = { ...appData.students[sIdx], ...cloudStudent };
                     }
                     const sessSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examSessions'));
-                    appData.examSessions = sessSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    appData.examSessions = sessSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
                 } catch (err) {
                     console.warn('Gagal memeriksa kunci sesi siswa:', err);
                 }
@@ -1987,7 +1992,7 @@
 
             // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain dalam 90 detik terakhir
             const activeOtherExamSess = (appData.examSessions || []).find(ss =>
-                ss.studentId === student.id &&
+                (ss.studentId === studentDocId || (student.nisn && String(ss.nisn) === String(student.nisn))) &&
                 ss.status === 'IN_PROGRESS' &&
                 ss.deviceSessionId &&
                 ss.deviceSessionId !== currentDeviceSessionId &&
@@ -2014,7 +2019,7 @@
             student.lastHeartbeatAt = nowMs;
             student.deviceInfo = devInfoStr;
 
-            await syncCollectionRecord('students', student.id, {
+            await syncCollectionRecord('students', studentDocId, {
                 isLoggedIn: true,
                 activeSessionId: currentDeviceSessionId,
                 loginAt: student.loginAt,
@@ -2024,9 +2029,9 @@
 
             appData.currentUser = {
                 role: 'student',
-                studentId: student.id,
-                nisn: student.nisn,
-                name: student.fullName,
+                studentId: studentDocId,
+                nisn: String(student.nisn || ''),
+                name: student.fullName || student.name || 'Siswa',
                 classId: student.classId,
                 className: student.className,
                 enteredToken: token,
@@ -2044,10 +2049,13 @@
                         getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examResults')),
                         getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examParticipants'))
                     ]);
-                    appData.exams = examsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    appData.examSessions = sessSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-                    appData.examResults = resSnap.docs.map(d => ({ id: d.id, resultId: d.data().resultId || d.id, ...d.data() }));
-                    appData.examParticipants = partSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    appData.exams = examsSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
+                    appData.examSessions = sessSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
+                    appData.examResults = resSnap.docs.map(d => {
+                        const raw = d.data();
+                        return { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id };
+                    });
+                    appData.examParticipants = partSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
                 } catch (err) {
                     console.warn('Gagal menyegarkan sesi terbaru:', err);
                 }
@@ -2085,7 +2093,7 @@
             if (!IS_PREVIEW && db && (!Array.isArray(appData.teachers) || appData.teachers.length === 0)) {
                 try {
                     const tSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teachers'));
-                    appData.teachers = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    appData.teachers = tSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
                 } catch (fetchErr) {
                     console.warn('Gagal memuat koleksi teachers saat login:', fetchErr);
                 }
@@ -2164,20 +2172,21 @@
         window.releaseStudentLoginLock = async function(studentIdOverride = null) {
             const targetStudentId = studentIdOverride || (appData.currentUser && appData.currentUser.role === 'student' ? appData.currentUser.studentId : null);
             if (!targetStudentId) return;
-            const stdObj = appData.students.find(s => s.id === targetStudentId);
+            const stdObj = appData.students.find(s => String(s._docId || s.id) === String(targetStudentId) || String(s.id) === String(targetStudentId));
+            const docId = stdObj ? String(stdObj._docId || stdObj.id) : String(targetStudentId);
             if (stdObj) {
                 stdObj.isLoggedIn = false;
                 stdObj.activeSessionId = '';
                 stdObj.lastHeartbeatAt = 0;
             }
-            await syncCollectionRecord('students', targetStudentId, {
+            await syncCollectionRecord('students', docId, {
                 isLoggedIn: false,
                 activeSessionId: '',
                 lastHeartbeatAt: 0
             });
         };
 
-        window.autoLogoutStudentToInitialLogin = async function() {
+        window.autoLogoutStudentToInitialLogin = async function(noticeTitle = '', noticeMessage = '', noticeType = 'info') {
             const studentIdToRelease = appData.currentUser && appData.currentUser.role === 'student'
                 ? appData.currentUser.studentId
                 : null;
@@ -2204,6 +2213,10 @@
 
             if (studentIdToRelease) {
                 await window.releaseStudentLoginLock(studentIdToRelease);
+            }
+
+            if (noticeTitle && noticeMessage) {
+                window.showModal(noticeTitle, noticeMessage, noticeType || 'info');
             }
         };
 
@@ -3476,7 +3489,9 @@
         function renderQuestionBanksContent(container) {
             const selectedBank = appData.filters.questionBankId || 'ALL';
             const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${selectedBank === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
-            const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
+            const filteredQuestions = appData.questions
+                .filter(q => selectedBank === 'ALL' || q.bankId === selectedBank)
+                .sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
             const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(String(q.questionText || '').replace(/<[^>]*>/g, '').slice(0, 40))}...</option>`).join('');
             const canDeleteBank = selectedBank !== 'ALL' && appData.questionBanks.some(b => b.id === selectedBank);
 
@@ -3665,18 +3680,21 @@
         window.deleteCurrentLoadedQuestion = function() {
             const qId = document.getElementById('editQuestionId')?.value;
             if (!qId) return;
+            const targetQ = appData.questions.find(x => String(x._docId || x.id) === String(qId) || String(x.id) === String(qId));
+            const docId = targetQ ? String(targetQ._docId || targetQ.id) : String(qId);
             window.showModal('Hapus Butir Soal', 'Apakah Anda yakin ingin menghapus butir soal ini dari Bank Soal?', 'error', async (confirmed) => {
                 if (confirmed) {
-                    appData.questions = appData.questions.filter(x => x.id !== qId);
-                    await syncCollectionRecord('questions', qId, null, true);
+                    appData.questions = appData.questions.filter(x => String(x._docId || x.id) !== docId && String(x.id) !== docId);
+                    await syncCollectionRecord('questions', docId, null, true);
                     for (const ex of appData.exams) {
-                        if (Array.isArray(ex.questionIds) && ex.questionIds.includes(qId)) {
-                            ex.questionIds = ex.questionIds.filter(id => id !== qId);
-                            await syncCollectionRecord('exams', ex.id, ex);
+                        if (Array.isArray(ex.questionIds) && ex.questionIds.includes(docId)) {
+                            ex.questionIds = ex.questionIds.filter(id => id !== docId);
+                            await syncCollectionRecord('exams', String(ex._docId || ex.id), ex);
                         }
                     }
                     renderQuestionBanksContent(document.getElementById('adminMainContent'));
                 }
+                return true;
             }, { showCancel: true, okText: 'Hapus Soal' });
         };
 
@@ -3907,11 +3925,11 @@
             window.updateQuestionLivePreview();
         };
 
-        window.saveQuestionRecord = function() {
+        window.saveQuestionRecord = async function() {
             const editId = document.getElementById('editQuestionId')?.value || '';
             const orderNum = Number(document.getElementById('qFormNum')?.value) || 1;
             const type = document.getElementById('qFormType')?.value || 'pg';
-            const weight = Number(document.getElementById('qFormWeight')?.value) || 10;
+            const weight = Math.max(1, Number(document.getElementById('qFormWeight')?.value) || 10);
             const stimulusText = (document.getElementById('qFormStimulus')?.value || '').trim();
             const stimulusImage = (document.getElementById('qFormStimulusImg')?.value || '').trim();
             const questionText = (document.getElementById('qFormText')?.value || '').trim();
@@ -3973,10 +3991,13 @@
             const selectedBank = appData.filters.questionBankId && appData.filters.questionBankId !== 'ALL'
                 ? appData.filters.questionBankId
                 : (appData.questionBanks[0] ? appData.questionBanks[0].id : 'QB-DEFAULT');
+            const bankObj = appData.questionBanks.find(b => b.id === selectedBank) || null;
 
+            let savedOk = false;
             if (editId) {
-                const existing = appData.questions.find(x => x.id === editId);
+                const existing = appData.questions.find(x => String(x._docId || x.id) === String(editId) || String(x.id) === String(editId));
                 if (existing) {
+                    const docId = String(existing._docId || existing.id);
                     existing.orderNum = orderNum;
                     existing.type = type;
                     existing.weight = weight;
@@ -3988,14 +4009,14 @@
                     if (type === 'matching') existing.matchingPairs = matchingPairs;
                     existing.correctAnswer = correctAnswer;
                     existing.explanation = explanation;
-                    syncCollectionRecord('questions', existing.id, existing);
+                    savedOk = await syncCollectionRecord('questions', docId, existing);
                 }
             } else {
                 const newQ = {
                     id: 'Q-' + Date.now(),
                     bankId: selectedBank,
-                    subjectId: appData.subjects[0] ? appData.subjects[0].id : 'SUB-IPAS',
-                    classLevel: '4',
+                    subjectId: (bankObj && bankObj.subjectId) || (appData.subjects[0] ? appData.subjects[0].id : 'SUB-IPAS'),
+                    classLevel: (bankObj && bankObj.classLevel) || '4',
                     orderNum,
                     type,
                     weight,
@@ -4011,19 +4032,26 @@
                     difficulty: 'Sedang'
                 };
                 appData.questions.push(newQ);
-                syncCollectionRecord('questions', newQ.id, newQ);
-                for (const ex of appData.exams) {
-                    if (ex.bankId === selectedBank) {
-                        if (!Array.isArray(ex.questionIds)) ex.questionIds = [];
-                        if (!ex.questionIds.includes(newQ.id)) {
-                            ex.questionIds.push(newQ.id);
-                            syncCollectionRecord('exams', ex.id, ex);
+                savedOk = await syncCollectionRecord('questions', newQ.id, newQ);
+                if (savedOk) {
+                    for (const ex of appData.exams) {
+                        if (ex.bankId === selectedBank) {
+                            if (!Array.isArray(ex.questionIds)) ex.questionIds = [];
+                            if (!ex.questionIds.includes(newQ.id)) {
+                                ex.questionIds.push(newQ.id);
+                                await syncCollectionRecord('exams', String(ex._docId || ex.id), ex);
+                            }
                         }
                     }
                 }
             }
 
-            window.showModal('Berhasil', 'Butir soal berhasil disimpan ke bank soal.', 'success');
+            appData.questions.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+            if (savedOk) {
+                window.showModal('Berhasil', 'Butir soal berhasil disimpan ke bank soal.', 'success');
+            } else {
+                window.showModal('Gagal Menyimpan', 'Butir soal gagal tersinkron ke Firestore. Periksa koneksi internet Anda.', 'error');
+            }
             renderQuestionBanksContent(document.getElementById('adminMainContent'));
         };
 
@@ -4398,27 +4426,27 @@
 
                     window.showModal('Pratinjau Impor Akun Guru (.xlsx)', '', 'info', async (confirmed) => {
                         if (!confirmed) return true;
-                        for (let i = 0; i < validList.length; i++) {
-                            const item = validList[i];
-                            const newTch = {
-                                id: 'TCH-' + Date.now() + '-' + i,
-                                nip: item.nip,
-                                fullName: item.fullName,
-                                name: item.fullName,
-                                subjects: item.subject.split(',').map(s => s.trim()).filter(Boolean),
-                                username: item.username,
-                                email: item.username,
-                                password: item.password,
-                                passwordHash: hashCredential(item.password),
-                                role: item.role,
-                                classes: ['1', '2', '3', '4', '5', '6'],
-                                status: 'Aktif'
-                            };
-                            appData.teachers.push(newTch);
-                            await syncCollectionRecord('teachers', newTch.id, newTch);
-                        }
+                        const newTeacherRecords = validList.map((item, i) => ({
+                            id: 'TCH-' + Date.now() + '-' + i,
+                            nip: item.nip,
+                            fullName: item.fullName,
+                            name: item.fullName,
+                            subjects: item.subject.split(',').map(s => s.trim()).filter(Boolean),
+                            username: item.username,
+                            email: item.username,
+                            password: item.password,
+                            passwordHash: hashCredential(item.password),
+                            role: item.role,
+                            classes: ['1', '2', '3', '4', '5', '6'],
+                            status: 'Aktif'
+                        }));
+                        const res = await bulkSyncCollectionRecords('teachers', newTeacherRecords, false);
                         renderTeachersContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${validList.length} akun guru ke Firestore.`, 'success');
+                        if (res.failedCount > 0) {
+                            window.showModal('Impor Sebagian Berhasil', `${res.successCount} akun guru tersimpan, ${res.failedCount} gagal.`, 'error');
+                        } else {
+                            window.showModal('Impor Berhasil', `Berhasil menyimpan ${res.successCount} akun guru ke Firestore.`, 'success');
+                        }
                         return true;
                     }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Guru` });
                 });
@@ -4456,6 +4484,7 @@
                 }
                 const subjects = subjectsRaw ? subjectsRaw.split(',').map(s => s.trim()).filter(Boolean) : ['GURU KELAS'];
                 if (existing) {
+                    const docId = String(existing._docId || existing.id);
                     existing.nip = nip || username;
                     existing.fullName = fullName;
                     existing.name = fullName;
@@ -4466,7 +4495,7 @@
                     existing.password = password;
                     existing.passwordHash = hashCredential(password);
                     existing.status = status;
-                    await syncCollectionRecord('teachers', existing.id, existing);
+                    await syncCollectionRecord('teachers', docId, existing);
                 } else {
                     const newTch = {
                         id: 'TCH-' + Date.now(),
@@ -4491,12 +4520,15 @@
         };
 
         window.deleteTeacherRecord = function(teacherId) {
+            const target = appData.teachers.find(x => String(x._docId || x.id) === String(teacherId) || String(x.id) === String(teacherId));
+            const docId = target ? String(target._docId || target.id) : String(teacherId);
             window.showModal('Hapus Guru', 'Yakin ingin menghapus data guru ini?', 'error', async (confirmed) => {
                 if (confirmed) {
-                    appData.teachers = appData.teachers.filter(x => x.id !== teacherId);
-                    await syncCollectionRecord('teachers', teacherId, null, true);
+                    appData.teachers = appData.teachers.filter(x => String(x._docId || x.id) !== docId && String(x.id) !== docId);
+                    await syncCollectionRecord('teachers', docId, null, true);
                     renderTeachersContent(document.getElementById('adminMainContent'));
                 }
+                return true;
             }, { showCancel: true, okText: 'Hapus' });
         };
 
@@ -4529,43 +4561,49 @@
         }
 
         window.openClassFormModal = function(classId = null) {
-            const existing = classId ? appData.classes.find(x => x.id === classId) : null;
+            const existing = classId ? appData.classes.find(x => String(x._docId || x.id) === String(classId) || String(x.id) === String(classId)) : null;
+            const curGrade = existing ? String(existing.gradeLevel || '4') : '4';
+            const gradeOpts = ['1', '2', '3', '4', '5', '6'].map(g => `<option value="${g}" ${curGrade === g ? 'selected' : ''}>${g}</option>`).join('');
             const html = `
                 <div class="grid grid-cols-1 gap-3 text-xs">
                     <div><label class="block font-bold text-slate-700 mb-1">Nomor Kelas (1 - 6) *</label><input type="text" id="clsFormName" value="${escapeHtml(existing ? existing.className : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
-                    <div><label class="block font-bold text-slate-700 mb-1">Tingkat Kelas</label><select id="clsFormGrade" class="w-full px-3 py-2 border border-slate-300 rounded-xl"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option><option value="5">5</option><option value="6">6</option></select></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">Tingkat Kelas</label><select id="clsFormGrade" class="w-full px-3 py-2 border border-slate-300 rounded-xl">${gradeOpts}</select></div>
                     <div><label class="block font-bold text-slate-700 mb-1">Wali Kelas</label><input type="text" id="clsFormTeacher" value="${escapeHtml(existing ? existing.homeroomTeacher : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
                 </div>
             `;
-            window.showModal(existing ? 'Edit Kelas' : 'Tambah Kelas Baru', '', 'info', (confirmed) => {
+            window.showModal(existing ? 'Edit Kelas' : 'Tambah Kelas Baru', '', 'info', async (confirmed) => {
                 if (!confirmed) return true;
                 const className = document.getElementById('clsFormName').value.trim();
                 const gradeLevel = document.getElementById('clsFormGrade').value;
                 const homeroomTeacher = document.getElementById('clsFormTeacher').value.trim();
                 if (!className) return false;
                 if (existing) {
+                    const docId = String(existing._docId || existing.id);
                     existing.className = className;
                     existing.gradeLevel = gradeLevel;
                     existing.homeroomTeacher = homeroomTeacher;
-                    syncCollectionRecord('classes', existing.id, existing);
+                    await syncCollectionRecord('classes', docId, existing);
                 } else {
                     const newCls = { id: 'CLS-' + Date.now(), className, gradeLevel, homeroomTeacher, academicYear: appData.settings.academicYear };
                     appData.classes.push(newCls);
-                    syncCollectionRecord('classes', newCls.id, newCls);
+                    await syncCollectionRecord('classes', newCls.id, newCls);
                 }
                 renderClassesContent(document.getElementById('adminMainContent'));
                 return true;
-            }, { html, okText: 'Simpan' });
+            }, { html, showCancel: true, okText: 'Simpan' });
         };
 
         window.deleteClassRecord = function(classId) {
-            window.showModal('Hapus Kelas', 'Yakin ingin menghapus kelas ini?', 'error', (confirmed) => {
+            const target = appData.classes.find(x => String(x._docId || x.id) === String(classId) || String(x.id) === String(classId));
+            const docId = target ? String(target._docId || target.id) : String(classId);
+            window.showModal('Hapus Kelas', 'Yakin ingin menghapus kelas ini?', 'error', async (confirmed) => {
                 if (confirmed) {
-                    appData.classes = appData.classes.filter(x => x.id !== classId);
-                    syncCollectionRecord('classes', classId, null, true);
+                    appData.classes = appData.classes.filter(x => String(x._docId || x.id) !== docId && String(x.id) !== docId);
+                    await syncCollectionRecord('classes', docId, null, true);
                     renderClassesContent(document.getElementById('adminMainContent'));
                 }
-            }, { okText: 'Hapus' });
+                return true;
+            }, { showCancel: true, okText: 'Hapus' });
         };
 
         function renderSubjectsContent(container) {
@@ -4596,40 +4634,44 @@
         }
 
         window.openSubjectFormModal = function(subjectId = null) {
-            const existing = subjectId ? appData.subjects.find(x => x.id === subjectId) : null;
+            const existing = subjectId ? appData.subjects.find(x => String(x._docId || x.id) === String(subjectId) || String(x.id) === String(subjectId)) : null;
             const html = `
                 <div class="grid grid-cols-1 gap-3 text-xs">
                     <div><label class="block font-bold text-slate-700 mb-1">Kode Mapel *</label><input type="text" id="subFormCode" value="${escapeHtml(existing ? existing.subjectCode : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono uppercase"></div>
                     <div><label class="block font-bold text-slate-700 mb-1">Nama Mata Pelajaran *</label><input type="text" id="subFormName" value="${escapeHtml(existing ? existing.subjectName : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
                 </div>
             `;
-            window.showModal(existing ? 'Edit Mata Pelajaran' : 'Tambah Mata Pelajaran Baru', '', 'info', (confirmed) => {
+            window.showModal(existing ? 'Edit Mata Pelajaran' : 'Tambah Mata Pelajaran Baru', '', 'info', async (confirmed) => {
                 if (!confirmed) return true;
                 const subjectCode = document.getElementById('subFormCode').value.trim().toUpperCase();
                 const subjectName = document.getElementById('subFormName').value.trim();
                 if (!subjectCode || !subjectName) return false;
                 if (existing) {
+                    const docId = String(existing._docId || existing.id);
                     existing.subjectCode = subjectCode;
                     existing.subjectName = subjectName;
-                    syncCollectionRecord('subjects', existing.id, existing);
+                    await syncCollectionRecord('subjects', docId, existing);
                 } else {
                     const newSub = { id: 'SUB-' + Date.now(), subjectCode, subjectName, gradeLevels: ['1', '2', '3', '4', '5', '6'] };
                     appData.subjects.push(newSub);
-                    syncCollectionRecord('subjects', newSub.id, newSub);
+                    await syncCollectionRecord('subjects', newSub.id, newSub);
                 }
                 renderSubjectsContent(document.getElementById('adminMainContent'));
                 return true;
-            }, { html, okText: 'Simpan Mapel' });
+            }, { html, showCancel: true, okText: 'Simpan Mapel' });
         };
 
         window.deleteSubjectRecord = function(subjectId) {
-            window.showModal('Hapus Mata Pelajaran', 'Yakin ingin menghapus mapel ini?', 'error', (confirmed) => {
+            const target = appData.subjects.find(x => String(x._docId || x.id) === String(subjectId) || String(x.id) === String(subjectId));
+            const docId = target ? String(target._docId || target.id) : String(subjectId);
+            window.showModal('Hapus Mata Pelajaran', 'Yakin ingin menghapus mapel ini?', 'error', async (confirmed) => {
                 if (confirmed) {
-                    appData.subjects = appData.subjects.filter(x => x.id !== subjectId);
-                    syncCollectionRecord('subjects', subjectId, null, true);
+                    appData.subjects = appData.subjects.filter(x => String(x._docId || x.id) !== docId && String(x.id) !== docId);
+                    await syncCollectionRecord('subjects', docId, null, true);
                     renderSubjectsContent(document.getElementById('adminMainContent'));
                 }
-            }, { okText: 'Hapus' });
+                return true;
+            }, { showCancel: true, okText: 'Hapus' });
         };
 
         function getTodayIsoWIB() {
@@ -5002,46 +5044,39 @@
         };
 
         window.toggleExamStatus = async function(examId) {
-            const ex = appData.exams.find(x => x.id === examId);
+            const ex = appData.exams.find(x => String(x._docId || x.id) === String(examId) || String(x.id) === String(examId));
             if (!ex) return;
             ex.status = isExamStrictlyActive(ex) ? 'Ditutup' : 'Aktif';
             ex.updatedAtMs = Date.now();
             renderExamsContent(document.getElementById('adminMainContent'));
-            await syncCollectionRecord('exams', ex.id, ex);
+            await syncCollectionRecord('exams', String(ex._docId || ex.id), ex);
             logActivity(`Status paket ujian "${ex.examName}" diubah menjadi ${ex.status}.`);
         };
 
         window.deleteExamRecord = function(examId) {
+            const targetExam = appData.exams.find(x => String(x._docId || x.id) === String(examId) || String(x.id) === String(examId));
+            const examDocId = targetExam ? String(targetExam._docId || targetExam.id) : String(examId);
             window.showModal('Hapus Paket Ujian', 'Yakin ingin menghapus paket ujian ini beserta riwayat sesi dan hasil nilainya?', 'error', async (confirmed) => {
                 if (confirmed) {
-                    appData.exams = appData.exams.filter(x => x.id !== examId);
-                    await syncCollectionRecord('exams', examId, null, true);
+                    appData.exams = appData.exams.filter(x => String(x._docId || x.id) !== examDocId && String(x.id) !== examDocId);
+                    await syncCollectionRecord('exams', examDocId, null, true);
 
-                    // Hapus juga riwayat examResults, examSessions, dan examParticipants milik paket ujian yang dihapus agar tidak menyisakan data yatim
-                    const orphanedRes = appData.examResults.filter(r => r.examId === examId);
-                    for (const r of orphanedRes) {
-                        await syncCollectionRecord('examResults', r.id || r.resultId, null, true);
-                    }
-                    appData.examResults = appData.examResults.filter(r => r.examId !== examId);
+                    const orphanedResIds = appData.examResults.filter(r => r.examId === examDocId || r.examId === examId).map(r => String(r._docId || r.id || r.resultId)).filter(Boolean);
+                    if (orphanedResIds.length > 0) await bulkSyncCollectionRecords('examResults', orphanedResIds, true);
 
-                    const orphanedSess = appData.examSessions.filter(s => s.examId === examId);
-                    for (const s of orphanedSess) {
-                        await syncCollectionRecord('examSessions', s.id, null, true);
-                    }
-                    appData.examSessions = appData.examSessions.filter(s => s.examId !== examId);
+                    const orphanedSessIds = appData.examSessions.filter(s => s.examId === examDocId || s.examId === examId).map(s => String(s._docId || s.id)).filter(Boolean);
+                    if (orphanedSessIds.length > 0) await bulkSyncCollectionRecords('examSessions', orphanedSessIds, true);
 
-                    const orphanedParts = appData.examParticipants.filter(p => p.examId === examId);
-                    for (const p of orphanedParts) {
-                        await syncCollectionRecord('examParticipants', p.id, null, true);
-                    }
-                    appData.examParticipants = appData.examParticipants.filter(p => p.examId !== examId);
+                    const orphanedPartIds = appData.examParticipants.filter(p => p.examId === examDocId || p.examId === examId).map(p => String(p._docId || p.id)).filter(Boolean);
+                    if (orphanedPartIds.length > 0) await bulkSyncCollectionRecords('examParticipants', orphanedPartIds, true);
 
-                    if (appData.filters.resultExam === examId) appData.filters.resultExam = 'ALL';
-                    if (appData.filters.analysisExam === examId) appData.filters.analysisExam = 'ALL';
-                    if (appData.filters.participantExam === examId) appData.filters.participantExam = 'ALL';
+                    if (appData.filters.resultExam === examId || appData.filters.resultExam === examDocId) appData.filters.resultExam = 'ALL';
+                    if (appData.filters.analysisExam === examId || appData.filters.analysisExam === examDocId) appData.filters.analysisExam = 'ALL';
+                    if (appData.filters.participantExam === examId || appData.filters.participantExam === examDocId) appData.filters.participantExam = 'ALL';
 
                     renderExamsContent(document.getElementById('adminMainContent'));
                 }
+                return true;
             }, { showCancel: true, okText: 'Hapus Paket & Riwayat' });
         };
 
@@ -5188,7 +5223,8 @@
 
         window.deleteSingleExamResult = function(resultKey) {
             if (!resultKey) return;
-            const target = appData.examResults.find(r => (r.resultId || r.id) === resultKey);
+            const target = appData.examResults.find(r => String(r._docId || r.resultId || r.id) === String(resultKey) || String(r.resultId || r.id) === String(resultKey));
+            const docId = target ? String(target._docId || target.resultId || target.id) : String(resultKey);
             const studentLabel = target ? `${target.studentName} (${target.examName || 'Ujian'})` : resultKey;
             window.showModal(
                 'Hapus Riwayat Nilai',
@@ -5197,13 +5233,14 @@
                 async (confirmed) => {
                     if (!confirmed) return true;
                     selectedResultIds.delete(resultKey);
+                    selectedResultIds.delete(docId);
                     if (target) {
                         const sessId = getSessionDocId(target.examId, target.studentId);
                         await syncCollectionRecord('examSessions', sessId, null, true);
-                        appData.examSessions = appData.examSessions.filter(s => s.id !== sessId);
+                        appData.examSessions = appData.examSessions.filter(s => String(s._docId || s.id) !== sessId);
                     }
-                    await syncCollectionRecord('examResults', resultKey, null, true);
-                    appData.examResults = appData.examResults.filter(r => (r.resultId || r.id) !== resultKey);
+                    await syncCollectionRecord('examResults', docId, null, true);
+                    appData.examResults = appData.examResults.filter(r => String(r._docId || r.resultId || r.id) !== docId && String(r.resultId || r.id) !== String(resultKey));
                     renderResultsContent(document.getElementById('adminMainContent'));
                     return true;
                 },
@@ -5220,18 +5257,15 @@
                 'error',
                 async (confirmed) => {
                     if (!confirmed) return true;
-                    const idSet = new Set(idsToDelete);
-                    const targets = appData.examResults.filter(r => idSet.has(r.resultId || r.id));
-                    for (const t of targets) {
-                        const rKey = t.resultId || t.id;
-                        const sessId = getSessionDocId(t.examId, t.studentId);
-                        await syncCollectionRecord('examSessions', sessId, null, true);
-                        await syncCollectionRecord('examResults', rKey, null, true);
-                    }
-                    appData.examResults = appData.examResults.filter(r => !idSet.has(r.resultId || r.id));
+                    const idSet = new Set(idsToDelete.map(String));
+                    const targets = appData.examResults.filter(r => idSet.has(String(r.resultId || r.id)) || idSet.has(String(r._docId || r.id)));
+                    const resDocIds = targets.map(t => String(t._docId || t.resultId || t.id)).filter(Boolean);
+                    const sessDocIds = targets.map(t => getSessionDocId(t.examId, t.studentId)).filter(Boolean);
+                    if (sessDocIds.length > 0) await bulkSyncCollectionRecords('examSessions', sessDocIds, true);
+                    if (resDocIds.length > 0) await bulkSyncCollectionRecords('examResults', resDocIds, true);
                     selectedResultIds.clear();
                     renderResultsContent(document.getElementById('adminMainContent'));
-                    window.showModal('Berhasil Dihapus', `${idsToDelete.length} riwayat nilai berhasil dihapus.`, 'success');
+                    window.showModal('Berhasil Dihapus', `${resDocIds.length} riwayat nilai berhasil dihapus.`, 'success');
                     return true;
                 },
                 { showCancel: true, okText: `Ya, Hapus ${idsToDelete.length} Nilai` }
@@ -5249,15 +5283,11 @@
                 'error',
                 async (confirmed) => {
                     if (!confirmed) return true;
-                    for (const t of filteredResults) {
-                        const rKey = t.resultId || t.id;
-                        const sessId = getSessionDocId(t.examId, t.studentId);
-                        await syncCollectionRecord('examSessions', sessId, null, true);
-                        await syncCollectionRecord('examResults', rKey, null, true);
-                        selectedResultIds.delete(rKey);
-                    }
-                    const delSet = new Set(filteredResults.map(r => r.resultId || r.id));
-                    appData.examResults = appData.examResults.filter(r => !delSet.has(r.resultId || r.id));
+                    const resDocIds = filteredResults.map(t => String(t._docId || t.resultId || t.id)).filter(Boolean);
+                    const sessDocIds = filteredResults.map(t => getSessionDocId(t.examId, t.studentId)).filter(Boolean);
+                    if (sessDocIds.length > 0) await bulkSyncCollectionRecords('examSessions', sessDocIds, true);
+                    if (resDocIds.length > 0) await bulkSyncCollectionRecords('examResults', resDocIds, true);
+                    filteredResults.forEach(t => selectedResultIds.delete(t.resultId || t.id));
                     await cleanupOrphanedResultsAndSessionsInCloud();
                     renderResultsContent(document.getElementById('adminMainContent'));
                     window.showModal('Riwayat Dibersihkan', 'Seluruh riwayat nilai pada daftar ini telah berhasil dibersihkan.', 'success');
@@ -5319,6 +5349,7 @@
                                 violationCount: sess.violationCount || 0,
                                 essayGradingStatus: calc.hasEssayQuestion ? 'Belum Dinilai' : 'Sudah Dinilai',
                                 essayScores: calc.essayScores,
+                                questionScores: calc.questionScores,
                                 answersSnapshot: studentAns
                             };
 
@@ -5666,6 +5697,10 @@
                 const evalRes = evaluateSingleQuestionForReview(q, ans, res);
                 if (evalRes.status === 'EMPTY') emptyCount++;
                 else if (evalRes.status === 'CORRECT') correctCount++;
+                else if (evalRes.status === 'ESSAY') {
+                    if (evalRes.earnedWeight >= (evalRes.maxWeight * 0.5)) correctCount++;
+                    else wrongCount++;
+                }
                 else wrongCount++;
             });
             let difficultyLabel = q.difficulty || 'Sedang';
@@ -5879,9 +5914,10 @@
             const statusFilter = appData.filters.participantStatus || 'ALL';
 
             const enrichedParticipants = appData.students.map(s => {
-                const res = appData.examResults.find(r => r.studentId === s.id && (!activeExamId || r.examId === activeExamId));
-                const sess = appData.examSessions.find(ss => ss.studentId === s.id && (!activeExamId || ss.examId === activeExamId) && ss.status === 'IN_PROGRESS');
-                const part = appData.examParticipants.find(p => p.studentId === s.id && (!activeExamId || p.examId === activeExamId));
+                const matchStudent = (rec) => rec && (String(rec.studentId) === String(s.id) || (s.nisn && String(rec.nisn) === String(s.nisn)));
+                const res = appData.examResults.find(r => matchStudent(r) && (!activeExamId || r.examId === activeExamId));
+                const sess = appData.examSessions.find(ss => matchStudent(ss) && (!activeExamId || ss.examId === activeExamId) && ss.status === 'IN_PROGRESS');
+                const part = appData.examParticipants.find(p => matchStudent(p) && (!activeExamId || p.examId === activeExamId));
                 const status = res ? 'Selesai' : (sess ? 'Sedang Mengerjakan' : (part && part.status ? part.status : 'Belum Mulai'));
                 const statusKey = status === 'Selesai' ? 'DONE' : (status === 'Sedang Mengerjakan' ? 'IN_PROGRESS' : 'NOT_STARTED');
                 const violations = res && typeof res.violationCount === 'number'
@@ -6029,61 +6065,46 @@
             window.showModal('Konfirmasi Reset Sesi', 'Mereset sesi akan menghapus progres aktif, jawaban tersimpan, hasil ujian, dan hitungan pelanggaran siswa ini agar siswa dapat mengerjakan ujian kembali dari awal. Lanjutkan?', 'error', async (confirmed) => {
                 if (confirmed) {
                     updateLiveSyncIndicator('syncing', 'Mereset Sesi...');
-                    const toRemoveRes = appData.examResults.filter(r => r.studentId === studentId && (!examId || r.examId === examId));
-                    for (const r of toRemoveRes) {
-                        const docId = r.id || r.resultId;
-                        await syncCollectionRecord('examResults', docId, null, true);
-                    }
-                    appData.examResults = appData.examResults.filter(r => !(r.studentId === studentId && (!examId || r.examId === examId)));
+                    const stdObj = appData.students.find(s => String(s._docId || s.id) === String(studentId) || String(s.id) === String(studentId));
+                    const matchStudent = (rec) => rec && (String(rec.studentId) === String(studentId) || (stdObj && stdObj.nisn && String(rec.nisn) === String(stdObj.nisn)));
 
-                    // Hapus sesi dari daftar examSessions & pastikan ID deterministik SES_{examId}_{studentId} juga dihapus dari Firestore
-                    const toRemoveSess = appData.examSessions.filter(ss => ss.studentId === studentId && (!examId || ss.examId === examId));
-                    const deletedSessIds = new Set();
-                    for (const ss of toRemoveSess) {
-                        deletedSessIds.add(ss.id);
-                        await syncCollectionRecord('examSessions', ss.id, null, true);
-                    }
+                    const resIds = appData.examResults.filter(r => matchStudent(r) && (!examId || r.examId === examId)).map(r => String(r._docId || r.id || r.resultId)).filter(Boolean);
+                    if (resIds.length > 0) await bulkSyncCollectionRecords('examResults', resIds, true);
+
+                    const sessIdSet = new Set(appData.examSessions.filter(ss => matchStudent(ss) && (!examId || ss.examId === examId)).map(ss => String(ss._docId || ss.id)).filter(Boolean));
                     const targetExams = examId ? [examId] : appData.exams.map(e => e.id);
-                    for (const exId of targetExams) {
-                        const deterministicSessId = getSessionDocId(exId, studentId);
-                        if (!deletedSessIds.has(deterministicSessId)) {
-                            await syncCollectionRecord('examSessions', deterministicSessId, null, true);
-                        }
-                    }
-                    appData.examSessions = appData.examSessions.filter(ss => !(ss.studentId === studentId && (!examId || ss.examId === examId)));
+                    targetExams.forEach(exId => sessIdSet.add(getSessionDocId(exId, studentId)));
+                    if (sessIdSet.size > 0) await bulkSyncCollectionRecords('examSessions', Array.from(sessIdSet), true);
 
-                    const matchingParts = appData.examParticipants.filter(p => p.studentId === studentId && (!examId || p.examId === examId));
+                    const matchingParts = appData.examParticipants.filter(p => matchStudent(p) && (!examId || p.examId === examId));
                     if (matchingParts.length > 0) {
-                        for (const part of matchingParts) {
+                        const partUpdates = matchingParts.map(part => {
                             part.status = 'Belum Mulai';
                             part.violationCount = 0;
-                            await syncCollectionRecord('examParticipants', part.id, part);
-                        }
-                    } else if (examId) {
-                        const stdObj = appData.students.find(s => s.id === studentId);
-                        if (stdObj) {
-                            const newPart = {
-                                id: 'PRT-' + stdObj.id + '-' + examId,
-                                examId,
-                                studentId: stdObj.id,
-                                nisn: stdObj.nisn,
-                                studentName: stdObj.fullName,
-                                className: stdObj.className || '4',
-                                status: 'Belum Mulai',
-                                violationCount: 0,
-                                extraTimeMinutes: 0
-                            };
-                            appData.examParticipants.push(newPart);
-                            await syncCollectionRecord('examParticipants', newPart.id, newPart);
-                        }
+                            return { ...part, id: String(part._docId || part.id) };
+                        });
+                        await bulkSyncCollectionRecords('examParticipants', partUpdates, false);
+                    } else if (examId && stdObj) {
+                        const newPart = {
+                            id: 'PRT-' + stdObj.id + '-' + examId,
+                            examId,
+                            studentId: stdObj.id,
+                            nisn: stdObj.nisn,
+                            studentName: stdObj.fullName,
+                            className: stdObj.className || '4',
+                            status: 'Belum Mulai',
+                            violationCount: 0,
+                            extraTimeMinutes: 0
+                        };
+                        await syncCollectionRecord('examParticipants', newPart.id, newPart);
                     }
 
-                    const stdObj = appData.students.find(s => s.id === studentId);
                     if (stdObj) {
+                        const sDocId = String(stdObj._docId || stdObj.id);
                         stdObj.isLoggedIn = false;
                         stdObj.activeSessionId = '';
                         stdObj.lastHeartbeatAt = 0;
-                        await syncCollectionRecord('students', stdObj.id, {
+                        await syncCollectionRecord('students', sDocId, {
                             isLoggedIn: false,
                             activeSessionId: '',
                             lastHeartbeatAt: 0
@@ -6093,7 +6114,8 @@
                     window.renderAdminCurrentSection();
                     updateLiveSyncIndicator('updated', 'Sesi Direset');
                 }
-            }, { okText: 'Ya, Reset Sesi' });
+                return true;
+            }, { showCancel: true, okText: 'Ya, Reset Sesi' });
         };
 
         window.resetAllExamSessions = function(examId) {
@@ -6110,54 +6132,33 @@
                 'error',
                 async (confirmed) => {
                     if (confirmed) {
+                        const btnOk = document.getElementById('modalBtnOk');
+                        if (btnOk) btnOk.innerText = 'Mereset Semua Sesi...';
                         updateLiveSyncIndicator('syncing', 'Mereset Semua Sesi...');
-                        let successCount = 0;
-                        for (const s of appData.students) {
-                            const toRemove = appData.examResults.filter(r => r.studentId === s.id && r.examId === examId);
-                            for (const r of toRemove) {
-                                await syncCollectionRecord('examResults', r.id || r.resultId, null, true);
-                            }
-                            appData.examResults = appData.examResults.filter(r => !(r.studentId === s.id && r.examId === examId));
 
-                            const sessRemove = appData.examSessions.filter(ss => ss.studentId === s.id && ss.examId === examId);
-                            const removedIds = new Set();
-                            for (const ss of sessRemove) {
-                                removedIds.add(ss.id);
-                                await syncCollectionRecord('examSessions', ss.id, null, true);
-                            }
-                            const detId = getSessionDocId(examId, s.id);
-                            if (!removedIds.has(detId)) {
-                                await syncCollectionRecord('examSessions', detId, null, true);
-                            }
-                            appData.examSessions = appData.examSessions.filter(ss => !(ss.studentId === s.id && ss.examId === examId));
+                        const resIds = appData.examResults.filter(r => r.examId === examId).map(r => String(r._docId || r.id || r.resultId)).filter(Boolean);
+                        if (resIds.length > 0) await bulkSyncCollectionRecords('examResults', resIds, true);
 
-                            let part = appData.examParticipants.find(p => p.studentId === s.id && p.examId === examId);
-                            if (part) {
-                                part.status = 'Belum Mulai';
-                                part.violationCount = 0;
-                                await syncCollectionRecord('examParticipants', part.id, part);
-                            } else {
-                                const newPart = {
-                                    id: 'PRT-' + s.id + '-' + examId,
-                                    examId,
-                                    studentId: s.id,
-                                    nisn: s.nisn,
-                                    studentName: s.fullName,
-                                    className: s.className || '4',
-                                    status: 'Belum Mulai',
-                                    violationCount: 0,
-                                    extraTimeMinutes: 0
-                                };
-                                appData.examParticipants.push(newPart);
-                                await syncCollectionRecord('examParticipants', newPart.id, newPart);
-                            }
-                            successCount++;
+                        const sessIdSet = new Set(appData.examSessions.filter(ss => ss.examId === examId).map(ss => String(ss._docId || ss.id)).filter(Boolean));
+                        appData.students.forEach(s => sessIdSet.add(getSessionDocId(examId, s.id)));
+                        if (sessIdSet.size > 0) await bulkSyncCollectionRecords('examSessions', Array.from(sessIdSet), true);
+
+                        const existingParts = appData.examParticipants.filter(p => p.examId === examId);
+                        if (existingParts.length > 0) {
+                            const partUpdates = existingParts.map(p => ({ ...p, id: String(p._docId || p.id), status: 'Belum Mulai', violationCount: 0 }));
+                            await bulkSyncCollectionRecords('examParticipants', partUpdates, false);
                         }
 
-                        logActivity(`Administrator mereset sesi seluruh peserta (${successCount} siswa) untuk paket ujian ${examName}.`);
+                        const lockedStudents = appData.students.filter(s => s.isLoggedIn || s.activeSessionId);
+                        if (lockedStudents.length > 0) {
+                            const stdUpdates = lockedStudents.map(s => ({ id: String(s._docId || s.id), isLoggedIn: false, activeSessionId: '', lastHeartbeatAt: 0 }));
+                            await bulkSyncCollectionRecords('students', stdUpdates, false);
+                        }
+
+                        logActivity(`Administrator mereset sesi seluruh peserta (${appData.students.length} siswa) untuk paket ujian ${examName}.`);
                         window.renderAdminCurrentSection();
                         updateLiveSyncIndicator('updated', 'Semua Sesi Direset');
-                        window.showModal('Reset Sesi Berhasil', `Berhasil mereset sesi ujian untuk ${successCount} peserta. Seluruh siswa kini dapat mengikuti ujian kembali dari awal.`, 'success');
+                        window.showModal('Reset Sesi Berhasil', `Berhasil mereset sesi ujian untuk seluruh peserta pada paket "${examName}".`, 'success');
                     }
                     return true;
                 },
@@ -7556,7 +7557,7 @@
                 const pairs = (Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0)
                     ? q.matchingPairs
                     : parseMatchingOptionsAndKey(q.options || [], '').matchingPairs;
-                const rightOptions = pairs.map(p => p.right);
+                const rightOptions = [...new Set(pairs.map(p => p.right))].sort((a, b) => String(a).localeCompare(String(b)));
                 const curObj = (typeof currentStudentAnswers[q.id] === 'object' && currentStudentAnswers[q.id] !== null) ? currentStudentAnswers[q.id] : {};
                 answerInputHtml = pairs.map((p, idx) => {
                     const selectedVal = curObj[String(idx)] || '';
@@ -8173,27 +8174,37 @@
         window.addEventListener('hashchange', window.enforceUrlHashRoleGuard);
 
         window.onload = async function() {
+            const restoreStaffIfValid = () => {
+                const savedStaff = window.getSavedStaffSession();
+                if (!savedStaff || (savedStaff.role !== 'admin' && savedStaff.role !== 'editor_soal')) return false;
+                if (savedStaff.teacherId) {
+                    const liveTeacher = (appData.teachers || []).find(t => String(t._docId || t.id) === String(savedStaff.teacherId));
+                    if (liveTeacher && (liveTeacher.status || 'Aktif') !== 'Aktif') {
+                        window.clearStaffSession();
+                        return false;
+                    }
+                    if (liveTeacher) {
+                        savedStaff.role = liveTeacher.role === 'admin' ? 'admin' : 'editor_soal';
+                        savedStaff.name = liveTeacher.fullName || liveTeacher.name || savedStaff.name;
+                        window.saveStaffSession(savedStaff);
+                    }
+                }
+                appData.currentUser = savedStaff;
+                appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
+                window.renderAdminLayout();
+                window.enforceUrlHashRoleGuard();
+                return true;
+            };
+
             try {
                 await initFirebaseProduction();
                 startScheduleTransitionWatcher();
-                const savedStaff = window.getSavedStaffSession();
-                if (savedStaff && (savedStaff.role === 'admin' || savedStaff.role === 'editor_soal')) {
-                    appData.currentUser = savedStaff;
-                    appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
-                    window.renderAdminLayout();
-                    window.enforceUrlHashRoleGuard();
-                } else {
+                if (!restoreStaffIfValid()) {
                     window.renderLoginView();
                 }
             } catch (error) {
                 startScheduleTransitionWatcher();
-                const savedStaff = window.getSavedStaffSession();
-                if (savedStaff && (savedStaff.role === 'admin' || savedStaff.role === 'editor_soal')) {
-                    appData.currentUser = savedStaff;
-                    appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
-                    window.renderAdminLayout();
-                    window.enforceUrlHashRoleGuard();
-                } else {
+                if (!restoreStaffIfValid()) {
                     window.renderLoginView();
                 }
                 window.showModal(
