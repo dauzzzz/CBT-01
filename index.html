@@ -1301,6 +1301,23 @@
                 realtimeChannel = null;
             }
 
+            // Deteksi apakah WebSocket diizinkan oleh lingkungan browser/iframe (seperti Canvas)
+            const isWebSocketAllowed = (() => {
+                try {
+                    if (typeof window === 'undefined' || typeof window.WebSocket !== 'function') {
+                        return false;
+                    }
+                    // Uji instansiasi WebSocket ke endpoint lokal/dummy atau periksa apakah diblokir sandbox
+                    const probeUrl = SUPABASE_URL.replace(/^https?:\/\//i, 'wss://') + '/realtime/v1/websocket';
+                    const testWs = new window.WebSocket(probeUrl);
+                    try { testWs.close(); } catch (e) {}
+                    return true;
+                } catch (wsErr) {
+                    console.warn('WebSocket diblokir di lingkungan ini (menggunakan sinkronisasi REST & polling otomatis):', wsErr?.message || wsErr);
+                    return false;
+                }
+            })();
+
             const tableToCol = {
                 students: 'students',
                 teachers: 'teachers',
@@ -1314,91 +1331,100 @@
                 exam_results: 'examResults'
             };
 
-            realtimeChannel = supabase.channel('cbt-sekolah-realtime-all');
+            if (isWebSocketAllowed) {
+                try {
+                    realtimeChannel = supabase.channel('cbt-sekolah-realtime-all');
 
-            Object.entries(tableToCol).forEach(([tableName, colName]) => {
-                realtimeChannel.on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: tableName },
-                    (payload) => {
-                        const evType = payload.eventType;
-                        if (evType === 'DELETE') {
-                            const oldId = payload.old?.id;
-                            if (oldId) removeLocalRecord(colName, String(oldId));
-                        } else if (payload.new) {
-                            const mapped = mapRowFromDb(colName, payload.new);
-                            upsertLocalRecord(colName, mapped.id, mapped);
-                        }
+                    Object.entries(tableToCol).forEach(([tableName, colName]) => {
+                        realtimeChannel.on(
+                            'postgres_changes',
+                            { event: '*', schema: 'public', table: tableName },
+                            (payload) => {
+                                const evType = payload.eventType;
+                                if (evType === 'DELETE') {
+                                    const oldId = payload.old?.id;
+                                    if (oldId) removeLocalRecord(colName, String(oldId));
+                                } else if (payload.new) {
+                                    const mapped = mapRowFromDb(colName, payload.new);
+                                    upsertLocalRecord(colName, mapped.id, mapped);
+                                }
 
-                        if (colName === 'students' && appData.currentUser && appData.currentUser.role === 'student') {
-                            const myLatestDoc = appData.students.find(s => s.id === appData.currentUser.studentId);
-                            if (!myLatestDoc || myLatestDoc.status !== 'Aktif') {
-                                handleForcedStudentLogout('Akun siswa Anda telah dinonaktifkan atau dihapus oleh Administrator.');
-                                return;
+                                if (colName === 'students' && appData.currentUser && appData.currentUser.role === 'student') {
+                                    const myLatestDoc = appData.students.find(s => s.id === appData.currentUser.studentId);
+                                    if (!myLatestDoc || myLatestDoc.status !== 'Aktif') {
+                                        handleForcedStudentLogout('Akun siswa Anda telah dinonaktifkan atau dihapus oleh Administrator.');
+                                        return;
+                                    }
+                                    if (
+                                        myLatestDoc.isLoggedIn === false ||
+                                        (myLatestDoc.activeSessionId && myLatestDoc.activeSessionId !== currentDeviceSessionId)
+                                    ) {
+                                        handleForcedStudentLogout('Sesi login akun Anda telah direset oleh Pengawas / Administrator.');
+                                        return;
+                                    }
+                                }
+
+                                if (colName === 'exams' && appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
+                                    const updatedExam = appData.exams.find(x => x.id === currentActiveExam.id);
+                                    if (!updatedExam || !isExamStrictlyActive(updatedExam) || !checkExamScheduleAccess(updatedExam).allowed) {
+                                        window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau dinonaktifkan oleh Administrator. Seluruh jawaban yang sudah Anda isi tetap tersimpan dengan aman.');
+                                        return;
+                                    }
+                                }
+
+                                if (isExamWorkspaceActive && colName === 'examSessions' && payload.new?.id === currentSessionId) {
+                                    const remoteSess = mapRowFromDb('examSessions', payload.new);
+                                    if (remoteSess.status === 'SUBMITTED') {
+                                        window.stopAllExamTimersAndWatchers();
+                                        window.autoLogoutStudentToInitialLogin('Ujian Telah Selesai', 'Sesi ujian ini telah diselesaikan dan dikirim.', 'info');
+                                        return;
+                                    }
+                                    if (remoteSess.sessionToken && currentSessionToken && remoteSess.sessionToken !== currentSessionToken) {
+                                        window.stopAllExamTimersAndWatchers();
+                                        window.autoLogoutStudentToInitialLogin('Sesi Berpindah ke Perangkat Lain', `Ujian dibuka pada perangkat lain (${remoteSess.deviceInfo || 'Perangkat Baru'}).`, 'error');
+                                        return;
+                                    }
+                                }
+
+                                if (!isInitialRealtimeLoad) {
+                                    window.triggerRealtimeUIRefresh(colName);
+                                }
                             }
-                            if (
-                                myLatestDoc.isLoggedIn === false ||
-                                (myLatestDoc.activeSessionId && myLatestDoc.activeSessionId !== currentDeviceSessionId)
-                            ) {
-                                handleForcedStudentLogout('Sesi login akun Anda telah direset oleh Pengawas / Administrator.');
-                                return;
+                        );
+                    });
+
+                    realtimeChannel.on(
+                        'postgres_changes',
+                        { event: '*', schema: 'public', table: 'app_settings' },
+                        (payload) => {
+                            if (payload.new) {
+                                appData.settings = { ...appData.settings, ...mapSettingsFromDb(payload.new) };
+                                updateBrowserFaviconAndTitle();
+                                if (!isInitialRealtimeLoad) {
+                                    window.triggerRealtimeUIRefresh('appSettings');
+                                }
                             }
                         }
+                    );
 
-                        if (colName === 'exams' && appData.currentUser && appData.currentUser.role === 'student' && isExamWorkspaceActive && currentActiveExam) {
-                            const updatedExam = appData.exams.find(x => x.id === currentActiveExam.id);
-                            if (!updatedExam || !isExamStrictlyActive(updatedExam) || !checkExamScheduleAccess(updatedExam).allowed) {
-                                window.forceCloseStudentExamByAdmin('Ujian ini baru saja ditutup atau dinonaktifkan oleh Administrator. Seluruh jawaban yang sudah Anda isi tetap tersimpan dengan aman.');
-                                return;
-                            }
+                    realtimeChannel.subscribe((status) => {
+                        if (status === 'SUBSCRIBED') {
+                            updateLiveSyncIndicator('idle');
+                        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                            updateLiveSyncIndicator('idle');
                         }
-
-                        if (isExamWorkspaceActive && colName === 'examSessions' && payload.new?.id === currentSessionId) {
-                            const remoteSess = mapRowFromDb('examSessions', payload.new);
-                            if (remoteSess.status === 'SUBMITTED') {
-                                window.stopAllExamTimersAndWatchers();
-                                window.autoLogoutStudentToInitialLogin('Ujian Telah Selesai', 'Sesi ujian ini telah diselesaikan dan dikirim.', 'info');
-                                return;
-                            }
-                            if (remoteSess.sessionToken && currentSessionToken && remoteSess.sessionToken !== currentSessionToken) {
-                                window.stopAllExamTimersAndWatchers();
-                                window.autoLogoutStudentToInitialLogin('Sesi Berpindah ke Perangkat Lain', `Ujian dibuka pada perangkat lain (${remoteSess.deviceInfo || 'Perangkat Baru'}).`, 'error');
-                                return;
-                            }
-                        }
-
-                        if (!isInitialRealtimeLoad) {
-                            window.triggerRealtimeUIRefresh(colName);
-                        }
-                    }
-                );
-            });
-
-            realtimeChannel.on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'app_settings' },
-                (payload) => {
-                    if (payload.new) {
-                        appData.settings = { ...appData.settings, ...mapSettingsFromDb(payload.new) };
-                        updateBrowserFaviconAndTitle();
-                        if (!isInitialRealtimeLoad) {
-                            window.triggerRealtimeUIRefresh('appSettings');
-                        }
-                    }
+                    });
+                } catch (subErr) {
+                    console.warn('Realtime channel fallback aktif:', subErr?.message || subErr);
                 }
-            );
-
-            realtimeChannel.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    updateLiveSyncIndicator('idle');
-                }
-            });
+            }
 
             setTimeout(() => {
                 isInitialRealtimeLoad = false;
             }, 800);
 
             if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
+            const pollIntervalMs = isWebSocketAllowed ? 60000 : 10000;
             fallbackPollingInterval = setInterval(async () => {
                 if (!supabase || document.hidden || isBulkOperationInProgress || isModalActionRunning) return;
                 try {
@@ -1410,8 +1436,11 @@
                             appData[cName] = data.map(r => mapRowFromDb(cName, r));
                         }
                     }));
+                    if (!isWebSocketAllowed) {
+                        window.triggerRealtimeUIRefresh('polling');
+                    }
                 } catch (e) {}
-            }, 60000);
+            }, pollIntervalMs);
         }
 
         async function initAppEnvironment() {
