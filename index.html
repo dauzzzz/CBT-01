@@ -261,7 +261,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const APP_VERSION = '4.0.0';
@@ -271,6 +271,7 @@
         let db = null;
         let auth = null;
         let storage = null;
+        let anonymousAuthAttempted = false;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'cbt-sekolah-sd-app';
         let pendingLogoFile = null;
         let pendingLogoDataUrl = null;
@@ -1212,10 +1213,11 @@
             const safeDocId = String(docId).trim();
             window._lastFirestoreSyncError = '';
             try {
-                // Pastikan sesi Firebase Auth tetap aktif agar tidak ditolak oleh Security Rules
-                if (auth && !auth.currentUser) {
+                // Pastikan sesi Firebase Auth dicoba sekali saja bila belum login agar tidak memperlambat setiap klik simpan
+                if (auth && !auth.currentUser && !anonymousAuthAttempted) {
+                    anonymousAuthAttempted = true;
                     try {
-                        await promiseWithTimeout(signInAnonymously(auth), 10000, 'Timeout autentikasi Firebase');
+                        await promiseWithTimeout(signInAnonymously(auth), 6000, 'Timeout autentikasi Firebase');
                     } catch (reAuthErr) {
                         console.warn('Re-auth notice:', reAuthErr.code || reAuthErr.message);
                     }
@@ -1223,7 +1225,7 @@
                 updateLiveSyncIndicator('syncing', 'Menyinkronkan...');
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, safeDocId);
                 if (isDelete) {
-                    await promiseWithTimeout(deleteDoc(ref), 20000, 'Timeout menghapus data dari Firestore');
+                    await promiseWithTimeout(deleteDoc(ref), 15000, 'Timeout menghapus data dari Firestore');
                     if (Array.isArray(appData[collectionName])) {
                         appData[collectionName] = appData[collectionName].filter(item =>
                             String(item._docId || item.id || item.resultId) !== safeDocId &&
@@ -1233,7 +1235,7 @@
                 } else {
                     const cleanPayload = sanitizeFirestoreData(dataObj);
                     if (cleanPayload && '_docId' in cleanPayload) delete cleanPayload._docId;
-                    await promiseWithTimeout(setDoc(ref, cleanPayload, { merge: true }), 20000, 'Timeout menyimpan data ke Firestore');
+                    await promiseWithTimeout(setDoc(ref, cleanPayload, { merge: true }), 15000, 'Timeout menyimpan data ke Firestore');
                     if (Array.isArray(appData[collectionName])) {
                         const keyField = collectionName === 'examResults' ? 'resultId' : 'id';
                         const idx = appData[collectionName].findIndex(item => String(item._docId || item[keyField] || item.id) === safeDocId);
@@ -1261,7 +1263,7 @@
             if (docId === undefined || docId === null || String(docId).trim() === '') return null;
             try {
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, String(docId).trim());
-                const snap = await getDoc(ref);
+                const snap = await promiseWithTimeout(getDoc(ref), 8000, 'Timeout mengambil dokumen Firestore');
                 if (snap.exists()) {
                     return { ...snap.data(), id: snap.id, _docId: snap.id };
                 }
@@ -1272,46 +1274,25 @@
             }
         }
 
-        function promiseWithTimeout(promise, ms = 30000, label = 'Timeout koneksi Firestore') {
-            let timerId = null;
-            const timeoutPromise = new Promise((_, reject) => {
-                timerId = setTimeout(() => reject(new Error(label)), ms);
-            });
-            return Promise.race([promise, timeoutPromise]).finally(() => {
-                if (timerId) clearTimeout(timerId);
+        function promiseWithTimeout(promise, ms = 15000, errorMsg = 'Timeout koneksi server Firestore') {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error(errorMsg)), ms);
+                Promise.resolve(promise)
+                    .then(val => { clearTimeout(timer); resolve(val); })
+                    .catch(err => { clearTimeout(timer); reject(err); });
             });
         }
 
         async function bulkSyncCollectionRecords(collectionName, items, isDelete = false, onProgress = null) {
             const list = Array.isArray(items) ? items : [];
             if (list.length === 0) return { successCount: 0, failedCount: 0, successIds: new Set(), errorMessage: '' };
-
             if (IS_PREVIEW || !db) {
-                const successIds = new Set();
-                if (isDelete) {
-                    const delSet = new Set(list.map(x => String(x).trim()).filter(Boolean));
-                    delSet.forEach(id => successIds.add(id));
-                    if (Array.isArray(appData[collectionName])) {
-                        appData[collectionName] = appData[collectionName].filter(item =>
-                            !delSet.has(String(item._docId || item.id || item.resultId)) &&
-                            !delSet.has(String(item.id || item.resultId))
-                        );
-                    }
-                } else {
-                    list.forEach(rec => {
-                        const sid = String(rec._docId || rec.id).trim();
-                        if (!sid) return;
-                        successIds.add(sid);
-                        const merged = { ...sanitizeFirestoreData(rec), id: sid, _docId: sid };
-                        if (Array.isArray(appData[collectionName])) {
-                            const idx = appData[collectionName].findIndex(item => String(item._docId || item.id) === sid);
-                            if (idx !== -1) appData[collectionName][idx] = { ...appData[collectionName][idx], ...merged };
-                            else appData[collectionName].push(merged);
-                        }
-                    });
-                }
-                if (typeof onProgress === 'function') onProgress(list.length, list.length);
-                return { successCount: successIds.size, failedCount: 0, successIds, errorMessage: '' };
+                const allIds = new Set();
+                list.forEach(entry => {
+                    const id = isDelete ? String(entry) : String(entry._docId || entry.id || '');
+                    if (id) allIds.add(id);
+                });
+                return { successCount: allIds.size, failedCount: 0, successIds: allIds, errorMessage: '' };
             }
 
             isBulkOperationInProgress = true;
@@ -1321,17 +1302,18 @@
             let lastErrorMessage = '';
 
             try {
-                if (auth && !auth.currentUser) {
+                if (auth && !auth.currentUser && !anonymousAuthAttempted) {
+                    anonymousAuthAttempted = true;
                     try {
-                        await promiseWithTimeout(signInAnonymously(auth), 10000, 'Timeout autentikasi Firebase');
+                        await promiseWithTimeout(signInAnonymously(auth), 6000, 'Timeout autentikasi Firebase');
                     } catch (reAuthErr) {
                         console.warn('Re-auth notice:', reAuthErr.code || reAuthErr.message);
                     }
                 }
 
                 updateLiveSyncIndicator('syncing', `${isDelete ? 'Menghapus' : 'Menyimpan'} ${list.length} Data...`);
-                // Gunakan batch 50 dokumen per transaksi atomik agar 238+ siswa selesai dalam ~5 transaksi cepat & pasti tersimpan di server
-                const batchLimit = 50;
+                // Gunakan batch 100 dokumen per transaksi atomik dengan HTTP/2 Fetch Streams agar impor/hapus ratusan data selesai dalam hitungan detik
+                const batchLimit = 100;
 
                 for (let i = 0; i < list.length; i += batchLimit) {
                     const slice = list.slice(i, i + batchLimit);
@@ -1359,7 +1341,6 @@
                             }
                         });
 
-                        // Tunggu konfirmasi langsung dari server Firestore (bukan sekadar cache lokal)
                         await promiseWithTimeout(batch.commit(), 30000, 'Timeout konfirmasi server Firestore');
 
                         if (isDelete) {
@@ -1444,18 +1425,12 @@
             try {
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
-                // Gunakan experimentalAutoDetectLongPolling agar koneksi Firestore stabil dan tidak macet pada jaringan sekolah/proxy
-                try {
-                    db = initializeFirestore(app, {
-                        experimentalAutoDetectLongPolling: true,
-                        useFetchStreams: false
-                    });
-                } catch (fsInitErr) {
-                    db = getFirestore(app);
-                }
+                // Gunakan getFirestore standar (HTTP/2 Fetch Streams) agar seluruh listener & transaksi simpan cepat tanpa antre koneksi XHR
+                db = getFirestore(app);
                 storage = getStorage(app);
 
                 try {
+                    anonymousAuthAttempted = true;
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                         await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
@@ -1470,18 +1445,20 @@
                     'questionBanks', 'questions', 'exams',
                     'examParticipants', 'examSessions', 'examResults'
                 ];
-                // Muat seluruh koleksi & pengaturan secara paralel dengan allSettled agar kegagalan 1 koleksi tidak menghalangi pemuatan Data Siswa
+
                 const [colResults, settingsRes] = await Promise.all([
-                    Promise.allSettled(collectionsToLoad.map(colName =>
-                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName))
-                            .then(snap => ({ colName, snap }))
-                    )),
+                    Promise.allSettled(
+                        collectionsToLoad.map(colName =>
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', colName))
+                                .then(snap => ({ colName, snap }))
+                        )
+                    ),
                     getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'appSettings', 'global')).catch(() => null)
                 ]);
 
-                colResults.forEach((resItem) => {
-                    if (resItem.status !== 'fulfilled' || !resItem.value) return;
-                    const { colName, snap } = resItem.value;
+                colResults.forEach(item => {
+                    if (item.status !== 'fulfilled' || !item.value) return;
+                    const { colName, snap } = item.value;
                     const docsList = snap.docs.map(d => {
                         const raw = d.data();
                         if (colName === 'examResults') {
@@ -1606,25 +1583,29 @@
             // ujian langsung muncul/hilang otomatis di Portal Siswa & Admin tanpa perlu Edit/Simpan atau Login ulang
             startScheduleTransitionWatcher();
 
-            // Fallback polling ringan setiap 15 detik untuk menjaga konsistensi jika koneksi sempat idle
+            // Fallback polling ringan setiap 60 detik secara paralel agar tidak membebani jalur penyimpanan Firestore
             if (fallbackPollingInterval) clearInterval(fallbackPollingInterval);
             fallbackPollingInterval = setInterval(async () => {
-                if (!db || document.hidden || isBulkOperationInProgress) return;
+                if (!db || document.hidden || isBulkOperationInProgress || isModalActionRunning) return;
                 try {
                     const dynamicCols = ['exams', 'examParticipants', 'examSessions', 'examResults'];
-                    for (const cName of dynamicCols) {
-                        const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', cName));
+                    const snaps = await Promise.allSettled(
+                        dynamicCols.map(cName => getDocs(collection(db, 'artifacts', appId, 'public', 'data', cName)).then(snap => ({ cName, snap })))
+                    );
+                    snaps.forEach(item => {
+                        if (item.status !== 'fulfilled' || !item.value) return;
+                        const { cName, snap } = item.value;
                         appData[cName] = snap.docs.map(d => {
                             const raw = d.data();
                             return cName === 'examResults'
                                 ? { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id }
                                 : { ...raw, id: d.id, _docId: d.id };
                         });
-                    }
+                    });
                 } catch (pollErr) {
                     // Abaikan jika offline sementara
                 }
-            }, 15000);
+            }, 60000);
         }
 
         function computeCurrentScheduleSignature() {
@@ -1722,12 +1703,18 @@
             const cb = currentModalCallback;
             if (cb) {
                 const btnOk = document.getElementById('modalBtnOk');
+                const originalBtnHtml = btnOk ? btnOk.innerHTML : 'OK';
                 isModalActionRunning = true;
-                if (btnOk) btnOk.disabled = true;
+                if (btnOk) {
+                    btnOk.disabled = true;
+                    btnOk.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Memproses...';
+                }
                 try {
                     const shouldClose = await cb(true);
                     if (shouldClose !== false && currentModalCallback === cb) {
                         window.closeModal();
+                    } else if (shouldClose === false && currentModalCallback === cb && btnOk) {
+                        btnOk.innerHTML = originalBtnHtml;
                     }
                 } catch (err) {
                     console.error('Modal action error:', err);
@@ -1882,7 +1869,7 @@
                                         <input type="text" id="loginStudentToken" value="" onkeydown="if(event.key==='Enter') window.handleStudentLogin()" placeholder="Contoh: IPAS4A" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase tracking-widest text-indigo-700">
                                     </div>
                                 </div>
-                                <button type="button" onclick="window.handleStudentLogin()" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-lg transition">
+                                <button type="button" id="btnLoginStudentSubmit" onclick="window.handleStudentLogin()" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-bold text-sm shadow-lg transition cursor-pointer">
                                     Masuk Ujian <i class="fa-solid fa-arrow-right ml-1.5"></i>
                                 </button>
                             </div>
@@ -1902,7 +1889,7 @@
                                         <input type="password" id="loginAdminPass" value="" onkeydown="if(event.key==='Enter') window.handleAdminLogin()" placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-slate-800">
                                     </div>
                                 </div>
-                                <button type="button" onclick="window.handleAdminLogin()" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-lg transition">
+                                <button type="button" id="btnLoginAdminSubmit" onclick="window.handleAdminLogin()" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-sm shadow-lg transition cursor-pointer">
                                     Masuk Panel Admin / Guru <i class="fa-solid fa-shield-halved ml-1.5"></i>
                                 </button>
                             </div>
@@ -1942,7 +1929,10 @@
             }
         }
 
+        let isLoginRequestRunning = false;
+
         window.handleStudentLogin = async function() {
+            if (isLoginRequestRunning) return;
             const username = document.getElementById('loginStudentUsername').value.trim();
             const pin = document.getElementById('loginStudentPin').value.trim();
             const token = document.getElementById('loginStudentToken').value.trim().toUpperCase();
@@ -1968,103 +1958,100 @@
                 return;
             }
 
-            // Aktifkan mode layar penuh (Fullscreen) segera saat tombol login siswa ditekan
-            window.enterStudentFullscreen();
+            const btnSubmit = document.getElementById('btnLoginStudentSubmit');
+            isLoginRequestRunning = true;
+            if (btnSubmit) {
+                btnSubmit.disabled = true;
+                btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Memproses Login...';
+            }
 
-            const studentDocId = String(student._docId || student.id);
+            try {
+                // Aktifkan mode layar penuh (Fullscreen) segera saat tombol login siswa ditekan
+                window.enterStudentFullscreen();
 
-            // Cek status login real-time langsung dari Firestore untuk mencegah login ganda di perangkat/tab lain
-            let latestStudentDoc = student;
-            if (!IS_PREVIEW && db) {
-                try {
-                    const cloudStudent = await fetchSingleFirestoreDoc('students', studentDocId);
-                    if (cloudStudent) {
-                        latestStudentDoc = cloudStudent;
-                        const sIdx = appData.students.findIndex(s => String(s._docId || s.id) === studentDocId);
-                        if (sIdx !== -1) appData.students[sIdx] = { ...appData.students[sIdx], ...cloudStudent };
+                const studentDocId = String(student._docId || student.id);
+
+                // Cek status login terbaru dari Firestore dengan batas waktu singkat agar login selalu responsif
+                let latestStudentDoc = student;
+                if (!IS_PREVIEW && db) {
+                    try {
+                        const cloudStudent = await promiseWithTimeout(
+                            fetchSingleFirestoreDoc('students', studentDocId),
+                            6000,
+                            'Timeout verifikasi sesi siswa'
+                        );
+                        if (cloudStudent) {
+                            latestStudentDoc = cloudStudent;
+                            const sIdx = appData.students.findIndex(s => String(s._docId || s.id) === studentDocId);
+                            if (sIdx !== -1) appData.students[sIdx] = { ...appData.students[sIdx], ...cloudStudent };
+                        }
+                    } catch (err) {
+                        console.warn('Verifikasi cepat sesi siswa dilewati:', err.message || err);
                     }
-                    const sessSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examSessions'));
-                    appData.examSessions = sessSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
-                } catch (err) {
-                    console.warn('Gagal memeriksa kunci sesi siswa:', err);
                 }
-            }
 
-            // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain dalam 90 detik terakhir
-            const activeOtherExamSess = (appData.examSessions || []).find(ss =>
-                (ss.studentId === studentDocId || (student.nisn && String(ss.nisn) === String(student.nisn))) &&
-                ss.status === 'IN_PROGRESS' &&
-                ss.deviceSessionId &&
-                ss.deviceSessionId !== currentDeviceSessionId &&
-                ss.updatedAtMs &&
-                (Date.now() - Number(ss.updatedAtMs)) < STUDENT_LOCK_TIMEOUT_MS
-            );
-
-            if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
-                const lockedDevInfo = latestStudentDoc.deviceInfo || (activeOtherExamSess ? activeOtherExamSess.deviceInfo : 'Perangkat / Tab Lain');
-                showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
-                window.showModal(
-                    'Akun Sedang Aktif di Perangkat Lain!',
-                    `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login di perangkat atau tab browser lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau hubungi Pengawas / Administrator untuk melakukan Reset Login.`,
-                    'error'
+                // Cek apakah ada sesi ujian IN_PROGRESS yang sedang dikunci oleh perangkat lain dalam 90 detik terakhir
+                const activeOtherExamSess = (appData.examSessions || []).find(ss =>
+                    (ss.studentId === studentDocId || (student.nisn && String(ss.nisn) === String(student.nisn))) &&
+                    ss.status === 'IN_PROGRESS' &&
+                    ss.deviceSessionId &&
+                    ss.deviceSessionId !== currentDeviceSessionId &&
+                    ss.updatedAtMs &&
+                    (Date.now() - Number(ss.updatedAtMs)) < STUDENT_LOCK_TIMEOUT_MS
                 );
-                return;
-            }
 
-            const nowMs = Date.now();
-            const devInfoStr = (navigator.userAgent || getDeviceLabel()).slice(0, 120);
-            student.isLoggedIn = true;
-            student.activeSessionId = currentDeviceSessionId;
-            student.loginAt = new Date(nowMs).toISOString();
-            student.lastHeartbeatAt = nowMs;
-            student.deviceInfo = devInfoStr;
+                if (isStudentRecordLockedByOther(latestStudentDoc, currentDeviceSessionId) || activeOtherExamSess) {
+                    const lockedDevInfo = latestStudentDoc.deviceInfo || (activeOtherExamSess ? activeOtherExamSess.deviceInfo : 'Perangkat / Tab Lain');
+                    showLoginError('Akun ini sedang aktif digunakan di perangkat atau tab browser lain!');
+                    window.showModal(
+                        'Akun Sedang Aktif di Perangkat Lain!',
+                        `Akun siswa atas nama ${student.fullName} (NISN: ${student.nisn}) saat ini sedang login di perangkat atau tab browser lain (${lockedDevInfo}). Silakan keluar (Logout) terlebih dahulu dari perangkat sebelumnya, atau hubungi Pengawas / Administrator untuk melakukan Reset Login.`,
+                        'error'
+                    );
+                    return;
+                }
 
-            await syncCollectionRecord('students', studentDocId, {
-                isLoggedIn: true,
-                activeSessionId: currentDeviceSessionId,
-                loginAt: student.loginAt,
-                lastHeartbeatAt: nowMs,
-                deviceInfo: devInfoStr
-            });
+                const nowMs = Date.now();
+                const devInfoStr = (navigator.userAgent || getDeviceLabel()).slice(0, 120);
+                student.isLoggedIn = true;
+                student.activeSessionId = currentDeviceSessionId;
+                student.loginAt = new Date(nowMs).toISOString();
+                student.lastHeartbeatAt = nowMs;
+                student.deviceInfo = devInfoStr;
 
-            appData.currentUser = {
-                role: 'student',
-                studentId: studentDocId,
-                nisn: String(student.nisn || ''),
-                name: student.fullName || student.name || 'Siswa',
-                classId: student.classId,
-                className: student.className,
-                enteredToken: token,
-                sessionId: currentDeviceSessionId
-            };
+                await syncCollectionRecord('students', studentDocId, {
+                    isLoggedIn: true,
+                    activeSessionId: currentDeviceSessionId,
+                    loginAt: student.loginAt,
+                    lastHeartbeatAt: nowMs,
+                    deviceInfo: devInfoStr
+                });
 
-            startStudentHeartbeat();
+                appData.currentUser = {
+                    role: 'student',
+                    studentId: studentDocId,
+                    nisn: String(student.nisn || ''),
+                    name: student.fullName || student.name || 'Siswa',
+                    classId: student.classId,
+                    className: student.className,
+                    enteredToken: token,
+                    sessionId: currentDeviceSessionId
+                };
 
-            // Muat ulang exams, examSessions & examResults terbaru dari Firestore saat login agar status aktif ujian & progres lintas perangkat 100% akurat
-            if (!IS_PREVIEW && db) {
-                try {
-                    const [examsSnap, sessSnap, resSnap, partSnap] = await Promise.all([
-                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'exams')),
-                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examSessions')),
-                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examResults')),
-                        getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'examParticipants'))
-                    ]);
-                    appData.exams = examsSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
-                    appData.examSessions = sessSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
-                    appData.examResults = resSnap.docs.map(d => {
-                        const raw = d.data();
-                        return { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id };
-                    });
-                    appData.examParticipants = partSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
-                } catch (err) {
-                    console.warn('Gagal menyegarkan sesi terbaru:', err);
+                startStudentHeartbeat();
+                window.renderStudentPortal(true);
+            } finally {
+                isLoginRequestRunning = false;
+                const latestBtn = document.getElementById('btnLoginStudentSubmit');
+                if (latestBtn) {
+                    latestBtn.disabled = false;
+                    latestBtn.innerHTML = 'Masuk Ujian <i class="fa-solid fa-arrow-right ml-1.5"></i>';
                 }
             }
-
-            window.renderStudentPortal(true);
         };
 
         window.handleAdminLogin = async function() {
+            if (isLoginRequestRunning) return;
             const emailOrUser = document.getElementById('loginAdminEmail').value.trim();
             const pass = document.getElementById('loginAdminPass').value.trim();
 
@@ -2073,77 +2060,97 @@
                 return;
             }
 
-            // 1. Cek Akun Administrator Utama
-            if (emailOrUser.toLowerCase() === 'admin@sdngedongboyountung.sch.id' && pass === 'admin123') {
-                const adminUser = {
-                    role: 'admin',
-                    email: emailOrUser,
-                    username: emailOrUser,
-                    name: 'Administrator Utama',
-                    teacherId: null
-                };
-                appData.currentUser = adminUser;
-                appData.activeAdminMenu = 'dashboard';
-                window.saveStaffSession(adminUser);
-                window.renderAdminLayout();
-                return;
+            const btnSubmit = document.getElementById('btnLoginAdminSubmit');
+            isLoginRequestRunning = true;
+            if (btnSubmit) {
+                btnSubmit.disabled = true;
+                btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1.5"></i> Memeriksa Akun...';
             }
 
-            // 2. Pastikan koleksi akun guru terbaru termuat dari Firestore
-            if (!IS_PREVIEW && db && (!Array.isArray(appData.teachers) || appData.teachers.length === 0)) {
-                try {
-                    const tSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teachers'));
-                    appData.teachers = tSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
-                } catch (fetchErr) {
-                    console.warn('Gagal memuat koleksi teachers saat login:', fetchErr);
-                }
-            }
-
-            // 3. Cek kecocokan akun Guru di Firestore (Username, Email, atau NIP)
-            const matchedTeacher = (appData.teachers || []).find(t => {
-                const candidates = [t.username, t.email, t.nip]
-                    .filter(Boolean)
-                    .map(v => String(v).trim().toLowerCase());
-                const isIdentityMatch = candidates.includes(emailOrUser.toLowerCase());
-                const storedPass = String(t.password || t.pin || '').trim();
-                const storedHash = t.passwordHash || '';
-                const isPassMatch = (storedPass !== '' && storedPass === pass) || (storedHash !== '' && storedHash === hashCredential(pass));
-                return isIdentityMatch && isPassMatch && (t.status || 'Aktif') === 'Aktif';
-            });
-
-            if (matchedTeacher) {
-                const assignedRole = matchedTeacher.role === 'admin' ? 'admin' : 'editor_soal';
-                const staffUser = {
-                    role: assignedRole,
-                    email: matchedTeacher.email || matchedTeacher.username || emailOrUser,
-                    username: matchedTeacher.username || matchedTeacher.email || matchedTeacher.nip || emailOrUser,
-                    name: matchedTeacher.fullName || matchedTeacher.name || 'Guru Editor',
-                    teacherId: matchedTeacher.id
-                };
-                appData.currentUser = staffUser;
-                appData.activeAdminMenu = assignedRole === 'admin' ? 'dashboard' : 'questionBanks';
-                window.saveStaffSession(staffUser);
-                logActivity(`${staffUser.name} (${assignedRole === 'admin' ? 'Administrator' : 'Editor Bank Soal'}) berhasil login.`);
-                window.renderAdminLayout();
-                return;
-            }
-
-            // 4. Fallback Firebase Auth Email/Password (untuk akun admin tambahan)
             try {
-                await signInWithEmailAndPassword(auth, emailOrUser, pass);
-                const fbAdminUser = {
-                    role: 'admin',
-                    email: emailOrUser,
-                    username: emailOrUser,
-                    name: 'Administrator Utama',
-                    teacherId: null
-                };
-                appData.currentUser = fbAdminUser;
-                appData.activeAdminMenu = 'dashboard';
-                window.saveStaffSession(fbAdminUser);
-                window.renderAdminLayout();
-            } catch (e) {
-                showLoginError('Email/Username atau Password tidak sesuai.');
+                // 1. Cek Akun Administrator Utama
+                if (emailOrUser.toLowerCase() === 'admin@sdngedongboyountung.sch.id' && pass === 'admin123') {
+                    const adminUser = {
+                        role: 'admin',
+                        email: emailOrUser,
+                        username: emailOrUser,
+                        name: 'Administrator Utama',
+                        teacherId: null
+                    };
+                    appData.currentUser = adminUser;
+                    appData.activeAdminMenu = 'dashboard';
+                    window.saveStaffSession(adminUser);
+                    window.renderAdminLayout();
+                    return;
+                }
+
+                // 2. Pastikan koleksi akun guru terbaru termuat dari Firestore
+                if (!IS_PREVIEW && db && (!Array.isArray(appData.teachers) || appData.teachers.length === 0)) {
+                    try {
+                        const tSnap = await promiseWithTimeout(
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teachers')),
+                            8000,
+                            'Timeout memuat data guru'
+                        );
+                        appData.teachers = tSnap.docs.map(d => ({ ...d.data(), id: d.id, _docId: d.id }));
+                    } catch (fetchErr) {
+                        console.warn('Gagal memuat koleksi teachers saat login:', fetchErr);
+                    }
+                }
+
+                // 3. Cek kecocokan akun Guru di Firestore (Username, Email, atau NIP)
+                const matchedTeacher = (appData.teachers || []).find(t => {
+                    const candidates = [t.username, t.email, t.nip]
+                        .filter(Boolean)
+                        .map(v => String(v).trim().toLowerCase());
+                    const isIdentityMatch = candidates.includes(emailOrUser.toLowerCase());
+                    const storedPass = String(t.password || t.pin || '').trim();
+                    const storedHash = t.passwordHash || '';
+                    const isPassMatch = (storedPass !== '' && storedPass === pass) || (storedHash !== '' && storedHash === hashCredential(pass));
+                    return isIdentityMatch && isPassMatch && (t.status || 'Aktif') === 'Aktif';
+                });
+
+                if (matchedTeacher) {
+                    const assignedRole = matchedTeacher.role === 'admin' ? 'admin' : 'editor_soal';
+                    const staffUser = {
+                        role: assignedRole,
+                        email: matchedTeacher.email || matchedTeacher.username || emailOrUser,
+                        username: matchedTeacher.username || matchedTeacher.email || matchedTeacher.nip || emailOrUser,
+                        name: matchedTeacher.fullName || matchedTeacher.name || 'Guru Editor',
+                        teacherId: matchedTeacher.id
+                    };
+                    appData.currentUser = staffUser;
+                    appData.activeAdminMenu = assignedRole === 'admin' ? 'dashboard' : 'questionBanks';
+                    window.saveStaffSession(staffUser);
+                    logActivity(`${staffUser.name} (${assignedRole === 'admin' ? 'Administrator' : 'Editor Bank Soal'}) berhasil login.`);
+                    window.renderAdminLayout();
+                    return;
+                }
+
+                // 4. Fallback Firebase Auth Email/Password (untuk akun admin tambahan)
+                try {
+                    await promiseWithTimeout(signInWithEmailAndPassword(auth, emailOrUser, pass), 10000, 'Timeout login Firebase Auth');
+                    const fbAdminUser = {
+                        role: 'admin',
+                        email: emailOrUser,
+                        username: emailOrUser,
+                        name: 'Administrator Utama',
+                        teacherId: null
+                    };
+                    appData.currentUser = fbAdminUser;
+                    appData.activeAdminMenu = 'dashboard';
+                    window.saveStaffSession(fbAdminUser);
+                    window.renderAdminLayout();
+                } catch (e) {
+                    showLoginError('Email/Username atau Password tidak sesuai.');
+                }
+            } finally {
+                isLoginRequestRunning = false;
+                const latestBtn = document.getElementById('btnLoginAdminSubmit');
+                if (latestBtn) {
+                    latestBtn.disabled = false;
+                    latestBtn.innerHTML = 'Masuk Panel Admin / Guru <i class="fa-solid fa-shield-halved ml-1.5"></i>';
+                }
             }
         };
 
@@ -2564,7 +2571,6 @@
             }
             const filterCls = appData.filters.studentClass || 'ALL';
             const filteredStudents = getFilteredStudentsList();
-            const hasActiveFilter = Boolean((appData.filters.studentSearch || '').trim()) || filterCls !== 'ALL';
 
             // Bersihkan ID siswa yang sudah tidak ada di daftar master
             const validIds = new Set(appData.students.map(s => String(s._docId || s.id)));
@@ -2576,18 +2582,17 @@
             const selectedCount = selectedStudentIds.size;
 
             const rows = filteredStudents.map((s, idx) => {
-                const rowId = String(s._docId || s.id);
-                const safeRowId = escapeHtml(rowId);
+                const sDocId = String(s._docId || s.id);
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
-                const isChecked = selectedStudentIds.has(rowId);
+                const isChecked = selectedStudentIds.has(sDocId);
                 const onlineNow = isStudentCurrentlyLoggedIn(s);
                 return `
                 <tr class="hover:bg-slate-50 border-b border-slate-100 ${isChecked ? 'bg-indigo-50/50' : ''}">
                     <td class="px-4 py-3 text-xs text-center">
-                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectStudent('${safeRowId}', this.checked)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectStudent('${escapeHtml(sDocId)}', this.checked)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
                     </td>
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
-                    <td class="px-4 py-3 text-xs font-mono font-bold">${escapeHtml(s.nisn)}</td>
+                    <td class="px-4 py-3 text-xs font-mono font-bold">${escapeHtml(s.nisn || '-')}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.nis || '-')}</td>
                     <td class="px-4 py-3 text-xs font-bold">${escapeHtml(s.fullName || s.name || '-')}</td>
                     <td class="px-4 py-3 text-xs font-semibold ${schoolDisplay === '-' ? 'text-slate-400 italic' : 'text-indigo-700'}">${escapeHtml(schoolDisplay)}</td>
@@ -2595,23 +2600,21 @@
                     <td class="px-4 py-3 text-xs">${escapeHtml(s.className || '-')}</td>
                     <td class="px-4 py-3 text-xs">
                         <div class="flex flex-wrap items-center gap-1">
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(s.status || 'Aktif')}</span>
-                            ${onlineNow ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1" title="Sedang login di perangkat: ${escapeHtml(s.deviceInfo || '-')}"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Sedang Login</span>` : ''}
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${(s.status || 'Aktif') === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(s.status || 'Aktif')}</span>
+                            ${onlineNow ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span> Sedang Login</span>` : ''}
                         </div>
                     </td>
                     <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
-                        ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${safeRowId}')" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold cursor-pointer" title="Reset Kunci Login Siswa"><i class="fa-solid fa-unlock-keyhole"></i></button>` : ''}
-                        <button type="button" onclick="window.openStudentFormModal('${safeRowId}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold cursor-pointer" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
-                        <button type="button" onclick="window.deleteStudentRecord('${safeRowId}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold cursor-pointer" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
+                        ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${escapeHtml(sDocId)}')" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold cursor-pointer" title="Reset Kunci Login Siswa"><i class="fa-solid fa-unlock-keyhole"></i></button>` : ''}
+                        <button type="button" onclick="window.openStudentFormModal('${escapeHtml(sDocId)}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold cursor-pointer" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="window.deleteStudentRecord('${escapeHtml(sDocId)}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold cursor-pointer" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
             `;
             }).join('');
 
             const classFilterOpts = appData.classes.map(c => `<option value="${escapeHtml(c.id)}" ${filterCls === c.id ? 'selected' : ''}>Kelas ${escapeHtml(c.className)}</option>`).join('');
-            const emptyStateRow = appData.students.length > 0 && hasActiveFilter
-                ? `<tr><td colspan="10" class="px-4 py-6 text-center text-xs text-slate-500">Tidak ada siswa yang cocok dengan filter saat ini (Total terdaftar: <strong>${appData.students.length} siswa</strong>). <button type="button" onclick="window.resetStudentFilters()" class="ml-2 px-3 py-1 bg-indigo-600 text-white rounded-lg font-bold cursor-pointer">Tampilkan Semua Siswa</button></td></tr>`
-                : `<tr><td colspan="10" class="px-4 py-6 text-center text-xs text-slate-400">${isFetchingStudentsFromCloud ? '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Memuat data siswa dari Cloud...' : 'Belum ada data siswa tersimpan. Klik <strong>Segarkan Data</strong>, <strong>Tambah Siswa</strong>, atau <strong>Impor Excel (.xlsx)</strong>.'}</td></tr>`;
+            const hasActiveFilter = Boolean(appData.filters.studentSearch) || filterCls !== 'ALL';
 
             container.innerHTML = `
                 <div class="space-y-4">
@@ -2621,13 +2624,13 @@
                             <p class="text-xs text-slate-500">Kelola data peserta ujian siswa, pencarian, filter kelas, reset kunci login perangkat, hapus massal, cetak kartu ujian, dan impor/ekspor Excel (.xlsx).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="window.refreshStudentsFromCloud(true)" class="px-3.5 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-xl text-xs font-bold transition cursor-pointer" title="Muat ulang data siswa langsung dari Firestore">
+                            <button type="button" onclick="window.refreshStudentsFromCloud(true)" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer" title="Muat ulang data siswa langsung dari Firestore">
                                 <i class="fa-solid fa-rotate mr-1"></i> Segarkan Data
                             </button>
-                            <button type="button" onclick="window.openPrintExamCardsModal()" ${filteredStudents.length > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${filteredStudents.length > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition" title="Cetak Kartu Peserta Ujian Siswa">
+                            <button type="button" onclick="window.openPrintExamCardsModal()" ${filteredStudents.length > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${filteredStudents.length > 0 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-id-card mr-1"></i> Cetak Kartu Ujian (${selectedCount > 0 ? selectedCount + ' Terpilih' : filteredStudents.length + ' Siswa'})
                             </button>
-                            <button type="button" onclick="window.unlockAllStudentsLogin()" class="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition cursor-pointer" title="Bebaskan kunci login seluruh akun siswa">
+                            <button type="button" onclick="window.unlockAllStudentsLogin()" class="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-unlock-keyhole mr-1"></i> Reset Semua Login
                             </button>
                             <button type="button" onclick="window.deleteSelectedStudents()" ${selectedCount > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${selectedCount > 0 ? 'bg-red-600 hover:bg-red-700 text-white shadow-sm cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition">
@@ -2636,16 +2639,16 @@
                             <button type="button" onclick="window.deleteAllFilteredStudents()" ${filteredStudents.length > 0 ? '' : 'disabled'} class="px-3.5 py-2 ${filteredStudents.length > 0 ? 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 cursor-pointer' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-users-slash mr-1"></i> Hapus Semua (${filteredStudents.length})
                             </button>
-                            <button type="button" onclick="window.downloadStudentTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.downloadStudentTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-download mr-1"></i> Unduh Template Excel
                             </button>
-                            <button type="button" onclick="window.triggerStudentExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.triggerStudentExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Impor Excel (.xlsx)
                             </button>
-                            <button type="button" onclick="window.exportStudentsExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.exportStudentsExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-file-export mr-1"></i> Ekspor Data (.xlsx)
                             </button>
-                            <button type="button" onclick="window.openStudentFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition">
+                            <button type="button" onclick="window.openStudentFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer">
                                 <i class="fa-solid fa-plus mr-1"></i> Tambah Siswa
                             </button>
                         </div>
@@ -2660,7 +2663,7 @@
                             <option value="ALL">Semua Kelas</option>
                             ${classFilterOpts}
                         </select>
-                        ${hasActiveFilter ? `<button type="button" onclick="window.resetStudentFilters()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer">Reset Filter</button>` : ''}
+                        ${hasActiveFilter ? `<button type="button" onclick="window.resetStudentFilters()" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold cursor-pointer"><i class="fa-solid fa-filter-circle-xmark mr-1"></i> Reset Filter</button>` : ''}
                     </div>
 
                     <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -2674,7 +2677,7 @@
                                         <th class="px-4 py-3">No</th><th class="px-4 py-3">NISN</th><th class="px-4 py-3">NIS</th><th class="px-4 py-3">Nama Lengkap</th><th class="px-4 py-3">Asal Sekolah</th><th class="px-4 py-3">L/P</th><th class="px-4 py-3">Kelas</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
                                     </tr>
                                 </thead>
-                                <tbody>${rows || emptyStateRow}</tbody>
+                                <tbody>${rows || `<tr><td colspan="10" class="px-4 py-6 text-center text-xs text-slate-400">${appData.students.length > 0 ? 'Tidak ada data siswa yang cocok dengan filter pencarian. Klik tombol "Reset Filter" untuk menampilkan semua siswa.' : 'Belum ada data siswa tersimpan. Klik "Segarkan Data" atau "Impor Excel (.xlsx)" untuk menambahkan siswa.'}</td></tr>`}</tbody>
                             </table>
                         </div>
                     </div>
@@ -2683,25 +2686,21 @@
         }
 
         window.toggleSelectStudent = function(studentId, isChecked) {
-            if (!studentId) return;
-            const sid = String(studentId);
-            if (isChecked) {
-                selectedStudentIds.add(sid);
-            } else {
-                selectedStudentIds.delete(sid);
-            }
-            renderStudentsContent(document.getElementById('adminMainContent'));
+            const key = String(studentId || '').trim();
+            if (!key) return;
+            if (isChecked) selectedStudentIds.add(key);
+            else selectedStudentIds.delete(key);
+            renderStudentsContent(document.getElementById('adminMainContent'), true);
         };
 
         window.toggleSelectAllStudents = function(isChecked) {
             const filteredStudents = getFilteredStudentsList();
-
             filteredStudents.forEach(s => {
-                const sid = String(s._docId || s.id);
-                if (isChecked) selectedStudentIds.add(sid);
-                else selectedStudentIds.delete(sid);
+                const key = String(s._docId || s.id);
+                if (isChecked) selectedStudentIds.add(key);
+                else selectedStudentIds.delete(key);
             });
-            renderStudentsContent(document.getElementById('adminMainContent'));
+            renderStudentsContent(document.getElementById('adminMainContent'), true);
         };
 
         window.deleteSelectedStudents = function() {
@@ -2718,20 +2717,16 @@
                 async (confirmed) => {
                     if (!confirmed) return true;
                     const btnOk = document.getElementById('modalBtnOk');
-                    if (btnOk) btnOk.innerText = `Menghapus 0/${idsToDelete.length}...`;
-
                     const res = await bulkSyncCollectionRecords('students', idsToDelete, true, (done, total) => {
                         if (btnOk) btnOk.innerText = `Menghapus ${done}/${total}...`;
                     });
-
-                    res.successIds.forEach(sid => selectedStudentIds.delete(sid));
-                    renderStudentsContent(document.getElementById('adminMainContent'));
-
+                    res.successIds.forEach(id => selectedStudentIds.delete(id));
+                    logActivity(`Administrator menghapus ${res.successCount} data siswa secara bersamaan.`);
+                    renderStudentsContent(document.getElementById('adminMainContent'), true);
                     if (res.failedCount > 0) {
-                        window.showModal('Sebagian Gagal Dihapus', `${res.successCount} siswa berhasil dihapus, namun ${res.failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
+                        window.showModal('Sebagian Gagal Dihapus', `${res.successCount} siswa berhasil dihapus, namun ${res.failedCount} gagal dihapus dari Firestore.`, 'error');
                     } else {
-                        logActivity(`Administrator menghapus ${res.successCount} data siswa secara bersamaan.`);
-                        window.showModal('Berhasil Dihapus', `${res.successCount} data siswa berhasil dihapus secara bersamaan.`, 'success');
+                        window.showModal('Berhasil Dihapus', `${res.successCount} data siswa berhasil dihapus secara permanen dari database.`, 'success');
                     }
                     return true;
                 },
@@ -2741,11 +2736,7 @@
 
         window.deleteAllFilteredStudents = function() {
             const filteredStudents = getFilteredStudentsList();
-
-            if (filteredStudents.length === 0) {
-                window.showModal('Data Siswa Kosong', 'Tidak ada data siswa yang dapat dihapus pada tampilan saat ini.', 'info');
-                return;
-            }
+            if (filteredStudents.length === 0) return;
             const idsToDelete = filteredStudents.map(s => String(s._docId || s.id)).filter(Boolean);
 
             window.showModal(
@@ -2755,20 +2746,16 @@
                 async (confirmed) => {
                     if (!confirmed) return true;
                     const btnOk = document.getElementById('modalBtnOk');
-                    if (btnOk) btnOk.innerText = `Menghapus 0/${idsToDelete.length}...`;
-
                     const res = await bulkSyncCollectionRecords('students', idsToDelete, true, (done, total) => {
                         if (btnOk) btnOk.innerText = `Menghapus ${done}/${total}...`;
                     });
-
-                    res.successIds.forEach(sid => selectedStudentIds.delete(sid));
-                    renderStudentsContent(document.getElementById('adminMainContent'));
-
+                    res.successIds.forEach(id => selectedStudentIds.delete(id));
+                    logActivity(`Administrator menghapus ${res.successCount} data siswa sekaligus.`);
+                    renderStudentsContent(document.getElementById('adminMainContent'), true);
                     if (res.failedCount > 0) {
-                        window.showModal('Sebagian Gagal Dihapus', `${res.successCount} siswa berhasil dihapus, namun ${res.failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
+                        window.showModal('Sebagian Gagal Dihapus', `${res.successCount} siswa berhasil dihapus, namun ${res.failedCount} gagal dihapus dari Firestore.`, 'error');
                     } else {
-                        logActivity(`Administrator menghapus ${res.successCount} data siswa sekaligus.`);
-                        window.showModal('Berhasil Dihapus', `${res.successCount} data siswa berhasil dihapus dari database.`, 'success');
+                        window.showModal('Berhasil Dihapus', `${res.successCount} data siswa berhasil dihapus secara permanen dari database.`, 'success');
                     }
                     return true;
                 },
@@ -2781,10 +2768,11 @@
             if (classVal !== null) appData.filters.studentClass = classVal;
             renderStudentsContent(document.getElementById('adminMainContent'), true);
             if (searchVal !== null) {
-                const inp = document.getElementById('studentSearchInput');
-                if (inp) {
-                    inp.focus();
-                    try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) {}
+                const inputEl = document.getElementById('studentSearchInput');
+                if (inputEl) {
+                    inputEl.focus();
+                    const len = inputEl.value.length;
+                    try { inputEl.setSelectionRange(len, len); } catch (e) {}
                 }
             }
         };
@@ -3062,7 +3050,11 @@
                         existing.pin = rawPinInput;
                         existing.passwordHash = hashCredential(rawPinInput);
                     }
-                    await syncCollectionRecord('students', docId, existing);
+                    const ok = await syncCollectionRecord('students', docId, existing);
+                    if (!ok) {
+                        window.showModal('Gagal Menyimpan', `Data siswa gagal tersimpan ke Firestore${window._lastFirestoreSyncError ? ' (' + window._lastFirestoreSyncError + ')' : ''}.`, 'error');
+                        return false;
+                    }
                 } else {
                     const finalPin = rawPinInput || '123456';
                     const safeNisnId = nisn.replace(/[^a-zA-Z0-9_-]/g, '');
@@ -3084,8 +3076,11 @@
                         passwordHash: hashCredential(finalPin),
                         status: 'Aktif'
                     };
-                    appData.students.push(newStd);
-                    await syncCollectionRecord('students', docId, newStd);
+                    const ok = await syncCollectionRecord('students', docId, newStd);
+                    if (!ok) {
+                        window.showModal('Gagal Menyimpan', `Data siswa baru gagal tersimpan ke Firestore${window._lastFirestoreSyncError ? ' (' + window._lastFirestoreSyncError + ')' : ''}.`, 'error');
+                        return false;
+                    }
                 }
                 renderStudentsContent(document.getElementById('adminMainContent'), true);
                 return true;
