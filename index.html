@@ -1209,20 +1209,32 @@
             if (docId === undefined || docId === null || String(docId).trim() === '') return false;
             const safeDocId = String(docId).trim();
             try {
+                // Pastikan sesi Firebase Auth tetap aktif agar tidak ditolak oleh Security Rules
+                if (auth && !auth.currentUser) {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (reAuthErr) {
+                        console.warn('Re-auth notice:', reAuthErr.code || reAuthErr.message);
+                    }
+                }
                 updateLiveSyncIndicator('syncing', 'Menyinkronkan...');
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, safeDocId);
                 if (isDelete) {
                     await deleteDoc(ref);
                     if (Array.isArray(appData[collectionName])) {
-                        appData[collectionName] = appData[collectionName].filter(item => String(item.id || item.resultId) !== safeDocId);
+                        appData[collectionName] = appData[collectionName].filter(item =>
+                            String(item._docId || item.id || item.resultId) !== safeDocId &&
+                            String(item.id || item.resultId) !== safeDocId
+                        );
                     }
                 } else {
                     const cleanPayload = sanitizeFirestoreData(dataObj);
+                    if (cleanPayload && '_docId' in cleanPayload) delete cleanPayload._docId;
                     await setDoc(ref, cleanPayload, { merge: true });
                     if (Array.isArray(appData[collectionName])) {
                         const keyField = collectionName === 'examResults' ? 'resultId' : 'id';
-                        const idx = appData[collectionName].findIndex(item => String(item[keyField] || item.id) === safeDocId);
-                        const mergedObj = { id: safeDocId, ...cleanPayload };
+                        const idx = appData[collectionName].findIndex(item => String(item._docId || item[keyField] || item.id) === safeDocId);
+                        const mergedObj = { ...cleanPayload, id: safeDocId, _docId: safeDocId };
                         if (idx !== -1) {
                             appData[collectionName][idx] = { ...appData[collectionName][idx], ...mergedObj };
                         } else {
@@ -1245,7 +1257,7 @@
                 const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
                 const snap = await getDoc(ref);
                 if (snap.exists()) {
-                    return { id: snap.id, ...snap.data() };
+                    return { ...snap.data(), id: snap.id, _docId: snap.id };
                 }
                 return null;
             } catch (err) {
@@ -1292,7 +1304,13 @@
                     const snap = await getDocs(
                         collection(db, 'artifacts', appId, 'public', 'data', colName)
                     );
-                    appData[colName] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    appData[colName] = snap.docs.map(d => {
+                        const raw = d.data();
+                        if (colName === 'examResults') {
+                            return { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id };
+                        }
+                        return { ...raw, id: d.id, _docId: d.id };
+                    });
                 }
 
                 const settingsSnap = await getDoc(
@@ -1335,9 +1353,9 @@
                     const docsList = snapshot.docs.map(d => {
                         const raw = d.data();
                         if (colName === 'examResults') {
-                            return { id: d.id, resultId: raw.resultId || d.id, ...raw };
+                            return { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id };
                         }
-                        return { id: d.id, ...raw };
+                        return { ...raw, id: d.id, _docId: d.id };
                     });
 
                     // Urutkan soal berdasarkan nomor urut agar konsisten
@@ -1416,7 +1434,9 @@
                         const snap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', cName));
                         appData[cName] = snap.docs.map(d => {
                             const raw = d.data();
-                            return cName === 'examResults' ? { id: d.id, resultId: raw.resultId || d.id, ...raw } : { id: d.id, ...raw };
+                            return cName === 'examResults'
+                                ? { ...raw, id: d.id, _docId: d.id, resultId: raw.resultId || d.id }
+                                : { ...raw, id: d.id, _docId: d.id };
                         });
                     }
                 } catch (pollErr) {
@@ -1549,6 +1569,7 @@
 
         window.closeModal = function() {
             isViolationModalOpen = false;
+            isModalActionRunning = false;
             const btnOk = document.getElementById('modalBtnOk');
             if (btnOk) btnOk.disabled = false;
             document.getElementById('customModal').classList.add('hidden');
@@ -2304,22 +2325,24 @@
             const filteredStudents = getFilteredStudentsList();
 
             // Bersihkan ID siswa yang sudah tidak ada di daftar master
-            const validIds = new Set(appData.students.map(s => s.id));
+            const validIds = new Set(appData.students.map(s => String(s._docId || s.id)));
             Array.from(selectedStudentIds).forEach(id => {
-                if (!validIds.has(id)) selectedStudentIds.delete(id);
+                if (!validIds.has(String(id))) selectedStudentIds.delete(id);
             });
 
-            const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(s.id));
+            const allFilteredSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.has(String(s._docId || s.id)));
             const selectedCount = selectedStudentIds.size;
 
             const rows = filteredStudents.map((s, idx) => {
+                const rowId = String(s._docId || s.id);
+                const safeRowId = escapeHtml(rowId);
                 const schoolDisplay = s.asalSekolah !== undefined ? (s.asalSekolah || '-') : (appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG');
-                const isChecked = selectedStudentIds.has(s.id);
+                const isChecked = selectedStudentIds.has(rowId);
                 const onlineNow = isStudentCurrentlyLoggedIn(s);
                 return `
                 <tr class="hover:bg-slate-50 border-b border-slate-100 ${isChecked ? 'bg-indigo-50/50' : ''}">
                     <td class="px-4 py-3 text-xs text-center">
-                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectStudent('${escapeHtml(s.id)}', this.checked)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectStudent('${safeRowId}', this.checked)" class="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
                     </td>
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
                     <td class="px-4 py-3 text-xs font-mono font-bold">${escapeHtml(s.nisn)}</td>
@@ -2335,9 +2358,9 @@
                         </div>
                     </td>
                     <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
-                        ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${s.id}')" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold" title="Reset Kunci Login Siswa"><i class="fa-solid fa-unlock-keyhole"></i></button>` : ''}
-                        <button type="button" onclick="window.openStudentFormModal('${s.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
-                        <button type="button" onclick="window.deleteStudentRecord('${s.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
+                        ${(onlineNow || s.isLoggedIn) ? `<button type="button" onclick="window.unlockStudentLogin('${safeRowId}')" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg font-bold cursor-pointer" title="Reset Kunci Login Siswa"><i class="fa-solid fa-unlock-keyhole"></i></button>` : ''}
+                        <button type="button" onclick="window.openStudentFormModal('${safeRowId}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold cursor-pointer" title="Edit Siswa"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="window.deleteStudentRecord('${safeRowId}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold cursor-pointer" title="Hapus Siswa"><i class="fa-solid fa-trash"></i></button>
                     </td>
                 </tr>
             `;
@@ -2412,10 +2435,11 @@
 
         window.toggleSelectStudent = function(studentId, isChecked) {
             if (!studentId) return;
+            const sid = String(studentId);
             if (isChecked) {
-                selectedStudentIds.add(studentId);
+                selectedStudentIds.add(sid);
             } else {
-                selectedStudentIds.delete(studentId);
+                selectedStudentIds.delete(sid);
             }
             renderStudentsContent(document.getElementById('adminMainContent'));
         };
@@ -2424,14 +2448,15 @@
             const filteredStudents = getFilteredStudentsList();
 
             filteredStudents.forEach(s => {
-                if (isChecked) selectedStudentIds.add(s.id);
-                else selectedStudentIds.delete(s.id);
+                const sid = String(s._docId || s.id);
+                if (isChecked) selectedStudentIds.add(sid);
+                else selectedStudentIds.delete(sid);
             });
             renderStudentsContent(document.getElementById('adminMainContent'));
         };
 
         window.deleteSelectedStudents = function() {
-            const idsToDelete = Array.from(selectedStudentIds).filter(Boolean);
+            const idsToDelete = Array.from(selectedStudentIds).map(String).filter(Boolean);
             if (idsToDelete.length === 0) {
                 window.showModal('Pilih Siswa Terlebih Dahulu', 'Silakan centang minimal satu siswa pada tabel untuk dihapus secara bersamaan.', 'info');
                 return;
@@ -2445,23 +2470,38 @@
                     if (!confirmed) return true;
                     const btnOk = document.getElementById('modalBtnOk');
                     updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
-                    const idSet = new Set(idsToDelete.map(String));
                     const chunkSize = 15;
                     let processed = 0;
+                    const deletedIds = new Set();
+                    let failedCount = 0;
 
                     for (let i = 0; i < idsToDelete.length; i += chunkSize) {
                         const chunk = idsToDelete.slice(i, i + chunkSize);
-                        await Promise.all(chunk.map(sid => syncCollectionRecord('students', String(sid), null, true)));
+                        const results = await Promise.all(chunk.map(async (sid) => {
+                            const ok = await syncCollectionRecord('students', sid, null, true);
+                            return { sid, ok };
+                        }));
+                        results.forEach(({ sid, ok }) => {
+                            if (ok) {
+                                deletedIds.add(sid);
+                                selectedStudentIds.delete(sid);
+                            } else {
+                                failedCount++;
+                            }
+                        });
                         processed += chunk.length;
                         if (btnOk) btnOk.innerText = `Menghapus ${processed}/${idsToDelete.length}...`;
                     }
 
-                    appData.students = appData.students.filter(s => !idSet.has(String(s.id)));
-                    selectedStudentIds.clear();
-
-                    logActivity(`Administrator menghapus ${idsToDelete.length} data siswa secara bersamaan.`);
+                    appData.students = appData.students.filter(s => !deletedIds.has(String(s._docId || s.id)));
                     renderStudentsContent(document.getElementById('adminMainContent'));
-                    window.showModal('Berhasil Dihapus', `${idsToDelete.length} data siswa berhasil dihapus secara bersamaan.`, 'success');
+
+                    if (failedCount > 0) {
+                        window.showModal('Sebagian Gagal Dihapus', `${deletedIds.size} siswa berhasil dihapus, namun ${failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
+                    } else {
+                        logActivity(`Administrator menghapus ${deletedIds.size} data siswa secara bersamaan.`);
+                        window.showModal('Berhasil Dihapus', `${deletedIds.size} data siswa berhasil dihapus secara bersamaan.`, 'success');
+                    }
                     return true;
                 },
                 { showCancel: true, okText: `Ya, Hapus ${idsToDelete.length} Siswa` }
@@ -2475,7 +2515,7 @@
                 window.showModal('Data Siswa Kosong', 'Tidak ada data siswa yang dapat dihapus pada tampilan saat ini.', 'info');
                 return;
             }
-            const idsToDelete = filteredStudents.map(s => String(s.id)).filter(Boolean);
+            const idsToDelete = filteredStudents.map(s => String(s._docId || s.id)).filter(Boolean);
 
             window.showModal(
                 'Konfirmasi Hapus Semua Siswa',
@@ -2485,23 +2525,38 @@
                     if (!confirmed) return true;
                     const btnOk = document.getElementById('modalBtnOk');
                     updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
-                    const idSet = new Set(idsToDelete);
                     const chunkSize = 15;
                     let processed = 0;
+                    const deletedIds = new Set();
+                    let failedCount = 0;
 
                     for (let i = 0; i < idsToDelete.length; i += chunkSize) {
                         const chunk = idsToDelete.slice(i, i + chunkSize);
-                        await Promise.all(chunk.map(sid => syncCollectionRecord('students', sid, null, true)));
+                        const results = await Promise.all(chunk.map(async (sid) => {
+                            const ok = await syncCollectionRecord('students', sid, null, true);
+                            return { sid, ok };
+                        }));
+                        results.forEach(({ sid, ok }) => {
+                            if (ok) {
+                                deletedIds.add(sid);
+                                selectedStudentIds.delete(sid);
+                            } else {
+                                failedCount++;
+                            }
+                        });
                         processed += chunk.length;
                         if (btnOk) btnOk.innerText = `Menghapus ${processed}/${idsToDelete.length}...`;
                     }
 
-                    appData.students = appData.students.filter(s => !idSet.has(String(s.id)));
-                    idsToDelete.forEach(id => selectedStudentIds.delete(id));
-
-                    logActivity(`Administrator menghapus ${idsToDelete.length} data siswa sekaligus.`);
+                    appData.students = appData.students.filter(s => !deletedIds.has(String(s._docId || s.id)));
                     renderStudentsContent(document.getElementById('adminMainContent'));
-                    window.showModal('Berhasil Dihapus', `${idsToDelete.length} data siswa berhasil dihapus dari database.`, 'success');
+
+                    if (failedCount > 0) {
+                        window.showModal('Sebagian Gagal Dihapus', `${deletedIds.size} siswa berhasil dihapus, namun ${failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
+                    } else {
+                        logActivity(`Administrator menghapus ${deletedIds.size} data siswa sekaligus.`);
+                        window.showModal('Berhasil Dihapus', `${deletedIds.size} data siswa berhasil dihapus dari database.`, 'success');
+                    }
                     return true;
                 },
                 { showCancel: true, okText: `Ya, Hapus Semua (${idsToDelete.length} Siswa)` }
@@ -2793,13 +2848,20 @@
 
         window.deleteStudentRecord = function(studentId) {
             if (!studentId) return;
-            const target = appData.students.find(x => x.id === studentId);
-            const label = target ? `${target.fullName} (NISN: ${target.nisn})` : studentId;
+            const sid = String(studentId);
+            const target = appData.students.find(x => String(x._docId || x.id) === sid || String(x.id) === sid);
+            const docIdToDelete = String(target ? (target._docId || target.id) : sid);
+            const label = target ? `${target.fullName} (NISN: ${target.nisn})` : sid;
             window.showModal('Hapus Data Siswa', `Yakin ingin menghapus siswa "${label}" secara permanen?`, 'error', async (confirmed) => {
                 if (!confirmed) return true;
-                selectedStudentIds.delete(studentId);
-                appData.students = appData.students.filter(x => x.id !== studentId);
-                await syncCollectionRecord('students', studentId, null, true);
+                const ok = await syncCollectionRecord('students', docIdToDelete, null, true);
+                if (!ok) {
+                    window.showModal('Gagal Menghapus Siswa', `Data siswa "${label}" gagal dihapus dari database Firestore. Pastikan koneksi internet aktif.`, 'error');
+                    return false;
+                }
+                selectedStudentIds.delete(docIdToDelete);
+                selectedStudentIds.delete(sid);
+                appData.students = appData.students.filter(x => String(x._docId || x.id) !== docIdToDelete && String(x.id) !== sid);
                 logActivity(`Administrator menghapus data siswa ${label}.`);
                 renderStudentsContent(document.getElementById('adminMainContent'));
                 return true;
