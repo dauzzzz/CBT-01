@@ -261,7 +261,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, onSnapshot, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const APP_VERSION = '4.0.0';
@@ -759,7 +759,7 @@
         let autoSaveDebounceTimer = null;
         let selectedStudentIds = new Set();
         let selectedResultIds = new Set();
-
+        let isBulkOperationInProgress = false;
         // ============================================================================
         // ROLE-BASED ACCESS CONTROL (ADMIN UTAMA VS EDITOR BANK SOAL / GURU)
         // ============================================================================
@@ -1145,8 +1145,10 @@
         }
 
         window.triggerRealtimeUIRefresh = function(sourceCollection = '') {
+            if (isBulkOperationInProgress) return;
             if (realtimeRefreshDebounce) clearTimeout(realtimeRefreshDebounce);
             realtimeRefreshDebounce = setTimeout(() => {
+                if (isBulkOperationInProgress) return;
                 // Jangan lakukan auto-refresh / re-render halaman jika Admin atau Editor Soal sedang berada di menu Bank Soal
                 if (window.isStaffUser(appData.currentUser) && appData.activeAdminMenu === 'questionBanks') {
                     return;
@@ -1251,18 +1253,128 @@
             }
         }
 
-        async function fetchSingleFirestoreDoc(collectionName, docId) {
-            if (IS_PREVIEW || !db) return null;
-            try {
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
-                const snap = await getDoc(ref);
-                if (snap.exists()) {
-                    return { ...snap.data(), id: snap.id, _docId: snap.id };
+        async function bulkSyncCollectionRecords(collectionName, items, isDelete = false, onProgress = null) {
+            const list = Array.isArray(items) ? items : [];
+            if (list.length === 0) return { successCount: 0, failedCount: 0, successIds: new Set() };
+
+            if (IS_PREVIEW || !db) {
+                const successIds = new Set();
+                if (isDelete) {
+                    const delSet = new Set(list.map(x => String(x).trim()).filter(Boolean));
+                    delSet.forEach(id => successIds.add(id));
+                    if (Array.isArray(appData[collectionName])) {
+                        appData[collectionName] = appData[collectionName].filter(item =>
+                            !delSet.has(String(item._docId || item.id || item.resultId)) &&
+                            !delSet.has(String(item.id || item.resultId))
+                        );
+                    }
+                } else {
+                    list.forEach(rec => {
+                        const sid = String(rec._docId || rec.id).trim();
+                        if (!sid) return;
+                        successIds.add(sid);
+                        const merged = { ...sanitizeFirestoreData(rec), id: sid, _docId: sid };
+                        if (Array.isArray(appData[collectionName])) {
+                            const idx = appData[collectionName].findIndex(item => String(item._docId || item.id) === sid);
+                            if (idx !== -1) appData[collectionName][idx] = { ...appData[collectionName][idx], ...merged };
+                            else appData[collectionName].push(merged);
+                        }
+                    });
                 }
-                return null;
-            } catch (err) {
-                console.error(`Fetch Doc Error [${collectionName}/${docId}]:`, err);
-                return null;
+                if (typeof onProgress === 'function') onProgress(list.length, list.length);
+                return { successCount: successIds.size, failedCount: 0, successIds };
+            }
+
+            isBulkOperationInProgress = true;
+            const successIds = new Set();
+            let failedCount = 0;
+            let processedCount = 0;
+
+            try {
+                if (auth && !auth.currentUser) {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (reAuthErr) {
+                        console.warn('Re-auth notice:', reAuthErr.code || reAuthErr.message);
+                    }
+                }
+
+                updateLiveSyncIndicator('syncing', `${isDelete ? 'Menghapus' : 'Menyimpan'} ${list.length} Data...`);
+                const batchLimit = 250; // Aman jauh di bawah batas 500 operasi per Firestore writeBatch
+
+                for (let i = 0; i < list.length; i += batchLimit) {
+                    const slice = list.slice(i, i + batchLimit);
+                    try {
+                        const batch = writeBatch(db);
+                        const sliceIds = [];
+                        const sliceMerged = [];
+
+                        slice.forEach(entry => {
+                            if (isDelete) {
+                                const safeId = String(entry || '').trim();
+                                if (!safeId) return;
+                                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, safeId);
+                                batch.delete(ref);
+                                sliceIds.push(safeId);
+                            } else {
+                                const safeId = String(entry._docId || entry.id || '').trim();
+                                if (!safeId) return;
+                                const cleanPayload = sanitizeFirestoreData(entry);
+                                if (cleanPayload && '_docId' in cleanPayload) delete cleanPayload._docId;
+                                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, safeId);
+                                batch.set(ref, cleanPayload, { merge: true });
+                                sliceIds.push(safeId);
+                                sliceMerged.push({ ...cleanPayload, id: safeId, _docId: safeId });
+                            }
+                        });
+
+                        await batch.commit();
+
+                        if (isDelete) {
+                            const delSet = new Set(sliceIds);
+                            sliceIds.forEach(id => successIds.add(id));
+                            if (Array.isArray(appData[collectionName])) {
+                                appData[collectionName] = appData[collectionName].filter(item =>
+                                    !delSet.has(String(item._docId || item.id || item.resultId)) &&
+                                    !delSet.has(String(item.id || item.resultId))
+                                );
+                            }
+                        } else {
+                            sliceMerged.forEach(mergedObj => {
+                                successIds.add(mergedObj.id);
+                                if (Array.isArray(appData[collectionName])) {
+                                    const idx = appData[collectionName].findIndex(item => String(item._docId || item.id) === mergedObj.id);
+                                    if (idx !== -1) appData[collectionName][idx] = { ...appData[collectionName][idx], ...mergedObj };
+                                    else appData[collectionName].push(mergedObj);
+                                }
+                            });
+                        }
+
+                        processedCount += slice.length;
+                        if (typeof onProgress === 'function') onProgress(processedCount, list.length);
+                    } catch (batchErr) {
+                        console.warn(`Batch commit gagal [${collectionName}], beralih ke fallback per item:`, batchErr);
+                        // Fallback otomatis bila batch gagal agar data tetap tersimpan/terhapus satu per satu
+                        for (const entry of slice) {
+                            const safeId = isDelete ? String(entry || '').trim() : String(entry._docId || entry.id || '').trim();
+                            if (!safeId) {
+                                failedCount++;
+                                processedCount++;
+                                continue;
+                            }
+                            const ok = await syncCollectionRecord(collectionName, safeId, isDelete ? null : entry, isDelete);
+                            if (ok) successIds.add(safeId);
+                            else failedCount++;
+                            processedCount++;
+                            if (typeof onProgress === 'function') onProgress(processedCount, list.length);
+                        }
+                    }
+                }
+
+                updateLiveSyncIndicator(failedCount > 0 ? 'error' : 'updated', failedCount > 0 ? 'Sebagian Gagal' : 'Data Diperbarui');
+                return { successCount: successIds.size, failedCount, successIds };
+            } finally {
+                isBulkOperationInProgress = false;
             }
         }
 
@@ -2469,38 +2581,20 @@
                 async (confirmed) => {
                     if (!confirmed) return true;
                     const btnOk = document.getElementById('modalBtnOk');
-                    updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
-                    const chunkSize = 15;
-                    let processed = 0;
-                    const deletedIds = new Set();
-                    let failedCount = 0;
+                    if (btnOk) btnOk.innerText = `Menghapus 0/${idsToDelete.length}...`;
 
-                    for (let i = 0; i < idsToDelete.length; i += chunkSize) {
-                        const chunk = idsToDelete.slice(i, i + chunkSize);
-                        const results = await Promise.all(chunk.map(async (sid) => {
-                            const ok = await syncCollectionRecord('students', sid, null, true);
-                            return { sid, ok };
-                        }));
-                        results.forEach(({ sid, ok }) => {
-                            if (ok) {
-                                deletedIds.add(sid);
-                                selectedStudentIds.delete(sid);
-                            } else {
-                                failedCount++;
-                            }
-                        });
-                        processed += chunk.length;
-                        if (btnOk) btnOk.innerText = `Menghapus ${processed}/${idsToDelete.length}...`;
-                    }
+                    const res = await bulkSyncCollectionRecords('students', idsToDelete, true, (done, total) => {
+                        if (btnOk) btnOk.innerText = `Menghapus ${done}/${total}...`;
+                    });
 
-                    appData.students = appData.students.filter(s => !deletedIds.has(String(s._docId || s.id)));
+                    res.successIds.forEach(sid => selectedStudentIds.delete(sid));
                     renderStudentsContent(document.getElementById('adminMainContent'));
 
-                    if (failedCount > 0) {
-                        window.showModal('Sebagian Gagal Dihapus', `${deletedIds.size} siswa berhasil dihapus, namun ${failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
+                    if (res.failedCount > 0) {
+                        window.showModal('Sebagian Gagal Dihapus', `${res.successCount} siswa berhasil dihapus, namun ${res.failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
                     } else {
-                        logActivity(`Administrator menghapus ${deletedIds.size} data siswa secara bersamaan.`);
-                        window.showModal('Berhasil Dihapus', `${deletedIds.size} data siswa berhasil dihapus secara bersamaan.`, 'success');
+                        logActivity(`Administrator menghapus ${res.successCount} data siswa secara bersamaan.`);
+                        window.showModal('Berhasil Dihapus', `${res.successCount} data siswa berhasil dihapus secara bersamaan.`, 'success');
                     }
                     return true;
                 },
@@ -2524,38 +2618,20 @@
                 async (confirmed) => {
                     if (!confirmed) return true;
                     const btnOk = document.getElementById('modalBtnOk');
-                    updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
-                    const chunkSize = 15;
-                    let processed = 0;
-                    const deletedIds = new Set();
-                    let failedCount = 0;
+                    if (btnOk) btnOk.innerText = `Menghapus 0/${idsToDelete.length}...`;
 
-                    for (let i = 0; i < idsToDelete.length; i += chunkSize) {
-                        const chunk = idsToDelete.slice(i, i + chunkSize);
-                        const results = await Promise.all(chunk.map(async (sid) => {
-                            const ok = await syncCollectionRecord('students', sid, null, true);
-                            return { sid, ok };
-                        }));
-                        results.forEach(({ sid, ok }) => {
-                            if (ok) {
-                                deletedIds.add(sid);
-                                selectedStudentIds.delete(sid);
-                            } else {
-                                failedCount++;
-                            }
-                        });
-                        processed += chunk.length;
-                        if (btnOk) btnOk.innerText = `Menghapus ${processed}/${idsToDelete.length}...`;
-                    }
+                    const res = await bulkSyncCollectionRecords('students', idsToDelete, true, (done, total) => {
+                        if (btnOk) btnOk.innerText = `Menghapus ${done}/${total}...`;
+                    });
 
-                    appData.students = appData.students.filter(s => !deletedIds.has(String(s._docId || s.id)));
+                    res.successIds.forEach(sid => selectedStudentIds.delete(sid));
                     renderStudentsContent(document.getElementById('adminMainContent'));
 
-                    if (failedCount > 0) {
-                        window.showModal('Sebagian Gagal Dihapus', `${deletedIds.size} siswa berhasil dihapus, namun ${failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
+                    if (res.failedCount > 0) {
+                        window.showModal('Sebagian Gagal Dihapus', `${res.successCount} siswa berhasil dihapus, namun ${res.failedCount} siswa gagal dihapus dari Firestore. Periksa koneksi internet atau aturan Firestore.`, 'error');
                     } else {
-                        logActivity(`Administrator menghapus ${deletedIds.size} data siswa sekaligus.`);
-                        window.showModal('Berhasil Dihapus', `${deletedIds.size} data siswa berhasil dihapus dari database.`, 'success');
+                        logActivity(`Administrator menghapus ${res.successCount} data siswa sekaligus.`);
+                        window.showModal('Berhasil Dihapus', `${res.successCount} data siswa berhasil dihapus dari database.`, 'success');
                     }
                     return true;
                 },
@@ -2745,18 +2821,18 @@
                             };
                         });
 
-                        const chunkSize = 15;
-                        let savedCount = 0;
-                        for (let i = 0; i < newRecords.length; i += chunkSize) {
-                            const chunk = newRecords.slice(i, i + chunkSize);
-                            await Promise.all(chunk.map(rec => syncCollectionRecord('students', rec.id, rec)));
-                            savedCount += chunk.length;
-                            if (btnOk) btnOk.innerText = `Menyimpan ${savedCount}/${newRecords.length}...`;
-                        }
+                        if (btnOk) btnOk.innerText = `Menyimpan 0/${newRecords.length}...`;
+                        const res = await bulkSyncCollectionRecords('students', newRecords, false, (done, total) => {
+                            if (btnOk) btnOk.innerText = `Menyimpan ${done}/${total}...`;
+                        });
 
-                        logActivity(`Impor Excel Siswa selesai: ${newRecords.length} data siswa baru ditambahkan.`);
+                        logActivity(`Impor Excel Siswa selesai: ${res.successCount} data siswa baru ditambahkan.`);
                         renderStudentsContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${newRecords.length} data siswa ke Firebase Firestore.`, 'success');
+                        if (res.failedCount > 0) {
+                            window.showModal('Sebagian Impor Gagal', `${res.successCount} siswa berhasil disimpan, namun ${res.failedCount} siswa gagal disimpan ke Firestore. Silakan coba impor ulang untuk sisanya.`, 'error');
+                        } else {
+                            window.showModal('Impor Berhasil', `Berhasil menyimpan seluruh ${res.successCount} data siswa ke Firebase Firestore.`, 'success');
+                        }
                         return true;
                     }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Siswa ke Database` });
                 });
