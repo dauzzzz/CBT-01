@@ -206,8 +206,8 @@
     <!-- Area Cetak Laporan Tersembunyi -->
     <div id="printableArea" class="hidden"></div>
 
-    <!-- Input File Global untuk Impor Excel (.xlsx / .xls) -->
-    <input type="file" id="globalFileInput" accept=".xlsx,.xls" class="hidden" />
+    <!-- Input File Global untuk Impor Excel (.xlsx / .xls / .csv) -->
+    <input type="file" id="globalFileInput" accept=".xlsx,.xls,.csv" class="hidden" />
     <!-- Input File Global untuk Unggah Logo Sekolah (PNG, JPG, JPEG) -->
     <input type="file" id="schoolLogoFileInput" accept="image/png,image/jpeg,image/jpg" class="hidden" onchange="window.handleLogoFileSelected(event)" />
 
@@ -1206,21 +1206,23 @@
 
         async function syncCollectionRecord(collectionName, docId, dataObj, isDelete = false) {
             if (IS_PREVIEW || !db) return true;
+            if (docId === undefined || docId === null || String(docId).trim() === '') return false;
+            const safeDocId = String(docId).trim();
             try {
                 updateLiveSyncIndicator('syncing', 'Menyinkronkan...');
-                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, docId);
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', collectionName, safeDocId);
                 if (isDelete) {
                     await deleteDoc(ref);
                     if (Array.isArray(appData[collectionName])) {
-                        appData[collectionName] = appData[collectionName].filter(item => (item.id || item.resultId) !== docId);
+                        appData[collectionName] = appData[collectionName].filter(item => String(item.id || item.resultId) !== safeDocId);
                     }
                 } else {
                     const cleanPayload = sanitizeFirestoreData(dataObj);
                     await setDoc(ref, cleanPayload, { merge: true });
                     if (Array.isArray(appData[collectionName])) {
                         const keyField = collectionName === 'examResults' ? 'resultId' : 'id';
-                        const idx = appData[collectionName].findIndex(item => (item[keyField] || item.id) === docId);
-                        const mergedObj = { id: docId, ...cleanPayload };
+                        const idx = appData[collectionName].findIndex(item => String(item[keyField] || item.id) === safeDocId);
+                        const mergedObj = { id: safeDocId, ...cleanPayload };
                         if (idx !== -1) {
                             appData[collectionName][idx] = { ...appData[collectionName][idx], ...mergedObj };
                         } else {
@@ -1231,7 +1233,7 @@
                 updateLiveSyncIndicator('updated', 'Data Diperbarui');
                 return true;
             } catch (err) {
-                console.error(`Firestore Sync Error [${collectionName}/${docId}]:`, err);
+                console.error(`Firestore Sync Error [${collectionName}/${safeDocId}]:`, err);
                 updateLiveSyncIndicator('error');
                 return false;
             }
@@ -1507,17 +1509,31 @@
                 btnCancel.classList.add('hidden');
                 btnOk.innerText = options.okText || 'OK';
             }
-            btnOk.disabled = false;
 
             modal.classList.remove('hidden');
         };
 
+        let isModalActionRunning = false;
+
         window.handleModalOk = async function() {
+            if (isModalActionRunning) return;
             const cb = currentModalCallback;
             if (cb) {
-                const shouldClose = await cb(true);
-                if (shouldClose !== false && currentModalCallback === cb) {
-                    window.closeModal();
+                const btnOk = document.getElementById('modalBtnOk');
+                isModalActionRunning = true;
+                if (btnOk) btnOk.disabled = true;
+                try {
+                    const shouldClose = await cb(true);
+                    if (shouldClose !== false && currentModalCallback === cb) {
+                        window.closeModal();
+                    }
+                } catch (err) {
+                    console.error('Modal action error:', err);
+                    window.showModal('Terjadi Kesalahan', 'Proses tidak dapat diselesaikan: ' + (err?.message || 'Silakan coba lagi.'), 'error');
+                } finally {
+                    isModalActionRunning = false;
+                    const latestBtnOk = document.getElementById('modalBtnOk');
+                    if (latestBtnOk) latestBtnOk.disabled = false;
                 }
             } else {
                 window.closeModal();
@@ -2268,16 +2284,24 @@
             `;
         }
 
-        function renderStudentsContent(container) {
-            const search = (appData.filters.studentSearch || '').toLowerCase();
+        function getFilteredStudentsList() {
+            const search = String(appData.filters.studentSearch || '').trim().toLowerCase();
             const filterCls = appData.filters.studentClass || 'ALL';
-
-            const filteredStudents = appData.students.filter(s => {
-                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
-                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
-                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+            return (appData.students || []).filter(s => {
+                if (!s) return false;
+                const schoolStr = s.asalSekolah !== undefined ? String(s.asalSekolah || '') : String(appData.settings.schoolName || '');
+                const fullNameStr = String(s.fullName || '').toLowerCase();
+                const nisnStr = String(s.nisn || '').toLowerCase();
+                const nisStr = String(s.nis || '').toLowerCase();
+                const matchSearch = !search || fullNameStr.includes(search) || nisnStr.includes(search) || nisStr.includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || String(s.classId || '') === String(filterCls) || String(s.className || '') === String(filterCls);
                 return matchSearch && matchCls;
             });
+        }
+
+        function renderStudentsContent(container) {
+            const filterCls = appData.filters.studentClass || 'ALL';
+            const filteredStudents = getFilteredStudentsList();
 
             // Bersihkan ID siswa yang sudah tidak ada di daftar master
             const validIds = new Set(appData.students.map(s => s.id));
@@ -2397,14 +2421,7 @@
         };
 
         window.toggleSelectAllStudents = function(isChecked) {
-            const search = (appData.filters.studentSearch || '').toLowerCase();
-            const filterCls = appData.filters.studentClass || 'ALL';
-            const filteredStudents = appData.students.filter(s => {
-                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
-                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
-                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
-                return matchSearch && matchCls;
-            });
+            const filteredStudents = getFilteredStudentsList();
 
             filteredStudents.forEach(s => {
                 if (isChecked) selectedStudentIds.add(s.id);
@@ -2414,7 +2431,7 @@
         };
 
         window.deleteSelectedStudents = function() {
-            const idsToDelete = Array.from(selectedStudentIds);
+            const idsToDelete = Array.from(selectedStudentIds).filter(Boolean);
             if (idsToDelete.length === 0) {
                 window.showModal('Pilih Siswa Terlebih Dahulu', 'Silakan centang minimal satu siswa pada tabel untuk dihapus secara bersamaan.', 'info');
                 return;
@@ -2426,14 +2443,21 @@
                 'error',
                 async (confirmed) => {
                     if (!confirmed) return true;
+                    const btnOk = document.getElementById('modalBtnOk');
                     updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
-                    const idSet = new Set(idsToDelete);
-                    appData.students = appData.students.filter(s => !idSet.has(s.id));
-                    selectedStudentIds.clear();
+                    const idSet = new Set(idsToDelete.map(String));
+                    const chunkSize = 15;
+                    let processed = 0;
 
-                    for (const sid of idsToDelete) {
-                        await syncCollectionRecord('students', sid, null, true);
+                    for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+                        const chunk = idsToDelete.slice(i, i + chunkSize);
+                        await Promise.all(chunk.map(sid => syncCollectionRecord('students', String(sid), null, true)));
+                        processed += chunk.length;
+                        if (btnOk) btnOk.innerText = `Menghapus ${processed}/${idsToDelete.length}...`;
                     }
+
+                    appData.students = appData.students.filter(s => !idSet.has(String(s.id)));
+                    selectedStudentIds.clear();
 
                     logActivity(`Administrator menghapus ${idsToDelete.length} data siswa secara bersamaan.`);
                     renderStudentsContent(document.getElementById('adminMainContent'));
@@ -2445,17 +2469,13 @@
         };
 
         window.deleteAllFilteredStudents = function() {
-            const search = (appData.filters.studentSearch || '').toLowerCase();
-            const filterCls = appData.filters.studentClass || 'ALL';
-            const filteredStudents = appData.students.filter(s => {
-                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
-                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
-                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
-                return matchSearch && matchCls;
-            });
+            const filteredStudents = getFilteredStudentsList();
 
-            if (filteredStudents.length === 0) return;
-            const idsToDelete = filteredStudents.map(s => s.id);
+            if (filteredStudents.length === 0) {
+                window.showModal('Data Siswa Kosong', 'Tidak ada data siswa yang dapat dihapus pada tampilan saat ini.', 'info');
+                return;
+            }
+            const idsToDelete = filteredStudents.map(s => String(s.id)).filter(Boolean);
 
             window.showModal(
                 'Konfirmasi Hapus Semua Siswa',
@@ -2463,14 +2483,21 @@
                 'error',
                 async (confirmed) => {
                     if (!confirmed) return true;
+                    const btnOk = document.getElementById('modalBtnOk');
                     updateLiveSyncIndicator('syncing', `Menghapus ${idsToDelete.length} Siswa...`);
                     const idSet = new Set(idsToDelete);
-                    appData.students = appData.students.filter(s => !idSet.has(s.id));
-                    idsToDelete.forEach(id => selectedStudentIds.delete(id));
+                    const chunkSize = 15;
+                    let processed = 0;
 
-                    for (const sid of idsToDelete) {
-                        await syncCollectionRecord('students', sid, null, true);
+                    for (let i = 0; i < idsToDelete.length; i += chunkSize) {
+                        const chunk = idsToDelete.slice(i, i + chunkSize);
+                        await Promise.all(chunk.map(sid => syncCollectionRecord('students', sid, null, true)));
+                        processed += chunk.length;
+                        if (btnOk) btnOk.innerText = `Menghapus ${processed}/${idsToDelete.length}...`;
                     }
+
+                    appData.students = appData.students.filter(s => !idSet.has(String(s.id)));
+                    idsToDelete.forEach(id => selectedStudentIds.delete(id));
 
                     logActivity(`Administrator menghapus ${idsToDelete.length} data siswa sekaligus.`);
                     renderStudentsContent(document.getElementById('adminMainContent'));
@@ -2508,9 +2535,13 @@
 
         window.triggerStudentExcelImport = function() {
             const fileInput = document.getElementById('globalFileInput');
+            if (!fileInput) {
+                window.showModal('Kesalahan Sistem', 'Komponen unggah file tidak ditemukan pada halaman.', 'error');
+                return;
+            }
             fileInput.value = '';
             fileInput.onchange = function(e) {
-                const file = e.target.files[0];
+                const file = e.target.files && e.target.files[0];
                 if (!file) return;
                 window.readExcelWorkbookRows(file, (rows) => {
                     fileInput.value = '';
@@ -2519,44 +2550,68 @@
                         return;
                     }
 
-                    const headerRow = (rows[0] || []).map(h => String(h ?? '').trim().toLowerCase());
-                    const hasAsalSekolahHeader = headerRow.some(h => h.includes('asal sekolah') || h.includes('asalsekolah') || h.includes('sekolah'));
+                    // Deteksi otomatis baris header (mendukung jika ada judul di baris atas atau kolom "No" di kolom A)
+                    let headerRowIdx = 0;
+                    for (let r = 0; r < Math.min(rows.length, 6); r++) {
+                        const cells = (rows[r] || []).map(c => String(c ?? '').trim().toLowerCase());
+                        if (cells.some(c => c.includes('nisn') || c.includes('nama'))) {
+                            headerRowIdx = r;
+                            break;
+                        }
+                    }
+
+                    const headerRow = (rows[headerRowIdx] || []).map(h => String(h ?? '').trim().toLowerCase());
+                    const findCol = (keywords) => headerRow.findIndex(h => keywords.some(kw => h.includes(kw)));
+
+                    let idxNisn = findCol(['nisn']);
+                    let idxNis = headerRow.findIndex(h => h === 'nis' || (h.includes('nis') && !h.includes('nisn')));
+                    let idxName = findCol(['nama lengkap', 'nama siswa', 'nama peserta', 'nama']);
+                    let idxSchool = findCol(['asal sekolah', 'asalsekolah', 'sekolah']);
+                    let idxGender = findCol(['jenis kelamin', 'kelamin', 'l/p', 'gender']);
+                    let idxClass = findCol(['kelas']);
+                    let idxPin = findCol(['pin', 'password', 'sandi']);
+
+                    // Fallback posisi kolom standar Template jika header tidak dikenali
+                    const startsWithNo = headerRow[0] === 'no' || headerRow[0] === 'no.' || headerRow[0] === 'nomor';
+                    const offset = startsWithNo ? 1 : 0;
+                    if (idxNisn === -1) idxNisn = 0 + offset;
+                    if (idxNis === -1) idxNis = 1 + offset;
+                    if (idxName === -1) idxName = 2 + offset;
+                    if (idxSchool === -1 && headerRow.length >= 7 + offset) idxSchool = 3 + offset;
+                    if (idxGender === -1) idxGender = (idxSchool !== -1 ? 4 : 3) + offset;
+                    if (idxClass === -1) idxClass = (idxSchool !== -1 ? 5 : 4) + offset;
+                    if (idxPin === -1) idxPin = (idxSchool !== -1 ? 6 : 5) + offset;
 
                     const parsedStudents = [];
-                    for (let i = 1; i < rows.length; i++) {
+                    const existingNisnSet = new Set((appData.students || []).map(s => String(s.nisn || '').trim()));
+                    const seenImportNisn = new Set();
+
+                    for (let i = headerRowIdx + 1; i < rows.length; i++) {
                         const cols = rows[i];
                         if (!cols || cols.length === 0) continue;
-                        const nisn = String(cols[0] ?? '').trim();
-                        const nis = String(cols[1] ?? '').trim();
-                        const fullName = String(cols[2] ?? '').trim();
 
-                        let asalSekolah = '';
-                        let gender = 'L';
-                        let className = '4';
-                        let pin = '123456';
-
-                        if (hasAsalSekolahHeader || cols.length >= 7) {
-                            asalSekolah = String(cols[3] ?? '').trim();
-                            gender = String(cols[4] ?? 'L').trim().toUpperCase();
-                            className = String(cols[5] ?? '4').trim();
-                            pin = String(cols[6] ?? '123456').trim() || '123456';
-                        } else {
-                            asalSekolah = '';
-                            gender = String(cols[3] ?? 'L').trim().toUpperCase();
-                            className = String(cols[4] ?? '4').trim();
-                            pin = String(cols[5] ?? '123456').trim() || '123456';
-                        }
+                        const nisn = String(cols[idxNisn] ?? '').trim();
+                        const nis = idxNis >= 0 ? String(cols[idxNis] ?? '').trim() : '-';
+                        const fullName = String(cols[idxName] ?? '').trim();
+                        const asalSekolah = idxSchool >= 0 ? String(cols[idxSchool] ?? '').trim() : '';
+                        const rawGender = idxGender >= 0 ? String(cols[idxGender] ?? 'L').trim().toUpperCase() : 'L';
+                        const gender = (rawGender.startsWith('P') || rawGender === 'W') ? 'P' : 'L';
+                        const rawClass = idxClass >= 0 ? String(cols[idxClass] ?? '4').trim() : '4';
+                        const className = rawClass.replace(/^kelas\s*/i, '').trim() || '4';
+                        const pin = (idxPin >= 0 ? String(cols[idxPin] ?? '').trim() : '') || '123456';
 
                         if (!nisn || !fullName) continue;
 
-                        const isDuplicate = appData.students.some(s => String(s.nisn).trim() === nisn) || parsedStudents.some(s => s.nisn === nisn);
+                        const isDuplicate = existingNisnSet.has(nisn) || seenImportNisn.has(nisn);
+                        seenImportNisn.add(nisn);
+
                         parsedStudents.push({
                             nisn,
                             nis: nis || '-',
                             fullName,
                             asalSekolah,
-                            gender: gender === 'P' ? 'P' : 'L',
-                            className: className || '4',
+                            gender,
+                            className,
                             pin,
                             isDuplicate
                         });
@@ -2591,7 +2646,7 @@
                             <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
                                 <div>
                                     <span class="font-bold text-indigo-900">File: ${escapeHtml(file.name)}</span>
-                                    <p class="text-[11px] text-indigo-700 mt-0.5">Total Terbaca: <strong>${parsedStudents.length} baris</strong> • Siap Disimpan: <strong>${validList.length} siswa</strong></p>
+                                    <p class="text-[11px] text-indigo-700 mt-0.5">Total Terbaca: <strong>${parsedStudents.length} baris</strong> • Siap Disimpan: <strong>${validList.length} siswa</strong> ${parsedStudents.length - validList.length > 0 ? `• Duplikat dilewati: <strong>${parsedStudents.length - validList.length}</strong>` : ''}</p>
                                 </div>
                             </div>
                             <div class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
@@ -2607,13 +2662,19 @@
                         </div>
                     `;
 
+                    if (validList.length === 0) {
+                        window.showModal('Semua Data Duplikat', '', 'info', null, { html, wide: true, okText: 'Tutup' });
+                        return;
+                    }
+
                     window.showModal('Pratinjau Impor Data Siswa (.xlsx)', '', 'info', async (confirmed) => {
                         if (!confirmed) return true;
-                        for (let idx = 0; idx < validList.length; idx++) {
-                            const item = validList[idx];
-                            const clsObj = appData.classes.find(c => String(c.className).toLowerCase() === String(item.className).toLowerCase()) || appData.classes[0];
-                            const newStd = {
-                                id: 'STD-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 10000),
+                        const btnOk = document.getElementById('modalBtnOk');
+                        const baseTs = Date.now();
+                        const newRecords = validList.map((item, idx) => {
+                            const clsObj = appData.classes.find(c => String(c.className || '').trim().toLowerCase() === String(item.className).toLowerCase()) || appData.classes[0];
+                            return {
+                                id: `STD-${baseTs}-${idx}-${Math.floor(Math.random() * 10000)}`,
                                 nisn: item.nisn,
                                 nis: item.nis,
                                 fullName: item.fullName,
@@ -2627,12 +2688,20 @@
                                 passwordHash: hashCredential(item.pin),
                                 status: 'Aktif'
                             };
-                            appData.students.push(newStd);
-                            await syncCollectionRecord('students', newStd.id, newStd);
+                        });
+
+                        const chunkSize = 15;
+                        let savedCount = 0;
+                        for (let i = 0; i < newRecords.length; i += chunkSize) {
+                            const chunk = newRecords.slice(i, i + chunkSize);
+                            await Promise.all(chunk.map(rec => syncCollectionRecord('students', rec.id, rec)));
+                            savedCount += chunk.length;
+                            if (btnOk) btnOk.innerText = `Menyimpan ${savedCount}/${newRecords.length}...`;
                         }
-                        logActivity(`Impor Excel Siswa selesai: ${validList.length} data siswa baru ditambahkan.`);
+
+                        logActivity(`Impor Excel Siswa selesai: ${newRecords.length} data siswa baru ditambahkan.`);
                         renderStudentsContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${validList.length} data siswa ke Firebase Firestore.`, 'success');
+                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${newRecords.length} data siswa ke Firebase Firestore.`, 'success');
                         return true;
                     }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Siswa ke Database` });
                 });
@@ -4087,28 +4156,72 @@
             }, { html, showCancel: true, okText: 'Unduh File Excel (.xlsx)' });
         };
 
+        window.executeExportQuestionsExcel = function(mode = 'ALL', bankId = '') {
+            const questionsToExport = mode === 'PACKAGE' && bankId
+                ? appData.questions.filter(q => q.bankId === bankId)
+                : [...appData.questions];
+
+            if (questionsToExport.length === 0) {
+                window.showModal('Bank Soal Kosong', 'Tidak ada butir soal untuk diekspor.', 'error');
+                return false;
+            }
+
+            const headers = [
+                'No', 'Jenis Soal (pg/pg_complex/true_false/matching/short_answer/essay)', 'Bobot Poin',
+                'Teks Stimulus / Wacana', 'URL Gambar Stimulus (Opsional)', 'Teks Pertanyaan Soal',
+                'URL Gambar Soal (Opsional)', 'Opsi A / Pasangan 1', 'Opsi B / Pasangan 2',
+                'Opsi C / Pasangan 3', 'Opsi D / Pasangan 4', 'Kunci Jawaban', 'Pembahasan Soal'
+            ];
+
+            const rows = questionsToExport.map((q, idx) => {
+                const qType = q.type || 'pg';
+                let opts = Array.isArray(q.options) ? [...q.options] : ['', '', '', ''];
+                let keyStr = '';
+
+                if (qType === 'matching') {
+                    opts = extractFourMatchingOptionStrings(q);
+                    const parsedMatch = parseMatchingOptionsAndKey(opts, '');
+                    keyStr = parsedMatch.readableKey || formatMatchingKeyReadable(q.matchingPairs, q.correctAnswer);
+                } else {
+                    keyStr = Array.isArray(q.correctAnswer)
+                        ? q.correctAnswer.join(', ')
+                        : (typeof q.correctAnswer === 'object' && q.correctAnswer !== null ? JSON.stringify(q.correctAnswer) : String(q.correctAnswer || ''));
+                }
+
+                return [
+                    q.orderNum || (idx + 1), qType, Number(q.weight) || 10,
+                    q.stimulusText || '', q.stimulusImage || '', q.questionText || '', q.questionImage || '',
+                    opts[0] || '', opts[1] || '', opts[2] || '', opts[3] || '', keyStr, q.explanation || ''
+                ];
+            });
+
+            const bankObj = appData.questionBanks.find(b => b.id === bankId);
+            const suffix = (mode === 'PACKAGE' && bankObj) ? `_${bankObj.title.replace(/[^a-zA-Z0-9]/g, '_')}` : '_Semua';
+            window.downloadExcelFile(`ARSIP_BANK_SOAL_CBT${suffix}.xlsx`, headers, rows);
+            return true;
+        };
+
         function renderTeachersContent(container) {
             const rows = appData.teachers.map((t, idx) => {
-                const roleCode = t.role === 'admin' ? 'admin' : 'editor_soal';
-                const roleBadge = roleCode === 'admin'
-                    ? '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">Administrator</span>'
-                    : '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">Editor Bank Soal</span>';
-                const loginUser = t.username || t.email || t.nip || '-';
+                const roleVal = t.role === 'admin' ? 'admin' : 'editor_soal';
+                const roleBadge = roleVal === 'admin'
+                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">Administrator (admin)</span>'
+                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">Editor Bank Soal (editor_soal)</span>';
                 return `
-                    <tr class="hover:bg-slate-50 transition border-b border-slate-100">
-                        <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
-                        <td class="px-4 py-3 text-xs font-mono font-bold text-slate-900">${escapeHtml(t.nip || '-')}</td>
-                        <td class="px-4 py-3 text-xs font-bold text-slate-900">${escapeHtml(t.fullName || t.name || '-')}</td>
-                        <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml(Array.isArray(t.subjects) ? t.subjects.join(', ') : (t.subject || '-'))}</td>
-                        <td class="px-4 py-3 text-xs font-mono font-semibold text-indigo-700">${escapeHtml(loginUser)}</td>
-                        <td class="px-4 py-3 text-xs">${roleBadge}</td>
-                        <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${t.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(t.status || 'Aktif')}</span></td>
-                        <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
-                            <button type="button" onclick="window.openTeacherFormModal('${t.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold"><i class="fa-solid fa-pen"></i></button>
-                            <button type="button" onclick="window.deleteTeacherRecord('${t.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold"><i class="fa-solid fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `;
+                <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                    <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
+                    <td class="px-4 py-3 text-xs font-mono font-bold text-slate-900">${escapeHtml(t.nip || '-')}</td>
+                    <td class="px-4 py-3 text-xs font-bold text-slate-900">${escapeHtml(t.fullName || t.name || '-')}</td>
+                    <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml(Array.isArray(t.subjects) ? t.subjects.join(', ') : (t.subject || '-'))}</td>
+                    <td class="px-4 py-3 text-xs font-mono text-indigo-700">${escapeHtml(t.username || t.email || t.nip || '-')}</td>
+                    <td class="px-4 py-3 text-xs">${roleBadge}</td>
+                    <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${t.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(t.status || 'Aktif')}</span></td>
+                    <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
+                        <button type="button" onclick="window.openTeacherFormModal('${t.id}')" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-semibold" title="Edit Guru"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" onclick="window.deleteTeacherRecord('${t.id}')" class="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg font-semibold" title="Hapus Guru"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `;
             }).join('');
 
             container.innerHTML = `
@@ -4116,26 +4229,26 @@
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <h3 class="font-bold text-slate-800 text-sm">Data Administrasi Guru &amp; Hak Akses Editor Soal</h3>
-                            <p class="text-xs text-slate-500">Kelola data pendidik, akun login guru, pembagian peran (Editor Bank Soal / Admin), serta impor Excel (.xlsx).</p>
+                            <p class="text-xs text-slate-500">Kelola data pendidik, akun login guru, pembagian peran (Editor Bank Soal atau Administrator), serta impor/ekspor Excel (.xlsx).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="window.downloadTeacherTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.downloadTeacherTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-download mr-1"></i> Unduh Template Excel
                             </button>
-                            <button type="button" onclick="window.triggerTeacherExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.triggerTeacherExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Impor Excel (.xlsx)
                             </button>
-                            <button type="button" onclick="window.exportTeachersExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+                            <button type="button" onclick="window.exportTeachersExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer">
                                 <i class="fa-solid fa-file-export mr-1"></i> Ekspor Data (.xlsx)
                             </button>
-                            <button type="button" onclick="window.openTeacherFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">
+                            <button type="button" onclick="window.openTeacherFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer">
                                 <i class="fa-solid fa-plus mr-1"></i> Tambah Guru
                             </button>
                         </div>
                     </div>
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[740px] text-left border-collapse">
+                            <table class="w-full min-w-[760px] text-left border-collapse">
                                 <thead>
                                     <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
                                         <th class="px-4 py-3">No</th><th class="px-4 py-3">NIP</th><th class="px-4 py-3">Nama Guru</th><th class="px-4 py-3">Bidang Mapel</th><th class="px-4 py-3">Username / Email Login</th><th class="px-4 py-3">Peran Akses</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
@@ -4153,7 +4266,7 @@
             const headers = ['NIP / ID Guru', 'Nama Lengkap & Gelar', 'Bidang Mata Pelajaran', 'Email / Username Login', 'Password / PIN Login', 'Peran (editor_soal / admin)'];
             const sampleRows = [
                 ['198809022023211005', 'ALFIAN FIRDAUS S, S.Pd., M.Pd.', 'GURU KELAS', 'alfian@sekolah.sch.id', '123456', 'editor_soal'],
-                ['199004152022212008', 'SITI AMINAH, S.Pd.', 'MATEMATIKA', 'siti@sekolah.sch.id', '123456', 'editor_soal']
+                ['199001152023212002', 'SITI RAHMAWATI, S.Pd.', 'MATEMATIKA', 'siti@sekolah.sch.id', '123456', 'editor_soal']
             ];
             window.downloadExcelFile('Template_Impor_Akun_Guru.xlsx', headers, sampleRows);
         };
