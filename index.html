@@ -1146,8 +1146,8 @@
         window.triggerRealtimeUIRefresh = function(sourceCollection = '') {
             if (realtimeRefreshDebounce) clearTimeout(realtimeRefreshDebounce);
             realtimeRefreshDebounce = setTimeout(() => {
-                // Jangan lakukan auto-refresh / re-render halaman jika Admin atau Editor Soal sedang berada di menu Bank Soal
-                if (window.isStaffUser(appData.currentUser) && appData.activeAdminMenu === 'questionBanks') {
+                // Jangan lakukan auto-refresh / re-render halaman jika Admin sedang berada di menu Bank Soal
+                if (appData.currentUser && appData.currentUser.role === 'admin' && appData.activeAdminMenu === 'questionBanks') {
                     return;
                 }
 
@@ -2516,117 +2516,85 @@
                     }
 
                     const headerRow = (rows[0] || []).map(h => String(h ?? '').trim().toLowerCase());
-                    const hasImageColumns = headerRow.some(h => h.includes('gambar') || h.includes('url')) || (rows[0] && rows[0].length >= 12);
+                    const hasAsalSekolahHeader = headerRow.some(h => h.includes('asal sekolah') || h.includes('asalsekolah') || h.includes('sekolah'));
 
-                    const parsedQuestions = [];
+                    const parsedStudents = [];
                     for (let i = 1; i < rows.length; i++) {
                         const cols = rows[i];
                         if (!cols || cols.length === 0) continue;
+                        const nisn = String(cols[0] ?? '').trim();
+                        const nis = String(cols[1] ?? '').trim();
+                        const fullName = String(cols[2] ?? '').trim();
 
-                        let typeRaw = String(cols[1] ?? '').trim();
-                        let weight = Number(cols[2]) || 10;
-                        let stimulusText = '';
-                        let stimulusImage = '';
-                        let questionText = '';
-                        let questionImage = '';
-                        let optA = '';
-                        let optB = '';
-                        let optC = '';
-                        let optD = '';
-                        let keyRaw = '';
-                        let explanation = '';
+                        let asalSekolah = '';
+                        let gender = 'L';
+                        let className = '4';
+                        let pin = '123456';
 
-                        if (hasImageColumns) {
-                            stimulusText = String(cols[3] ?? '').trim();
-                            stimulusImage = String(cols[4] ?? '').trim();
-                            questionText = String(cols[5] ?? '').trim();
-                            questionImage = String(cols[6] ?? '').trim();
-                            optA = String(cols[7] ?? '').trim();
-                            optB = String(cols[8] ?? '').trim();
-                            optC = String(cols[9] ?? '').trim();
-                            optD = String(cols[10] ?? '').trim();
-                            keyRaw = String(cols[11] ?? '').trim();
-                            explanation = String(cols[12] ?? '').trim();
+                        if (hasAsalSekolahHeader || cols.length >= 7) {
+                            asalSekolah = String(cols[3] ?? '').trim();
+                            gender = String(cols[4] ?? 'L').trim().toUpperCase();
+                            className = String(cols[5] ?? '4').trim();
+                            pin = String(cols[6] ?? '123456').trim() || '123456';
                         } else {
-                            stimulusText = String(cols[3] ?? '').trim();
-                            questionText = String(cols[4] ?? '').trim();
-                            optA = String(cols[5] ?? '').trim();
-                            optB = String(cols[6] ?? '').trim();
-                            optC = String(cols[7] ?? '').trim();
-                            optD = String(cols[8] ?? '').trim();
-                            keyRaw = String(cols[9] ?? '').trim();
-                            explanation = String(cols[10] ?? '').trim();
+                            asalSekolah = '';
+                            gender = String(cols[3] ?? 'L').trim().toUpperCase();
+                            className = String(cols[4] ?? '4').trim();
+                            pin = String(cols[5] ?? '123456').trim() || '123456';
                         }
 
-                        if (!questionText && !typeRaw) continue;
-                        if (!questionText) continue;
+                        if (!nisn || !fullName) continue;
 
-                        const normType = normalizeImportedQuestionType(typeRaw);
-                        const finalType = normType.code;
-
-                        let options = [];
-                        let matchingPairs = [];
-                        let correctAnswer = keyRaw;
-
-                        if (finalType === 'pg') {
-                            options = [optA, optB, optC, optD].map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : String(val).trim());
-                            correctAnswer = (keyRaw || 'A').trim().toUpperCase();
-                        } else if (finalType === 'pg_complex') {
-                            options = [optA, optB, optC, optD].map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : String(val).trim());
-                            correctAnswer = keyRaw
-                                ? keyRaw.split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean)
-                                : ['A'];
-                        } else if (finalType === 'true_false') {
-                            const parsedTF = parseTrueFalseStatementsAndKey([optA, optB, optC, optD], keyRaw);
-                            options = parsedTF.options;
-                            correctAnswer = parsedTF.correctAnswer;
-                        } else if (finalType === 'matching') {
-                            const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], keyRaw);
-                            matchingPairs = parsedMatch.matchingPairs;
-                            options = parsedMatch.options;
-                            correctAnswer = parsedMatch.correctAnswer;
-                        }
-
-                        const keyDisplayStr = finalType === 'matching'
-                            ? formatMatchingKeyReadable(matchingPairs, correctAnswer)
-                            : (Array.isArray(correctAnswer) ? correctAnswer.join(', ') : (typeof correctAnswer === 'object' ? JSON.stringify(correctAnswer) : String(correctAnswer)));
-
-                        parsedQuestions.push({
-                            orderNum: parsedQuestions.length + 1,
-                            type: finalType,
-                            isValidType: normType.valid,
-                            rawTypeLabel: normType.rawLabel,
-                            weight,
-                            stimulusText,
-                            stimulusImage,
-                            questionText,
-                            questionImage,
-                            options,
-                            matchingPairs,
-                            correctAnswer,
-                            keyDisplay: keyDisplayStr,
-                            explanation
+                        const isDuplicate = appData.students.some(s => s.nisn === nisn) || parsedStudents.some(s => s.nisn === nisn);
+                        parsedStudents.push({
+                            nisn,
+                            nis: nis || '-',
+                            fullName,
+                            asalSekolah,
+                            gender: gender === 'P' ? 'P' : 'L',
+                            className: className || '4',
+                            pin,
+                            isDuplicate
                         });
                     }
 
-                    const validQuestions = parsedQuestions.filter(q => q.isValidType);
-                    const previewRowsHtml = parsedQuestions.map((q, idx) => `
-                        <tr class="border-b border-slate-100 hover:bg-slate-50 align-top">
-                            <td class="px-3 py-2 text-xs font-bold text-slate-600">${idx + 1}</td>
-                            <td class="px-3 py-2 text-xs font-bold text-indigo-700">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
-                            <td class="px-3 py-2 text-xs text-center font-bold">${q.weight}</td>
-                            <td class="px-3 py-2 text-xs text-slate-800">${escapeHtml(q.questionText)}</td>
-                            <td class="px-3 py-2 text-xs font-mono font-extrabold text-emerald-700">${escapeHtml(q.keyDisplay)}</td>
+                    if (parsedStudents.length === 0) {
+                        window.showModal('Tidak Ada Data Valid', 'Pastikan kolom NISN dan Nama Lengkap terisi sesuai Template_Impor_Siswa.xlsx.', 'error');
+                        return;
+                    }
+
+                    const validList = parsedStudents.filter(s => !s.isDuplicate);
+                    const previewRowsHtml = parsedStudents.map((s, idx) => `
+                        <tr class="border-b border-slate-100 ${s.isDuplicate ? 'bg-amber-50/70 text-slate-400' : 'hover:bg-slate-50'}">
+                            <td class="px-3 py-2 text-xs">${idx + 1}</td>
+                            <td class="px-3 py-2 text-xs font-mono font-bold">${escapeHtml(s.nisn)}</td>
+                            <td class="px-3 py-2 text-xs">${escapeHtml(s.nis)}</td>
+                            <td class="px-3 py-2 text-xs font-bold text-slate-800">${escapeHtml(s.fullName)}</td>
+                            <td class="px-3 py-2 text-xs font-semibold text-indigo-700">${escapeHtml(s.asalSekolah || '-')}</td>
+                            <td class="px-3 py-2 text-xs text-center">${escapeHtml(s.gender)}</td>
+                            <td class="px-3 py-2 text-xs text-center font-bold">${escapeHtml(s.className)}</td>
+                            <td class="px-3 py-2 text-xs font-mono">${escapeHtml(s.pin)}</td>
+                            <td class="px-3 py-2 text-xs">
+                                ${s.isDuplicate
+                                    ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-bold">NISN Duplikat</span>'
+                                    : '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-bold">Siap Diimpor</span>'}
+                            </td>
                         </tr>
                     `).join('');
 
                     const html = `
                         <div class="space-y-3">
-                            <div class="max-h-80 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
+                            <div class="p-3 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <div>
+                                    <span class="font-bold text-indigo-900">File: ${escapeHtml(file.name)}</span>
+                                    <p class="text-[11px] text-indigo-700 mt-0.5">Total Terbaca: <strong>${parsedStudents.length} baris</strong> • Siap Disimpan: <strong>${validList.length} siswa</strong></p>
+                                </div>
+                            </div>
+                            <div class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
                                 <table class="w-full text-left border-collapse">
                                     <thead>
                                         <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
-                                            <th class="px-3 py-2">No</th><th class="px-3 py-2">Jenis Soal</th><th class="px-3 py-2 text-center">Bobot</th><th class="px-3 py-2">Pertanyaan</th><th class="px-3 py-2">Kunci</th>
+                                            <th class="px-3 py-2">No</th><th class="px-3 py-2">NISN</th><th class="px-3 py-2">NIS</th><th class="px-3 py-2">Nama Lengkap</th><th class="px-3 py-2">Asal Sekolah</th><th class="px-3 py-2 text-center">L/P</th><th class="px-3 py-2 text-center">Kelas</th><th class="px-3 py-2">PIN</th><th class="px-3 py-2">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>${previewRowsHtml}</tbody>
@@ -2635,39 +2603,535 @@
                         </div>
                     `;
 
-                    window.showModal('Pratinjau Impor Bank Soal (.xlsx)', '', 'info', async (confirmed) => {
+                    window.showModal('Pratinjau Impor Data Siswa (.xlsx)', '', 'info', async (confirmed) => {
                         if (!confirmed) return true;
-                        for (let idx = 0; idx < validQuestions.length; idx++) {
-                            const item = validQuestions[idx];
-                            const newQ = {
-                                id: 'Q-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000),
-                                bankId,
-                                subjectId: appData.subjects[0] ? appData.subjects[0].id : 'SUB-IPAS',
-                                classLevel: '4',
-                                orderNum: idx + 1,
-                                type: item.type,
-                                weight: item.weight,
-                                stimulusText: item.stimulusText,
-                                stimulusImage: item.stimulusImage,
-                                questionText: item.questionText,
-                                questionImage: item.questionImage,
-                                options: item.options,
-                                matchingPairs: item.matchingPairs || [],
-                                correctAnswer: item.correctAnswer,
-                                partialScoring: true,
-                                explanation: item.explanation,
-                                difficulty: 'Sedang'
+                        for (const item of validList) {
+                            const clsObj = appData.classes.find(c => String(c.className).toLowerCase() === String(item.className).toLowerCase()) || appData.classes[0];
+                            const newStd = {
+                                id: 'STD-' + Date.now() + '-' + Math.floor(Math.random() * 10000),
+                                nisn: item.nisn,
+                                nis: item.nis,
+                                fullName: item.fullName,
+                                asalSekolah: item.asalSekolah,
+                                gender: item.gender,
+                                classId: clsObj ? clsObj.id : 'CLS-4A',
+                                className: clsObj ? clsObj.className : item.className,
+                                academicYear: appData.settings.academicYear,
+                                username: item.nisn,
+                                passwordHash: hashCredential(item.pin),
+                                status: 'Aktif'
                             };
-                            appData.questions.push(newQ);
-                            await syncCollectionRecord('questions', newQ.id, newQ);
+                            appData.students.push(newStd);
+                            await syncCollectionRecord('students', newStd.id, newStd);
                         }
-                        renderQuestionBanksContent(document.getElementById('adminMainContent'));
-                        window.showModal('Impor Soal Berhasil', `Berhasil menyimpan ${validQuestions.length} butir soal ke Firebase Firestore.`, 'success');
+                        logActivity(`Impor Excel Siswa selesai: ${validList.length} data siswa baru ditambahkan.`);
+                        renderStudentsContent(document.getElementById('adminMainContent'));
+                        window.showModal('Impor Berhasil', `Berhasil menyimpan ${validList.length} data siswa ke Firebase Firestore.`, 'success');
                         return true;
-                    }, { html, wide: true, showCancel: true, okText: `Simpan ${validQuestions.length} Soal` });
+                    }, { html, wide: true, showCancel: true, okText: `Simpan ${validList.length} Siswa ke Database` });
                 });
             };
             fileInput.click();
+        };
+
+        window.openStudentFormModal = function(studentId = null) {
+            const existing = studentId ? appData.students.find(x => x.id === studentId) : null;
+            const classOpts = appData.classes.map(c => `<option value="${escapeHtml(c.id)}" ${existing && existing.classId === c.id ? 'selected' : ''}>Kelas ${escapeHtml(c.className)}</option>`).join('');
+            const currentSchoolVal = existing
+                ? (existing.asalSekolah !== undefined ? existing.asalSekolah : (appData.settings.schoolName || ''))
+                : (appData.settings.schoolName || '');
+
+            const html = `
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div><label class="block font-bold text-slate-700 mb-1">NISN *</label><input type="text" id="stdFormNisn" value="${escapeHtml(existing ? existing.nisn : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">NIS</label><input type="text" id="stdFormNis" value="${escapeHtml(existing ? existing.nis : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+                    <div class="sm:col-span-2"><label class="block font-bold text-slate-700 mb-1">Nama Lengkap Siswa *</label><input type="text" id="stdFormName" value="${escapeHtml(existing ? existing.fullName : '')}" class="w-full px-3 py-2 border border-slate-300 rounded-xl"></div>
+                    <div class="sm:col-span-2"><label class="block font-bold text-slate-700 mb-1">Asal Sekolah *</label><input type="text" id="stdFormSchool" value="${escapeHtml(currentSchoolVal)}" placeholder="Contoh: SD NEGERI GEDONGBOYOUNTUNG" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-indigo-700"></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">Jenis Kelamin (L/P)</label><select id="stdFormGender" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold"><option value="L" ${!existing || existing.gender === 'L' ? 'selected' : ''}>Laki-laki (L)</option><option value="P" ${existing && existing.gender === 'P' ? 'selected' : ''}>Perempuan (P)</option></select></div>
+                    <div><label class="block font-bold text-slate-700 mb-1">Pilih Kelas (1 - 6) *</label><select id="stdFormClass" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold">${classOpts}</select></div>
+                    <div class="sm:col-span-2">
+                        <label class="block font-bold text-slate-700 mb-1">PIN / Password Login ${existing ? '<span class="text-slate-400 font-normal">(Kosongkan jika tidak ingin mengubah password)</span>' : '*'}</label>
+                        <input type="text" id="stdFormPin" value="${existing ? escapeHtml(existing.pin || '') : '123456'}" placeholder="${existing ? 'Ketik PIN baru untuk mengganti (misal: 112233)' : 'Masukkan PIN Login'}" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold text-slate-800">
+                    </div>
+                </div>
+            `;
+
+            window.showModal(existing ? 'Edit Siswa' : 'Tambah Siswa', '', 'info', (confirmed) => {
+                if (!confirmed) return true;
+                const asalSekolah = document.getElementById('stdFormSchool').value.trim();
+                const nisn = document.getElementById('stdFormNisn').value.trim();
+                const nis = document.getElementById('stdFormNis').value.trim() || '-';
+                const fullName = document.getElementById('stdFormName').value.trim();
+                const gender = document.getElementById('stdFormGender').value || 'L';
+                const classId = document.getElementById('stdFormClass').value;
+                const rawPinInput = document.getElementById('stdFormPin').value.trim();
+
+                if (!nisn || !fullName) {
+                    window.showModal('Validasi Data', 'NISN dan Nama Lengkap siswa wajib diisi!', 'error');
+                    return false;
+                }
+                const duplicate = appData.students.find(s => s.nisn === nisn && (!existing || s.id !== existing.id));
+                if (duplicate) {
+                    window.showModal('NISN Duplikat', `NISN ${nisn} sudah terdaftar atas nama ${duplicate.fullName}.`, 'error');
+                    return false;
+                }
+                const clsObj = appData.classes.find(c => c.id === classId);
+                const className = clsObj ? clsObj.className : classId;
+
+                if (existing) {
+                    existing.nisn = nisn;
+                    existing.nis = nis;
+                    existing.fullName = fullName;
+                    existing.asalSekolah = asalSekolah;
+                    existing.gender = gender;
+                    existing.classId = classId;
+                    existing.className = className;
+                    if (rawPinInput !== '') {
+                        existing.pin = rawPinInput;
+                        existing.passwordHash = hashCredential(rawPinInput);
+                    }
+                    syncCollectionRecord('students', existing.id, existing);
+                } else {
+                    const finalPin = rawPinInput || '123456';
+                    const newStd = {
+                        id: 'STD-' + Date.now(),
+                        nisn,
+                        nis,
+                        fullName,
+                        asalSekolah,
+                        gender,
+                        classId,
+                        className,
+                        academicYear: appData.settings.academicYear,
+                        username: nisn,
+                        pin: finalPin,
+                        passwordHash: hashCredential(finalPin),
+                        status: 'Aktif'
+                    };
+                    appData.students.push(newStd);
+                    syncCollectionRecord('students', newStd.id, newStd);
+                }
+                renderStudentsContent(document.getElementById('adminMainContent'));
+                return true;
+            }, { html, okText: 'Simpan', wide: true });
+        };
+
+        window.deleteStudentRecord = function(studentId) {
+            window.showModal('Hapus Siswa', 'Yakin ingin menghapus siswa ini?', 'error', (confirmed) => {
+                if (confirmed) {
+                    selectedStudentIds.delete(studentId);
+                    appData.students = appData.students.filter(x => x.id !== studentId);
+                    syncCollectionRecord('students', studentId, null, true);
+                    renderStudentsContent(document.getElementById('adminMainContent'));
+                }
+            }, { okText: 'Hapus' });
+        };
+
+        window.unlockStudentLogin = async function(studentId) {
+            const std = appData.students.find(s => s.id === studentId);
+            if (!std) return;
+            std.isLoggedIn = false;
+            std.activeSessionId = '';
+            std.lastHeartbeatAt = 0;
+            await syncCollectionRecord('students', std.id, {
+                isLoggedIn: false,
+                activeSessionId: '',
+                lastHeartbeatAt: 0
+            });
+            logActivity(`Administrator mereset kunci login perangkat untuk siswa ${std.fullName} (${std.nisn}).`);
+            window.renderAdminCurrentSection();
+            window.showModal('Reset Login Berhasil', `Kunci login akun ${std.fullName} telah dibebaskan. Siswa kini dapat login kembali di perangkat baru.`, 'success');
+        };
+
+        window.unlockAllStudentsLogin = function() {
+            window.showModal(
+                'Reset Semua Login Siswa',
+                'Apakah Anda yakin ingin membuka kunci login perangkat untuk seluruh akun siswa?',
+                'info',
+                async (confirmed) => {
+                    if (!confirmed) return true;
+                    let count = 0;
+                    for (const s of appData.students) {
+                        if (s.isLoggedIn || s.activeSessionId) {
+                            s.isLoggedIn = false;
+                            s.activeSessionId = '';
+                            s.lastHeartbeatAt = 0;
+                            await syncCollectionRecord('students', s.id, {
+                                isLoggedIn: false,
+                                activeSessionId: '',
+                                lastHeartbeatAt: 0
+                            });
+                            count++;
+                        }
+                    }
+                    logActivity(`Administrator mereset kunci login untuk ${count} akun siswa.`);
+                    window.renderAdminCurrentSection();
+                    window.showModal('Berhasil Direset', `Kunci login untuk ${count} akun siswa telah dibebaskan.`, 'success');
+                    return true;
+                },
+                { showCancel: true, okText: 'Ya, Reset Semua Login' }
+            );
+        };
+
+        // ============================================================================
+        // FITUR CETAK KARTU UJIAN SISWA (KUSTOMISASI MANUAL KETERANGAN, JADWAL & RUANG)
+        // ============================================================================
+        let examCardConfigCache = {
+            examTitle: 'KARTU PESERTA UJIAN SEKOLAH / SUMATIF AKHIR SEMESTER (SAS)',
+            examSubtitle: 'PELAKSANAAN ASESMEN BERBASIS KOMPUTER (CBT)',
+            academicYear: '',
+            roomName: 'Ruang 01 (Lab Komputer / Ruang Kelas)',
+            sessionInfo: 'Sesi 1 (07.30 - 09.30 WIB)',
+            defaultPinDisplay: '123456',
+            paperSize: 'A4',
+            showScheduleTable: true,
+            scheduleText: '',
+            signCityDate: '',
+            signRole: 'Kepala Sekolah / Ketua Panitia,',
+            signName: '_______________________',
+            signNip: 'NIP. ...............................'
+        };
+
+        function buildDefaultScheduleLinesFromExams() {
+            if (!Array.isArray(appData.exams) || appData.exams.length === 0) {
+                return [
+                    'Senin | 07:30 - 09:00 WIB | Bahasa Indonesia',
+                    'Selasa | 07:30 - 09:00 WIB | Matematika',
+                    'Rabu | 07:30 - 09:00 WIB | IPAS / PPKn'
+                ].join('\n');
+            }
+            return appData.exams.map(ex => {
+                const subName = getSubjectNameById(ex.subjectId) || ex.examName;
+                const sDate = formatIsoToDDMMYYYY(parseDDMMYYYYToIso(ex.startDate) || getTodayIsoWIB());
+                const sTime = normalizeTimeHHMM(ex.startTime, '07:30');
+                const eTime = normalizeTimeHHMM(ex.endTime, '09:30');
+                return `${sDate} | ${sTime} - ${eTime} WIB | ${ex.examName} (${subName})`;
+            }).join('\n');
+        }
+
+        window.applyExamCardTitlePreset = function(presetText) {
+            const el = document.getElementById('cardCfgExamTitle');
+            if (el && presetText) el.value = presetText;
+        };
+
+        window.pullScheduleFromActiveExamsToCard = function() {
+            const el = document.getElementById('cardCfgScheduleText');
+            if (el) {
+                el.value = buildDefaultScheduleLinesFromExams();
+            }
+        };
+
+        window.openPrintExamCardsModal = function(sourceContext = 'students') {
+            const search = (appData.filters.studentSearch || '').toLowerCase();
+            const filterCls = appData.filters.studentClass || 'ALL';
+
+            const filteredStudents = appData.students.filter(s => {
+                const schoolStr = s.asalSekolah !== undefined ? s.asalSekolah : (appData.settings.schoolName || '');
+                const matchSearch = !search || s.fullName.toLowerCase().includes(search) || s.nisn.toLowerCase().includes(search) || (s.nis || '').toLowerCase().includes(search) || schoolStr.toLowerCase().includes(search);
+                const matchCls = filterCls === 'ALL' || s.classId === filterCls || s.className === filterCls;
+                return matchSearch && matchCls;
+            });
+
+            const selectedList = appData.students.filter(s => selectedStudentIds.has(s.id));
+            const defaultTargetMode = selectedList.length > 0 ? 'SELECTED' : 'FILTERED';
+
+            if (!examCardConfigCache.academicYear) {
+                examCardConfigCache.academicYear = `Tahun Pelajaran ${appData.settings.academicYear || '2026/2027'} • Semester ${appData.settings.semester || 'Ganjil'}`;
+            }
+            if (!examCardConfigCache.scheduleText) {
+                examCardConfigCache.scheduleText = buildDefaultScheduleLinesFromExams();
+            }
+            if (!examCardConfigCache.signCityDate) {
+                examCardConfigCache.signCityDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+            }
+
+            const html = `
+                <div class="space-y-4 text-xs">
+                    <div class="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-blue-900">
+                        <p class="font-extrabold flex items-center gap-1.5 text-blue-800">
+                            <i class="fa-solid fa-id-card"></i> Pengaturan Cetak Kartu Peserta Ujian Siswa
+                        </p>
+                        <p class="text-[11px] text-blue-700 mt-0.5">
+                            Seluruh keterangan judul ujian, ruang, sesi, dan jadwal di bawah ini dapat diubah manual sesuai kebutuhan sekolah. Data peserta otomatis mengikuti Data Siswa.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer">
+                            <input type="radio" name="cardPrintTargetMode" value="FILTERED" ${defaultTargetMode === 'FILTERED' ? 'checked' : ''} class="mt-0.5 text-indigo-600">
+                            <div>
+                                <span class="font-extrabold text-slate-900 block">Cetak Siswa Sesuai Filter (${filteredStudents.length} Siswa)</span>
+                                <span class="text-[10px] text-slate-500">Mencetak seluruh siswa yang tampil saat ini.</span>
+                            </div>
+                        </label>
+                        <label class="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50 ${selectedList.length === 0 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}">
+                            <input type="radio" name="cardPrintTargetMode" value="SELECTED" ${defaultTargetMode === 'SELECTED' ? 'checked' : ''} ${selectedList.length === 0 ? 'disabled' : ''} class="mt-0.5 text-indigo-600">
+                            <div>
+                                <span class="font-extrabold text-slate-900 block">Hanya Siswa Terpilih (${selectedList.length} Dicentang)</span>
+                                <span class="text-[10px] text-slate-500">Hanya mencetak siswa yang dicentang pada tabel Data Siswa.</span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <div class="space-y-3 border-t border-slate-200 pt-3">
+                        <div>
+                            <div class="flex flex-wrap items-center justify-between gap-1 mb-1">
+                                <label class="font-bold text-slate-700">Judul / Keterangan Ujian (Bisa Diubah Manual) *</label>
+                                <div class="flex flex-wrap gap-1">
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA SUMATIF AKHIR SEMESTER (SAS)')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">SAS</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA SUMATIF TENGAH SEMESTER (STS)')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">STS / PTS</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA SUMATIF AKHIR TAHUN (SAT)')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">SAT</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA UJIAN SEKOLAH / TKA SD')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">Ujian Sekolah / TKA</button>
+                                    <button type="button" onclick="window.applyExamCardTitlePreset('KARTU PESERTA TRY OUT ASESMEN DIGITAL')" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">Try Out</button>
+                                </div>
+                            </div>
+                            <input type="text" id="cardCfgExamTitle" value="${escapeHtml(examCardConfigCache.examTitle)}" placeholder="Ketik judul kartu ujian..." class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-800">
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Sub-Keterangan / Jenis Pelaksanaan</label>
+                                <input type="text" id="cardCfgExamSubtitle" value="${escapeHtml(examCardConfigCache.examSubtitle)}" placeholder="Contoh: PELAKSANAAN ASESMEN BERBASIS KOMPUTER" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Keterangan Tahun Pelajaran & Semester</label>
+                                <input type="text" id="cardCfgAcademicYear" value="${escapeHtml(examCardConfigCache.academicYear)}" placeholder="Contoh: Tahun Pelajaran 2026/2027 • Semester Ganjil" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Nama Ruang Ujian *</label>
+                                <input type="text" id="cardCfgRoomName" value="${escapeHtml(examCardConfigCache.roomName)}" placeholder="Contoh: Ruang 01 / Lab Komputer" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-indigo-700">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Sesi / Waktu Ujian *</label>
+                                <input type="text" id="cardCfgSessionInfo" value="${escapeHtml(examCardConfigCache.sessionInfo)}" placeholder="Contoh: Sesi 1 (07.30 - 09.30 WIB)" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-semibold text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Keterangan PIN / Password</label>
+                                <input type="text" id="cardCfgPinDisplay" value="${escapeHtml(examCardConfigCache.defaultPinDisplay)}" placeholder="Contoh: 123456" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono font-bold text-emerald-700">
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                                <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer">
+                                    <input type="checkbox" id="cardCfgShowSchedule" ${examCardConfigCache.showScheduleTable ? 'checked' : ''} class="w-4 h-4 rounded text-indigo-600">
+                                    <span>Tampilkan Tabel Jadwal Ujian di Dalam Kartu</span>
+                                </label>
+                                <button type="button" onclick="window.pullScheduleFromActiveExamsToCard()" class="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[10px] font-bold">
+                                    <i class="fa-solid fa-rotate mr-1"></i> Ambil Otomatis dari Menu Jadwal Ujian
+                                </button>
+                            </div>
+                            <textarea id="cardCfgScheduleText" rows="3" placeholder="Format per baris: Hari/Tanggal | Jam | Mata Pelajaran&#10;Contoh: Senin, 16/11/2026 | 07:30 - 09:00 WIB | Bahasa Indonesia" class="w-full p-2.5 border border-slate-300 rounded-xl font-mono text-[11px] text-slate-700">${escapeHtml(examCardConfigCache.scheduleText)}</textarea>
+                            <p class="text-[10px] text-slate-400 mt-0.5">Pisahkan kolom dengan tanda <code class="font-bold text-slate-600">|</code> (Tanggal/Hari | Jam | Mata Pelajaran) atau tulis bebas.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Ukuran Kertas</label>
+                                <select id="cardCfgPaperSize" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-bold text-slate-800 bg-white">
+                                    <option value="A4" ${examCardConfigCache.paperSize === 'A4' ? 'selected' : ''}>Kertas A4</option>
+                                    <option value="F4" ${examCardConfigCache.paperSize === 'F4' ? 'selected' : ''}>Folio / F4</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Tanggal Tanda Tangan</label>
+                                <input type="text" id="cardCfgSignDate" value="${escapeHtml(examCardConfigCache.signCityDate)}" placeholder="Contoh: Turi, 15 November 2026" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">Nama Kepala Sekolah / Panitia</label>
+                                <input type="text" id="cardCfgSignName" value="${escapeHtml(examCardConfigCache.signName)}" placeholder="Nama Pejabat" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                            <div>
+                                <label class="block font-bold text-slate-700 mb-1">NIP / Jabatan Bawah</label>
+                                <input type="text" id="cardCfgSignNip" value="${escapeHtml(examCardConfigCache.signNip)}" placeholder="NIP. ..." class="w-full px-3 py-2 border border-slate-300 rounded-xl text-slate-800">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            window.showModal('Cetak Kartu Peserta Ujian Siswa', '', 'info', (confirmed) => {
+                if (!confirmed) return true;
+
+                const targetModeEl = document.querySelector('input[name="cardPrintTargetMode"]:checked');
+                const targetMode = targetModeEl ? targetModeEl.value : 'FILTERED';
+
+                examCardConfigCache.examTitle = document.getElementById('cardCfgExamTitle')?.value.trim() || 'KARTU PESERTA UJIAN SEKOLAH';
+                examCardConfigCache.examSubtitle = document.getElementById('cardCfgExamSubtitle')?.value.trim() || '';
+                examCardConfigCache.academicYear = document.getElementById('cardCfgAcademicYear')?.value.trim() || '';
+                examCardConfigCache.roomName = document.getElementById('cardCfgRoomName')?.value.trim() || 'Ruang 01';
+                examCardConfigCache.sessionInfo = document.getElementById('cardCfgSessionInfo')?.value.trim() || 'Sesi 1 (07.30 - 09.30 WIB)';
+                examCardConfigCache.defaultPinDisplay = document.getElementById('cardCfgPinDisplay')?.value.trim() || '123456';
+                examCardConfigCache.paperSize = document.getElementById('cardCfgPaperSize')?.value || 'A4';
+                examCardConfigCache.showScheduleTable = Boolean(document.getElementById('cardCfgShowSchedule')?.checked);
+                examCardConfigCache.scheduleText = document.getElementById('cardCfgScheduleText')?.value.trim() || '';
+                examCardConfigCache.signCityDate = document.getElementById('cardCfgSignDate')?.value.trim() || '';
+                examCardConfigCache.signName = document.getElementById('cardCfgSignName')?.value.trim() || '_______________________';
+                examCardConfigCache.signNip = document.getElementById('cardCfgSignNip')?.value.trim() || '';
+
+                const studentsToPrint = targetMode === 'SELECTED' && selectedList.length > 0
+                    ? selectedList
+                    : filteredStudents;
+
+                if (studentsToPrint.length === 0) {
+                    window.showModal('Data Siswa Kosong', 'Tidak ada data siswa yang dipilih untuk dicetak kartunya.', 'error');
+                    return false;
+                }
+
+                setTimeout(() => {
+                    window.executePrintStudentExamCards(studentsToPrint, examCardConfigCache);
+                }, 60);
+                return true;
+            }, { html, wide: true, showCancel: true, okText: 'Buka Pratinjau & Cetak Kartu' });
+        };
+
+        window.executePrintStudentExamCards = function(studentsList, cfg) {
+            const logoSrc = appData.settings.schoolLogo || DEFAULT_SCHOOL_LOGO;
+            const defaultSchoolName = appData.settings.schoolName || 'SD NEGERI GEDONGBOYOUNTUNG';
+
+            const scheduleLines = (cfg.scheduleText || '')
+                .split(/\r?\n/)
+                .map(l => l.trim())
+                .filter(Boolean);
+
+            let scheduleTableHtml = '';
+            if (cfg.showScheduleTable && scheduleLines.length > 0) {
+                const sRows = scheduleLines.map(line => {
+                    const parts = line.split('|').map(p => p.trim());
+                    if (parts.length >= 3) {
+                        return `
+                            <tr>
+                                <td style="border:1px solid #cbd5e1;padding:2.5px 5px;">${escapeHtml(parts[0])}</td>
+                                <td style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:center;">${escapeHtml(parts[1])}</td>
+                                <td style="border:1px solid #cbd5e1;padding:2.5px 5px;font-weight:700;">${escapeHtml(parts.slice(2).join(' | '))}</td>
+                            </tr>
+                        `;
+                    }
+                    return `
+                        <tr>
+                            <td colspan="3" style="border:1px solid #cbd5e1;padding:2.5px 5px;">${escapeHtml(line)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                scheduleTableHtml = `
+                    <div style="margin-top:6px;">
+                        <div style="font-size:8.5px;font-weight:800;text-transform:uppercase;color:#1e293b;margin-bottom:2px;letter-spacing:0.3px;">Jadwal Pelaksanaan Ujian:</div>
+                        <table style="width:100%;border-collapse:collapse;font-size:8.5px;color:#0f172a;">
+                            <thead>
+                                <tr style="background:#f1f5f9;">
+                                    <th style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:left;width:28%;">Hari / Tanggal</th>
+                                    <th style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:center;width:27%;">Waktu</th>
+                                    <th style="border:1px solid #cbd5e1;padding:2.5px 5px;text-align:left;">Mata Pelajaran / Paket</th>
+                                </tr>
+                            </thead>
+                            <tbody>${sRows}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            const cardsHtml = studentsList.map((s, idx) => {
+                const schoolDisplay = s.asalSekolah !== undefined && String(s.asalSekolah).trim() !== ''
+                    ? s.asalSekolah
+                    : defaultSchoolName;
+                const genderText = (s.gender || 'L') === 'P' ? 'Perempuan (P)' : 'Laki-laki (L)';
+                const participantNumber = `${String(idx + 1).padStart(3, '0')}-${s.nisn || s.id.slice(-4)}`;
+
+                return `
+                    <div class="exam-card-item" style="border:1.5px solid #0f172a;border-radius:10px;padding:10px 12px;background:#ffffff;box-sizing:border-box;page-break-inside:avoid;break-inside:avoid;display:flex;flex-direction:column;justify-content:space-between;">
+                        <div>
+                            <!-- Kop Kartu -->
+                            <div style="display:flex;align-items:center;gap:8px;border-bottom:2px double #0f172a;padding-bottom:6px;margin-bottom:6px;">
+                                <img src="${escapeHtml(logoSrc)}" onerror="this.style.display='none'" alt="Logo" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;">
+                                <div style="flex:1;text-align:center;line-height:1.25;">
+                                    <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;color:#0f172a;">${escapeHtml(schoolDisplay)}</div>
+                                    <div style="font-size:9.5px;font-weight:800;text-transform:uppercase;color:#1e3a8a;margin-top:1px;">${escapeHtml(cfg.examTitle)}</div>
+                                    ${cfg.examSubtitle ? `<div style="font-size:8px;font-weight:700;color:#475569;">${escapeHtml(cfg.examSubtitle)}</div>` : ''}
+                                    ${cfg.academicYear ? `<div style="font-size:8px;color:#64748b;">${escapeHtml(cfg.academicYear)}</div>` : ''}
+                                </div>
+                            </div>
+
+                            <!-- Identitas Peserta & Ruang -->
+                            <table style="width:100%;border-collapse:collapse;font-size:9.5px;line-height:1.45;color:#0f172a;">
+                                <tr>
+                                    <td style="width:28%;font-weight:600;color:#475569;padding:1px 0;">Nama Peserta</td>
+                                    <td style="width:3%;text-align:center;">:</td>
+                                    <td style="font-weight:800;color:#0f172a;padding:1px 0;">${escapeHtml(s.fullName)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">NISN / NIS</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-family:monospace;font-weight:700;padding:1px 0;">${escapeHtml(s.nisn)} / ${escapeHtml(s.nis || '-')}</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">Kelas / L-P</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-weight:700;padding:1px 0;">Kelas ${escapeHtml(s.className)} (${escapeHtml(genderText)})</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">Asal Sekolah</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-weight:700;color:#1e3a8a;padding:1px 0;">${escapeHtml(schoolDisplay)}</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;color:#475569;padding:1px 0;">Ruang & Sesi</td>
+                                    <td style="text-align:center;">:</td>
+                                    <td style="font-weight:800;color:#047857;padding:1px 0;">${escapeHtml(cfg.roomName)} • ${escapeHtml(cfg.sessionInfo)}</td>
+                                </tr>
+                            </table>
+
+                            <!-- Kotak Akses Login CBT -->
+                            <div style="margin-top:6px;padding:5px 8px;background:#f8fafc;border:1px dashed #64748b;border-radius:6px;display:flex;align-items:center;justify-content:space-between;font-size:9px;">
+                                <div>
+                                    <span style="color:#475569;font-weight:700;">Username Login:</span>
+                                    <strong style="font-family:monospace;font-size:10px;color:#0f172a;margin-left:3px;">${escapeHtml(s.username || s.nisn)}</strong>
+                                </div>
+                                <div>
+                                    <span style="color:#475569;font-weight:700;">PIN / Password:</span>
+                                    <strong style="font-family:monospace;font-size:10px;color:#1d4ed8;margin-left:3px;">${escapeHtml(cfg.defaultPinDisplay)}</strong>
+                                </div>
+                            </div>
+
+                            ${scheduleTableHtml}
+                        </div>
+
+                        <!-- Footer Kartu: Pas Foto & Tanda Tangan -->
+                        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:8px;padding-top:5px;border-top:1px solid #e2e8f0;font-size:8.5px;">
+                            <div style="display:flex;align-items:center;gap:6px;">
+                                <div style="width:42px;height:52px;border:1px solid #94a3b8;border-radius:4px;display:flex;align-items:center;justify-content:center;text-align:center;color:#64748b;font-size:7.5px;background:#f8fafc;line-height:1.2;">
+                                    Pas Foto<br>2 x 3
+                                </div>
+                                <div style="font-size:7.5px;color:#64748b;line-height:1.3;">
+                                    <strong style="color:#0f172a;display:block;">No. Urut: ${escapeHtml(participantNumber)}</strong>
+                                    Kartu wajib dibawa<br>selama ujian berlangsung.
+                                </div>
+                            </div>
+                            <div style="text-align:center;min-width:125px;line-height:1.25;">
+                                <div style="color:#334155;">${escapeHtml(cfg.signCityDate)}</div>
+                                <div style="color:#334155;margin-bottom:22px;">${escapeHtml(cfg.signRole || 'Kepala Sekolah / Panitia,')}</div>
+                                <div style="font-weight:800;text-decoration:underline;color:#0f172a;">${escapeHtml(cfg.signName)}</div>
+                                ${cfg.signNip ? `<div style="font-size:7.5px;color:#475569;">${escapeHtml(cfg.signNip)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const pageCssSize = cfg.paperSize === 'F4' ? '215mm 330mm' : 'A4 portrait';
+            const bodyContentOnly = `
+                <div style="font-family:'Inter',Arial,sans-serif;color:#0f172a;background:#ffffff;">
+                    <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;width:100%;">
+                        ${cardsHtml}
+                    </div>
+                </div>
+            `;
+
+            const fullHtmlDoc = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Cetak Kartu Ujian (${studentsList.length} Siswa)</title><style>@page{size:${pageCssSize};margin:8mm;}body{font-family:Arial,sans-serif;margin:0;padding:4px;color:#0f172a;background:#ffffff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}.exam-card-item{page-break-inside:avoid;break-inside:avoid;}</style></head><body>${bodyContentOnly}</body></html>`;
+            window.renderAndTriggerPrint(fullHtmlDoc, bodyContentOnly, `Kartu Peserta Ujian (${studentsList.length} Siswa)`);
         };
 
         function getQuestionTypeBadgeLabel(type) {
@@ -2968,7 +3432,7 @@
             const bankOpts = appData.questionBanks.map(b => `<option value="${b.id}" ${selectedBank === b.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`).join('');
 
             const filteredQuestions = appData.questions.filter(q => selectedBank === 'ALL' || q.bankId === selectedBank);
-            const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(String(q.questionText || '').replace(/<[^>]+>/g, '').slice(0, 40))}...</option>`).join('');
+            const questionListOptions = filteredQuestions.map((q, idx) => `<option value="${q.id}">Soal #${q.orderNum || (idx + 1)} (${escapeHtml(getQuestionTypeBadgeLabel(q.type))}) - ${escapeHtml(q.questionText.slice(0, 40))}...</option>`).join('');
 
             const canDeleteBank = selectedBank !== 'ALL' && appData.questionBanks.some(b => b.id === selectedBank);
 
@@ -3059,7 +3523,7 @@
                             <div>
                                 <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teks Pertanyaan Soal *</label>
                                 ${window.buildRichTextToolbarHtml('qFormText')}
-                                <textarea id="qFormText" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Tuliskan pertanyaan soal di sini..." class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"></textarea>
+                                <textarea id="qFormText" rows="3" oninput="window.updateQuestionLivePreview()" placeholder="Tuliskan pertanyaan soal di sini... (Bisa gabung teks biasa & rumus seperti $\\frac{3}{4}$)" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"></textarea>
                             </div>
 
                             <div>
@@ -3071,22 +3535,22 @@
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan A</label>
                                     ${window.buildOptionMathToolbarHtml('qOptA')}
-                                    <input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan B</label>
                                     ${window.buildOptionMathToolbarHtml('qOptB')}
-                                    <input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan C</label>
                                     ${window.buildOptionMathToolbarHtml('qOptC')}
-                                    <input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan / Pernyataan D</label>
                                     ${window.buildOptionMathToolbarHtml('qOptD')}
-                                    <input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                                 </div>
                             </div>
 
@@ -3094,12 +3558,12 @@
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Kunci Jawaban *</label>
                                     ${window.buildOptionMathToolbarHtml('qFormKey')}
-                                    <input type="text" id="qFormKey" oninput="window.updateQuestionLivePreview()" placeholder="Contoh: A atau B,C" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-indigo-700">
+                                    <input type="text" id="qFormKey" oninput="window.updateQuestionLivePreview()" placeholder="Contoh: A atau B,C atau $\\frac{3}{4}$" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-indigo-700">
                                 </div>
                                 <div>
                                     <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pembahasan Soal <span class="text-slate-400 font-normal">(Opsional)</span></label>
                                     ${window.buildOptionMathToolbarHtml('qFormExplanation')}
-                                    <input type="text" id="qFormExplanation" oninput="window.updateQuestionLivePreview()" placeholder="Langkah penyelesaian..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                                    <input type="text" id="qFormExplanation" oninput="window.updateQuestionLivePreview()" placeholder="Langkah penyelesaian & rumus..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs">
                                 </div>
                             </div>
 
@@ -3127,13 +3591,13 @@
                                     <span id="previewWeightLabel" class="font-bold text-slate-500">Bobot: 10 Poin</span>
                                 </div>
                                 <div id="previewStimulusBox" class="p-3 bg-white rounded-xl border border-slate-200 text-xs text-slate-700 hidden space-y-2">
-                                    <div id="previewStimulusText" class="leading-relaxed"></div>
+                                    <p id="previewStimulusText" class="italic"></p>
                                     <img id="previewStimulusImg" src="" alt="Stimulus" class="max-h-40 rounded-lg mx-auto hidden object-contain">
                                 </div>
 
-                                <div id="previewQuestionText" class="text-sm font-bold text-slate-900 leading-relaxed">
+                                <p id="previewQuestionText" class="text-sm font-bold text-slate-900 leading-relaxed">
                                     (Teks pertanyaan akan tampil di sini)
-                                </div>
+                                </p>
                                 <img id="previewQuestionImg" src="" alt="Gambar Soal" class="max-h-44 rounded-lg mx-auto hidden object-contain">
 
                                 <div id="previewOptionsList" class="space-y-2 pt-1"></div>
@@ -3276,10 +3740,10 @@
 
             if (type === 'pg' || type === 'pg_complex') {
                 container.innerHTML = `
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan C</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
-                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan D</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan A</label>${window.buildOptionMathToolbarHtml('qOptA')}<input type="text" id="qOptA" oninput="window.updateQuestionLivePreview()" placeholder="Opsi A (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan B</label>${window.buildOptionMathToolbarHtml('qOptB')}<input type="text" id="qOptB" oninput="window.updateQuestionLivePreview()" placeholder="Opsi B (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan C</label>${window.buildOptionMathToolbarHtml('qOptC')}<input type="text" id="qOptC" oninput="window.updateQuestionLivePreview()" placeholder="Opsi C (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
+                    <div><label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Pilihan D</label>${window.buildOptionMathToolbarHtml('qOptD')}<input type="text" id="qOptD" oninput="window.updateQuestionLivePreview()" placeholder="Opsi D (teks / rumus)" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></div>
                 `;
             } else if (type === 'matching') {
                 container.innerHTML = `
@@ -3334,7 +3798,7 @@
             if (typeBadge) typeBadge.innerText = getQuestionTypeBadgeLabel(type);
 
             if (stimulus.trim() || stimImgUrl.trim()) {
-                stimText.innerHTML = window.sanitizeRichTextHtml(stimulus);
+                stimText.innerHTML = window.formatRichQuestionText(stimulus);
                 if (stimImg) {
                     if (stimImgUrl.trim()) {
                         stimImg.src = stimImgUrl.trim();
@@ -3375,8 +3839,8 @@
                     const dispText = !isChoiceOptionEmpty(o, idx) ? o.trim() : `Opsi ${String.fromCharCode(65 + idx)}`;
                     return `
                         <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
-                            <div class="flex items-center gap-2"><span class="font-bold w-5">${String.fromCharCode(65 + idx)}.</span> <span>${window.renderMathExpressionsInHtml(dispText)}</span></div>
-                            <span class="text-[10px] text-slate-400 uppercase font-mono">${badgeType}</span>
+                            <div class="flex items-center gap-2"><span class="font-bold w-5 shrink-0">${String.fromCharCode(65 + idx)}.</span> <div>${window.renderMathExpressionsInHtml(dispText)}</div></div>
+                            <span class="text-[10px] text-slate-400 uppercase font-mono shrink-0">${badgeType}</span>
                         </div>
                     `;
                 }).filter(Boolean).join('');
@@ -3395,7 +3859,7 @@
                     optList.innerHTML = parsedTF.options.map((stmt, idx) => `
                         <div class="p-2.5 bg-white rounded-xl border border-slate-200 text-xs flex items-center justify-between gap-2">
                             <span><strong>${idx + 1}.</strong> ${window.renderMathExpressionsInHtml(stmt)}</span>
-                            <span class="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded font-bold text-[10px]">Benar / Salah</span>
+                            <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded font-bold text-[10px]">Benar / Salah</span>
                         </div>
                     `).join('');
                 } else {
@@ -3729,20 +4193,192 @@
             return true;
         };
 
+        window.triggerQuestionExcelImport = function() {
+            const fileInput = document.getElementById('globalFileInput');
+            fileInput.value = '';
+            fileInput.onchange = function(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                window.readExcelWorkbookRows(file, (rows) => {
+                    fileInput.value = '';
+                    if (!rows || rows.length < 2) {
+                        window.showModal('Data Kosong', 'File Excel tidak memiliki baris soal.', 'error');
+                        return;
+                    }
+
+                    const bankId = (appData.filters.questionBankId && appData.filters.questionBankId !== 'ALL')
+                        ? appData.filters.questionBankId
+                        : (appData.questionBanks[0] ? appData.questionBanks[0].id : 'QB-DEFAULT');
+
+                    const headerRow = (rows[0] || []).map(h => String(h ?? '').trim().toLowerCase());
+                    const hasImageColumns = headerRow.some(h => h.includes('gambar') || h.includes('url')) || (rows[0] && rows[0].length >= 12);
+
+                    const parsedQuestions = [];
+                    for (let i = 1; i < rows.length; i++) {
+                        const cols = rows[i];
+                        if (!cols || cols.length === 0) continue;
+
+                        let typeRaw = String(cols[1] ?? '').trim();
+                        let weight = Number(cols[2]) || 10;
+                        let stimulusText = '';
+                        let stimulusImage = '';
+                        let questionText = '';
+                        let questionImage = '';
+                        let optA = '';
+                        let optB = '';
+                        let optC = '';
+                        let optD = '';
+                        let keyRaw = '';
+                        let explanation = '';
+
+                        if (hasImageColumns) {
+                            stimulusText = String(cols[3] ?? '').trim();
+                            stimulusImage = String(cols[4] ?? '').trim();
+                            questionText = String(cols[5] ?? '').trim();
+                            questionImage = String(cols[6] ?? '').trim();
+                            optA = String(cols[7] ?? '').trim();
+                            optB = String(cols[8] ?? '').trim();
+                            optC = String(cols[9] ?? '').trim();
+                            optD = String(cols[10] ?? '').trim();
+                            keyRaw = String(cols[11] ?? '').trim();
+                            explanation = String(cols[12] ?? '').trim();
+                        } else {
+                            stimulusText = String(cols[3] ?? '').trim();
+                            questionText = String(cols[4] ?? '').trim();
+                            optA = String(cols[5] ?? '').trim();
+                            optB = String(cols[6] ?? '').trim();
+                            optC = String(cols[7] ?? '').trim();
+                            optD = String(cols[8] ?? '').trim();
+                            keyRaw = String(cols[9] ?? '').trim();
+                            explanation = String(cols[10] ?? '').trim();
+                        }
+
+                        if (!questionText && !typeRaw) continue;
+                        if (!questionText) continue;
+
+                        const normType = normalizeImportedQuestionType(typeRaw);
+                        const finalType = normType.code;
+
+                        let options = [];
+                        let matchingPairs = [];
+                        let correctAnswer = keyRaw;
+
+                        if (finalType === 'pg') {
+                            options = [optA, optB, optC, optD].map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : String(val).trim());
+                            correctAnswer = (keyRaw || 'A').trim().toUpperCase();
+                        } else if (finalType === 'pg_complex') {
+                            options = [optA, optB, optC, optD].map((val, idx) => isChoiceOptionEmpty(val, idx) ? '' : String(val).trim());
+                            correctAnswer = keyRaw
+                                ? keyRaw.split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean)
+                                : ['A'];
+                        } else if (finalType === 'true_false') {
+                            const parsedTF = parseTrueFalseStatementsAndKey([optA, optB, optC, optD], keyRaw);
+                            options = parsedTF.options;
+                            correctAnswer = parsedTF.correctAnswer;
+                        } else if (finalType === 'matching') {
+                            const parsedMatch = parseMatchingOptionsAndKey([optA, optB, optC, optD], keyRaw);
+                            matchingPairs = parsedMatch.matchingPairs;
+                            options = parsedMatch.options;
+                            correctAnswer = parsedMatch.correctAnswer;
+                        }
+
+                        const keyDisplayStr = finalType === 'matching'
+                            ? formatMatchingKeyReadable(matchingPairs, correctAnswer)
+                            : (Array.isArray(correctAnswer) ? correctAnswer.join(', ') : (typeof correctAnswer === 'object' ? JSON.stringify(correctAnswer) : String(correctAnswer)));
+
+                        parsedQuestions.push({
+                            orderNum: parsedQuestions.length + 1,
+                            type: finalType,
+                            isValidType: normType.valid,
+                            rawTypeLabel: normType.rawLabel,
+                            weight,
+                            stimulusText,
+                            stimulusImage,
+                            questionText,
+                            questionImage,
+                            options,
+                            matchingPairs,
+                            correctAnswer,
+                            keyDisplay: keyDisplayStr,
+                            explanation
+                        });
+                    }
+
+                    const validQuestions = parsedQuestions.filter(q => q.isValidType);
+                    const previewRowsHtml = parsedQuestions.map((q, idx) => `
+                        <tr class="border-b border-slate-100 hover:bg-slate-50 align-top">
+                            <td class="px-3 py-2 text-xs font-bold text-slate-600">${idx + 1}</td>
+                            <td class="px-3 py-2 text-xs font-bold text-indigo-700">${escapeHtml(getQuestionTypeBadgeLabel(q.type))}</td>
+                            <td class="px-3 py-2 text-xs text-center font-bold">${q.weight}</td>
+                            <td class="px-3 py-2 text-xs text-slate-800">${escapeHtml(q.questionText)}</td>
+                            <td class="px-3 py-2 text-xs font-mono font-extrabold text-emerald-700">${escapeHtml(q.keyDisplay)}</td>
+                        </tr>
+                    `).join('');
+
+                    const html = `
+                        <div class="space-y-3">
+                            <div class="max-h-80 overflow-y-auto border border-slate-200 rounded-xl custom-scrollbar">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold text-slate-600 uppercase sticky top-0">
+                                            <th class="px-3 py-2">No</th><th class="px-3 py-2">Jenis Soal</th><th class="px-3 py-2 text-center">Bobot</th><th class="px-3 py-2">Pertanyaan</th><th class="px-3 py-2">Kunci</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${previewRowsHtml}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+
+                    window.showModal('Pratinjau Impor Bank Soal (.xlsx)', '', 'info', async (confirmed) => {
+                        if (!confirmed) return true;
+                        for (let idx = 0; idx < validQuestions.length; idx++) {
+                            const item = validQuestions[idx];
+                            const newQ = {
+                                id: 'Q-' + Date.now() + '-' + idx + '-' + Math.floor(Math.random() * 1000),
+                                bankId,
+                                subjectId: appData.subjects[0] ? appData.subjects[0].id : 'SUB-IPAS',
+                                classLevel: '4',
+                                orderNum: idx + 1,
+                                type: item.type,
+                                weight: item.weight,
+                                stimulusText: item.stimulusText,
+                                stimulusImage: item.stimulusImage,
+                                questionText: item.questionText,
+                                questionImage: item.questionImage,
+                                options: item.options,
+                                matchingPairs: item.matchingPairs || [],
+                                correctAnswer: item.correctAnswer,
+                                partialScoring: true,
+                                explanation: item.explanation,
+                                difficulty: 'Sedang'
+                            };
+                            appData.questions.push(newQ);
+                            await syncCollectionRecord('questions', newQ.id, newQ);
+                        }
+                        renderQuestionBanksContent(document.getElementById('adminMainContent'));
+                        window.showModal('Impor Soal Berhasil', `Berhasil menyimpan ${validQuestions.length} butir soal ke Firebase Firestore.`, 'success');
+                        return true;
+                    }, { html, wide: true, showCancel: true, okText: `Simpan ${validQuestions.length} Soal` });
+                });
+            };
+            fileInput.click();
+        };
+
         function renderTeachersContent(container) {
             const rows = appData.teachers.map((t, idx) => {
-                const roleCode = t.role === 'admin' ? 'admin' : 'editor_soal';
-                const roleBadge = roleCode === 'admin'
-                    ? '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">Administrator Utama</span>'
-                    : '<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200">Editor Bank Soal</span>';
-                const loginAccount = t.username || t.email || t.nip || '-';
+                const roleVal = t.role === 'admin' ? 'admin' : 'editor_soal';
+                const roleBadge = roleVal === 'admin'
+                    ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">Admin Utama</span>'
+                    : '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200">Editor Bank Soal</span>';
+                const loginUser = t.username || t.email || t.nip || '-';
                 return `
                 <tr class="hover:bg-slate-50 transition border-b border-slate-100">
                     <td class="px-4 py-3 text-xs text-slate-500">${idx + 1}</td>
                     <td class="px-4 py-3 text-xs font-mono font-bold text-slate-900">${escapeHtml(t.nip)}</td>
                     <td class="px-4 py-3 text-xs font-bold text-slate-900">${escapeHtml(t.fullName)}</td>
                     <td class="px-4 py-3 text-xs text-slate-600">${escapeHtml((t.subjects || []).join(', '))}</td>
-                    <td class="px-4 py-3 text-xs font-mono font-semibold text-indigo-700">${escapeHtml(loginAccount)}</td>
+                    <td class="px-4 py-3 text-xs font-mono text-indigo-700 font-semibold">${escapeHtml(loginUser)}</td>
                     <td class="px-4 py-3 text-xs">${roleBadge}</td>
                     <td class="px-4 py-3 text-xs"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${t.status === 'Aktif' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}">${escapeHtml(t.status || 'Aktif')}</span></td>
                     <td class="px-4 py-3 text-xs space-x-1 whitespace-nowrap">
@@ -3757,27 +4393,27 @@
                 <div class="space-y-4">
                     <div class="bg-white p-4 rounded-2xl shadow-xs border border-slate-200 flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <h3 class="font-bold text-slate-800 text-sm">Data Administrasi Guru &amp; Hak Akses Editor Soal</h3>
-                            <p class="text-xs text-slate-500">Kelola data pendidik, akun login guru, pembagian peran (Editor Bank Soal atau Administrator), serta impor/ekspor Excel (.xlsx).</p>
+                            <h3 class="font-bold text-slate-800 text-sm">Data Administrasi Guru & Hak Akses Editor Soal</h3>
+                            <p class="text-xs text-slate-500">Kelola data pendidik, akun login guru, impor massal Excel (.xlsx), serta pembagian peran (Editor Bank Soal atau Administrator).</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
-                            <button type="button" onclick="window.downloadTeacherTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition cursor-pointer">
+                            <button type="button" onclick="window.downloadTeacherTemplate()" class="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-download mr-1"></i> Unduh Template Excel
                             </button>
-                            <button type="button" onclick="window.triggerTeacherExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition cursor-pointer">
+                            <button type="button" onclick="window.triggerTeacherExcelImport()" class="px-3.5 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-file-excel mr-1"></i> Impor Excel (.xlsx)
                             </button>
-                            <button type="button" onclick="window.exportTeachersExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer">
+                            <button type="button" onclick="window.exportTeachersExcel()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
                                 <i class="fa-solid fa-file-export mr-1"></i> Ekspor Data (.xlsx)
                             </button>
-                            <button type="button" onclick="window.openTeacherFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer">
+                            <button type="button" onclick="window.openTeacherFormModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm">
                                 <i class="fa-solid fa-plus mr-1"></i> Tambah Guru
                             </button>
                         </div>
                     </div>
                     <div class="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                         <div class="table-responsive-wrapper custom-scrollbar">
-                            <table class="w-full min-w-[760px] text-left border-collapse">
+                            <table class="w-full min-w-[740px] text-left border-collapse">
                                 <thead>
                                     <tr class="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase">
                                         <th class="px-4 py-3">No</th><th class="px-4 py-3">NIP</th><th class="px-4 py-3">Nama Guru</th><th class="px-4 py-3">Bidang Mapel</th><th class="px-4 py-3">Username / Email Login</th><th class="px-4 py-3">Peran Akses</th><th class="px-4 py-3">Status</th><th class="px-4 py-3">Aksi</th>
@@ -3802,27 +4438,28 @@
             ];
             const sampleRows = [
                 ['198809022023211005', 'ALFIAN FIRDAUS S, S.Pd., M.Pd.', 'GURU KELAS', 'alfian@sekolah.sch.id', 'guru123', 'editor_soal'],
-                ['199004152022212008', 'SITI NURHALIZA, S.Pd.', 'Matematika', 'siti@sekolah.sch.id', 'guru123', 'editor_soal']
+                ['199004152022212008', 'SITI AMINAH, S.Pd.', 'Matematika, IPAS', 'siti.aminah@sekolah.sch.id', 'guru123', 'editor_soal']
             ];
             window.downloadExcelFile('Template_Impor_Akun_Guru.xlsx', headers, sampleRows);
         };
 
         window.exportTeachersExcel = function() {
-            const headers = ['No', 'NIP', 'Nama Lengkap & Gelar', 'Bidang Mata Pelajaran', 'Username / Email Login', 'Peran Akses', 'Status'];
+            const headers = ['No', 'NIP', 'Nama Lengkap & Gelar', 'Bidang Mapel', 'Username / Email Login', 'Peran Akses', 'Status'];
             const rows = (appData.teachers || []).map((t, idx) => [
                 idx + 1,
                 t.nip || '-',
-                t.fullName || '-',
+                t.fullName || '',
                 Array.isArray(t.subjects) ? t.subjects.join(', ') : (t.subjects || 'Umum'),
                 t.username || t.email || t.nip || '-',
                 t.role === 'admin' ? 'admin' : 'editor_soal',
                 t.status || 'Aktif'
             ]);
-            window.downloadExcelFile('Data_Guru_Editor_Soal_CBT.xlsx', headers, rows);
+            window.downloadExcelFile('Data_Akun_Guru_CBT.xlsx', headers, rows);
         };
 
         window.triggerTeacherExcelImport = function() {
             const fileInput = document.getElementById('globalFileInput');
+            if (!fileInput) return;
             fileInput.value = '';
             fileInput.onchange = function(e) {
                 const file = e.target.files[0];
@@ -3834,37 +4471,17 @@
                         return;
                     }
 
-                    const headerRow = (rows[0] || []).map(h => String(h ?? '').trim().toLowerCase());
-                    const isCompact4Col = headerRow.length >= 4 && headerRow.length <= 5 && (headerRow[0].includes('nama') || headerRow[1].includes('username') || headerRow[1].includes('email'));
-
                     const parsedTeachers = [];
                     for (let i = 1; i < rows.length; i++) {
                         const cols = rows[i];
                         if (!cols || cols.length === 0) continue;
 
-                        let nip = '';
-                        let fullName = '';
-                        let subjectsRaw = '';
-                        let usernameRaw = '';
-                        let passwordRaw = 'guru123';
-                        let roleRaw = 'editor_soal';
-
-                        if (isCompact4Col || (cols.length >= 3 && cols.length <= 5 && !/^\d{6,}$/.test(String(cols[0] ?? '').trim()))) {
-                            fullName = String(cols[0] ?? '').trim();
-                            const idOrUser = String(cols[1] ?? '').trim();
-                            nip = /^\d+$/.test(idOrUser) ? idOrUser : ('GURU-' + (1000 + i));
-                            usernameRaw = idOrUser || nip;
-                            passwordRaw = String(cols[2] ?? '').trim() || 'guru123';
-                            roleRaw = String(cols[3] ?? 'editor_soal').trim().toLowerCase();
-                            subjectsRaw = String(cols[4] ?? 'Umum').trim();
-                        } else {
-                            nip = String(cols[0] ?? '').trim();
-                            fullName = String(cols[1] ?? '').trim();
-                            subjectsRaw = String(cols[2] ?? '').trim();
-                            usernameRaw = String(cols[3] ?? '').trim();
-                            passwordRaw = String(cols[4] ?? '').trim() || 'guru123';
-                            roleRaw = String(cols[5] ?? 'editor_soal').trim().toLowerCase();
-                        }
+                        const nip = String(cols[0] ?? '').trim();
+                        const fullName = String(cols[1] ?? '').trim();
+                        const subjectsRaw = String(cols[2] ?? '').trim();
+                        const usernameRaw = String(cols[3] ?? '').trim();
+                        const passwordRaw = String(cols[4] ?? '').trim() || 'guru123';
+                        const roleRaw = String(cols[5] ?? 'editor_soal').trim().toLowerCase();
 
                         if (!fullName && !nip) continue;
                         if (!fullName) continue;
@@ -8219,19 +8836,6 @@
             }
         });
 
-        window.enforceUrlHashRoleGuard = function() {
-            const staffRole = window.getCurrentStaffRole();
-            if (staffRole && staffRole !== 'admin') {
-                const rawHash = String(window.location.hash || '').replace(/^#\/?/, '').trim();
-                if (rawHash && rawHash !== 'bank-soal' && rawHash !== 'questionBanks') {
-                    window.history.replaceState(null, '', '#bank-soal');
-                    window.switchAdminMenu('questionBanks');
-                }
-            }
-        };
-
-        window.addEventListener('hashchange', window.enforceUrlHashRoleGuard);
-
         window.onload = async function() {
             try {
                 await initFirebaseProduction();
@@ -8241,7 +8845,6 @@
                     appData.currentUser = savedStaff;
                     appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
                     window.renderAdminLayout();
-                    window.enforceUrlHashRoleGuard();
                 } else {
                     window.renderLoginView();
                 }
@@ -8252,7 +8855,6 @@
                     appData.currentUser = savedStaff;
                     appData.activeAdminMenu = savedStaff.role === 'admin' ? 'dashboard' : 'questionBanks';
                     window.renderAdminLayout();
-                    window.enforceUrlHashRoleGuard();
                 } else {
                     window.renderLoginView();
                 }
